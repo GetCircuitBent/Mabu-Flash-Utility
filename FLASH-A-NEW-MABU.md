@@ -46,12 +46,17 @@ so your app can't drive the motors. Section 6 is the prepared fix for that.
 - **A USB-2 hub between tablet and PC.** This is not optional on the current
   flashing PC — see the Loader-enumeration note below.
 
-### PC / software (already staged on this machine)
+### PC / software
+The complete, categorized list of every software prerequisite — for flashing,
+building, deploying, **and** the permanent SELinux fix — with winget install
+commands and verify commands, is in **[Appendix A](#appendix-a--complete-prerequisites-flash--build--deploy--selinux)**.
+At a glance:
 - `../Mabu/tools/rkdeveloptool/rkdeveloptool.exe` (+ DLLs) — WinUSB Loader CLI.
 - Rockchip **DriverAssistant v5.0** (`rockusb.sys`) and **RKDevTool v2.92** —
   in `../Mabu/tools/rockchip-stock/`.
 - **Zadig 2.9** — to bind WinUSB to the Loader interface.
 - **adb / platform-tools** (winget `Google.PlatformTools`).
+- **Android Studio** (winget `Google.AndroidStudio`) — to build/deploy the app.
 - For the permanent SELinux fix only: WSL/Ubuntu with `setools`,
   `policycoreutils`, and **magiskpolicy** (see Section 6, Tier 2).
 
@@ -366,3 +371,84 @@ Protocol reference (don't hand-compute checksums — use the code):
 - [ ] **SELinux: Tier 2 policy patch applied (optional, permanent) → revert app to direct serial**
 - [ ] Motor calibration done
 - [ ] Unit closed up
+
+---
+
+## Appendix A — Complete prerequisites (flash + build + deploy + SELinux)
+
+Everything needed end-to-end, grouped by what it's for. Items marked **bundled**
+ship inside the `../Mabu/` repo (no install). Items marked **winget** install
+from an elevated PowerShell. Hardware can't be installed — verify physically.
+
+### A.1 Hardware
+| Item | Why | Notes |
+|---|---|---|
+| Mabu unit, opened to the 30-pin header | Target device | No external USB/buttons |
+| Internal USB programming harness | Only USB path to the board | One-shot per unit; we have one |
+| **USB-2 hub** (tablet → hub → PC) | Loader (PID 320A) is USB-2-only and won't enumerate on this xHCI-only PC | Hard requirement on this machine |
+| Stable DC power to the tablet | Avoid mid-flash power loss | — |
+
+### A.2 Flashing toolchain (Loader-side)
+| Tool | Source | Verify |
+|---|---|---|
+| `rkdeveloptool.exe` (+ libusb DLLs) | **bundled** `../Mabu/tools/rkdeveloptool/` | `rkdeveloptool ld` |
+| Rockchip **DriverAssistant v5.0** (installs `rockusb.sys`) | **bundled** `../Mabu/tools/rockchip-stock/DriverAssitant_v5.0/` | `pnputil /enum-drivers | findstr rockusb` |
+| **RKDevTool v2.92** (GUI, latches Loader) | **bundled** `../Mabu/tools/rockchip-stock/RKDevTool_Release_v2.92/` | launches |
+| **Zadig** (bind WinUSB to PID 320A) | **winget** `akeo.ie.Zadig` | app opens |
+| **adb / platform-tools** | **winget** `Google.PlatformTools` | `adb version` |
+
+> The Rockchip `android_winusb.inf` (adb driver for PID 0006/0011) is staged in
+> the driver store alongside `rockusb.sys`. Verify: `pnputil /enum-drivers | findstr android_winusb`.
+
+### A.3 Android build + deploy toolchain
+| Tool | Source | Verify | Notes |
+|---|---|---|---|
+| **Android Studio** | **winget** `Google.AndroidStudio` | launches | Bundles a JDK (JBR) + SDK Manager + Gradle. **First launch downloads the SDK** (platform-tools, `platforms;android-34`, `build-tools`). |
+| **JDK 17** (only if building from CLI without Studio) | **winget** `Microsoft.OpenJDK.17` | `java -version` | Or point `JAVA_HOME` at Studio's JBR (`...\Android Studio\jbr`). |
+| **Android SDK** (platform + build-tools + platform-tools) | via Studio first-run, or `sdkmanager` | `adb version`; `sdkmanager --list` | platform-tools provides the same `adb` used for flashing. |
+| **Git** | **winget** `Git.Git` | `git --version` | For the guide/app repos. Already present. |
+| Gradle wrapper (`gradlew.bat`) | **bundled** in `../Mabu/mabu-facetrack/` | `.\gradlew tasks` | Uses the JDK above; no separate Gradle install needed. |
+
+Build + deploy the app from CLI (once SDK is in place):
+```powershell
+cd "..\Mabu\mabu-facetrack"
+.\gradlew assembleDebug
+adb -s <tablet-ip>:5555 install -r app\build\outputs\apk\debug\app-debug.apk
+```
+(Node.js is **not** required — the app is Kotlin/Gradle. Node was installed for
+unrelated tooling.)
+
+### A.4 Permanent SELinux fix toolchain (Tier 2 — optional)
+Only needed to apply the permanent `allow untrusted_app serial_device` policy
+rule. The Tier-1 TCP bridge needs none of this (just adb).
+
+| Tool | Source | Verify |
+|---|---|---|
+| **WSL** + an Ubuntu distro | **winget** `Microsoft.WSL`, then `wsl --install -d Ubuntu` (reboot required) | `wsl -l -v` shows Ubuntu |
+| `setools`, `policycoreutils`, `adb` (in WSL) | `sudo apt-get install setools policycoreutils adb` | `seinfo --version` |
+| **magiskpolicy** (binary-policy patcher — the turnkey piece) | build from Magisk, or grab a prebuilt `magiskpolicy`/`sepolicy-inject` | `magiskpolicy --help` |
+| Policy rule + reference | **bundled** `assets/selinux/mabu_serial_access.te`, `assets/selinux/apply-patch.sh` | — |
+
+### A.5 One-shot winget install (build + deploy + Git)
+Run in an **elevated** PowerShell:
+```powershell
+winget install -e --id Google.AndroidStudio  --accept-package-agreements --accept-source-agreements
+winget install -e --id Google.PlatformTools  --accept-package-agreements --accept-source-agreements
+winget install -e --id akeo.ie.Zadig         --accept-package-agreements --accept-source-agreements
+winget install -e --id Git.Git               --accept-package-agreements --accept-source-agreements
+# Optional CLI-only JDK (skip if using Android Studio's bundled JBR):
+winget install -e --id Microsoft.OpenJDK.17  --accept-package-agreements --accept-source-agreements
+# Optional, for the permanent SELinux fix:
+winget install -e --id Microsoft.WSL         --accept-package-agreements --accept-source-agreements
+# then (reboot may be required):  wsl --install -d Ubuntu
+```
+After Android Studio installs, **launch it once** and let the Setup Wizard
+download the SDK, or install components headlessly with `sdkmanager`.
+
+### A.6 Status on the current flashing PC (2026-06-13)
+| Capability | Ready? |
+|---|---|
+| Flash a new Mabu (A.2) | ✅ all installed (hardware USB-2 hub still required) |
+| Deploy a prebuilt APK (adb) | ✅ |
+| **Build** the Android app (A.3) | ⏳ Android Studio installing via winget; SDK download on first launch |
+| Permanent SELinux fix (A.4) | ❌ WSL distro + setools + magiskpolicy not yet installed (Tier-1 bridge works without it) |
