@@ -46,9 +46,8 @@ so your app can't drive the motors. Section 6 is the prepared fix for that.
   `../Mabu/README.md`. **D+/D- polarity is the classic wiring gotcha**; if you
   get "device descriptor request failed," swap OTG_DM/OTG_DP.
 - The internal USB programming harness (we have only one — each liberation is a
-  one-shot-per-unit opportunity; plan the session).
-- **A USB-2 hub between tablet and PC.** This is not optional on the current
-  flashing PC — see the Loader-enumeration note below.
+  one-shot-per-unit opportunity; plan the session). A direct USB 3 connection
+  from the harness to the PC is sufficient — no hub needed.
 
 ### PC / software
 The complete, categorized list of every software prerequisite — for flashing,
@@ -64,16 +63,16 @@ At a glance:
 - For the permanent SELinux fix only: WSL/Ubuntu with `setools`,
   `policycoreutils`, and **magiskpolicy** (see Section 6, Tier 2).
 
-### Known PC blocker — Loader won't enumerate on xHCI-only machines
-The u-boot Loader USB gadget (VID 2207 **PID 320A**) is **USB-2 only**. The
-current flashing PC has only xHCI controllers and no EHCI companion, so Loader
-mode often fails to enumerate even though Android (0006) and recovery (0011)
-modes work fine on the same cable.
-
-**Fix: put any USB hub (a USB-2 hub is ideal — it provides a Transaction
-Translator) between the tablet and the PC.** Alternatively use a PC with native
-USB-2 (EHCI) ports. If Loader still won't show, reboot the PC to clear any
-wedged USB stack state and remove stale `VID_2207` ghost nodes with `pnputil`.
+### If Loader (PID 320A) won't enumerate
+A direct USB 3 connection from the harness to the PC works — that's the
+validated setup. If Loader mode (VID 2207 **PID 320A**) won't show even though
+Android (0006) / recovery (0011) modes do, the usual culprits are wiring and
+timing, not the host port:
+- Re-check **D+/D- polarity** on the harness (swap OTG_DM/OTG_DP) — a marginal
+  data pair shows as "device descriptor request failed."
+- Reboot the PC to clear wedged USB stack state and remove stale `VID_2207`
+  ghost nodes with `pnputil`.
+- Try a different physical USB port / cable.
 
 ---
 
@@ -95,7 +94,7 @@ don't reliably trigger the `/data` reformat.
 
 ## 3. Catch the Loader
 
-1. Connect the harness (through the USB-2 hub) to the PC. Tablet powered off.
+1. Connect the harness directly to the PC (USB 3 is fine). Tablet powered off.
 2. Power on the tablet. During early boot, u-boot exposes **PID 0x320A** for
    ~10 seconds. Any rockusb command in that window latches it into Loader mode
    indefinitely.
@@ -112,8 +111,8 @@ don't reliably trigger the `/data` reformat.
    ```
    `scripts\latch-loader.ps1` automates the poll-and-latch if you prefer.
 
-> If you can't catch Loader at all, re-read Section 1's enumeration note — on
-> this PC that is almost always the USB-2/hub issue, not the harness.
+> If you can't catch Loader at all, re-read Section 1's enumeration note —
+> usually it's D+/D- polarity or timing on the harness, not the host port.
 
 ---
 
@@ -468,7 +467,6 @@ Protocol reference (don't hand-compute checksums — use the code):
 
 ## 9. Quick checklist
 
-- [ ] USB-2 hub in line (Loader enumeration)
 - [ ] Loader caught (PID 320A), WinUSB bound via Zadig
 - [ ] `flash-mabu.ps1 -WipeData -RestoreMabu` completes
 - [ ] Device Owner clear, no esper/shoonya packages
@@ -491,8 +489,7 @@ from an elevated PowerShell. Hardware can't be installed — verify physically.
 | Item | Why | Notes |
 |---|---|---|
 | Mabu unit, opened to the 30-pin header | Target device | No external USB/buttons |
-| Internal USB programming harness | Only USB path to the board | One-shot per unit; we have one |
-| **USB-2 hub** (tablet → hub → PC) | Loader (PID 320A) is USB-2-only and won't enumerate on this xHCI-only PC | Hard requirement on this machine |
+| Internal USB programming harness | Only USB path to the board | One-shot per unit; we have one. Direct USB 3 to the PC works — no hub needed |
 | Stable DC power to the tablet | Avoid mid-flash power loss | — |
 
 ### A.2 Flashing toolchain (Loader-side)
@@ -555,7 +552,7 @@ download the SDK, or install components headlessly with `sdkmanager`.
 ### A.6 Status on the current flashing PC (2026-06-13)
 | Capability | Ready? |
 |---|---|
-| Flash a new Mabu (A.2) | ✅ all installed (hardware USB-2 hub still required) |
+| Flash a new Mabu (A.2) | ✅ all installed; direct USB 3 connection validated |
 | Deploy a prebuilt APK (adb) | ✅ |
 | **Build** the Android app (A.3) | ✅ Android Studio 2026.1 + bundled JDK 21 installed — **launch once to download the SDK** |
 | Permanent SELinux fix (A.4) | ✅ WSL Ubuntu 26.04 + setools/policycoreutils/adb installed; `magiskpolicy` (ARM) staged at `../tools/magiskpolicy/`. (Tier-1 bridge needs none of this.) |
