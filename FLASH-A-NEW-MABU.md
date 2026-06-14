@@ -26,12 +26,17 @@ raw-eMMC patches (disable dm-verity, neutralize Esper, open ADB) plus a 96 MB
 kernel `selinux=permissive` flag is ignored and the policy re-enforces at boot,
 so your app can't drive the motors. Section 6 is the prepared fix for that.
 
-> ⚠️ **On any unit that still has Mabu software, capture it FIRST (Section 3A) —
-> liberate without `-WipeData`, pull the APKs + `/sdcard`, *then* wipe.** The
-> wipe is irreversible and the consumer Mabu app has never been archived.
+> **Two operations — pick one up front:**
+> - **Flash** (default) — overwrite and provision the unit, with **no attempt to
+>   save** what was on it. This is the normal path and everything below assumes
+>   it. The `/data` wipe is irreversible.
+> - **Flash and capture** — first pull the unit's existing software/assets, *then*
+>   flash. Use this only when a unit still has Mabu software worth keeping. The
+>   capture procedure is **Section 3A** (optional, documented separately and
+>   still being finalized — skip it for a plain flash).
 
 ```powershell
-# from the Mabu repo root, Loader caught on the harness:
+# FLASH (default): from the Mabu repo root, Loader caught on the harness:
 .\scripts\flash-mabu.ps1 -WipeData -RestoreMabu
 ```
 
@@ -116,14 +121,20 @@ don't reliably trigger the `/data` reformat.
 
 ---
 
-## 3A. Capture the original Mabu software — BEFORE any wipe (V3, required)
+## 3A. (Flash and capture only) Capture the original Mabu software — BEFORE any wipe
 
-> ⚠️ **Do NOT run `-WipeData` until this is done.** The `/data` wipe is
-> irreversible and destroys things we have **never archived** on any unit:
-> the patient-facing **consumer Mabu app**, `/sdcard` assets, and per-unit
-> motor calibration. On a brand-new unit this is a one-shot chance to capture
-> them. Skip this section only if `pm list packages | grep -i catalia` comes
-> back empty (already factory-reset — nothing left to save).
+> **This section is ONLY for the "flash and capture" path.** For a plain **flash**
+> (the default), skip it entirely and go to Section 4.
+>
+> ⚠️ This procedure is **still being finalized** — treat it as a reference, not a
+> turnkey script yet.
+>
+> When you *do* want to capture: the `/data` wipe is irreversible and destroys
+> things we have **never archived** on any unit — the patient-facing **consumer
+> Mabu app**, `/sdcard` assets, and per-unit motor calibration. Capturing first
+> is the only chance to keep them. There is nothing to capture if
+> `pm list packages | grep -i catalia` returns only `factorymode` (already in the
+> repo) or is empty.
 
 The catch-22: a stock unit's ADB is unauthorized (Esper suppresses the
 approval dialog), so you can't capture until adbd is patched. So **liberate
@@ -200,9 +211,9 @@ wipe.
 
 ## 4. Flash: liberate + provision (one command)
 
-> Run this **only after Section 3A** on any unit that still had Mabu software.
-> On an already-factory-reset unit (Section 3A step 1 found no `catalia`
-> packages) you can run it directly.
+> For a plain **flash** (the default), run this directly. Only detour through
+> Section 3A first if you explicitly want **flash and capture** on a unit that
+> still has Mabu software worth keeping.
 
 From the **Mabu repo root** (`../Mabu/`), with Loader caught:
 
