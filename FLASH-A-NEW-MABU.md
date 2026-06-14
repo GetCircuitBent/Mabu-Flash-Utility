@@ -99,22 +99,43 @@ don't reliably trigger the `/data` reformat.
 
 ## 3. Catch the Loader
 
+There are two ways in. **If you can get an adb shell, use the first — it's
+deterministic and instant.**
+
+### Optimal: `adb reboot loader` (when adb is reachable)
+Stock Esper units are *often* already adb-authorized — Esper does not always
+suppress the auth grant (on the validated unit `adb` showed `device`, not
+`unauthorized`). And post-liberation adb is always open. Whenever `adb devices`
+shows the tablet, just:
+```powershell
+adb reboot loader      # drops straight into Rockchip Loader (PID 320A)
+```
+On the validated unit this landed in Loader in **~1 second** — no power-on
+timing race. This is also how you re-enter Loader between phases.
+
+### Fallback: catch the power-on window
+If there is no adb at all:
 1. Connect the harness directly to the PC (USB 3 is fine). Tablet powered off.
 2. Power on the tablet. During early boot, u-boot exposes **PID 0x320A** for
-   ~10 seconds. Any rockusb command in that window latches it into Loader mode
-   indefinitely.
-3. Bind the driver so the tool can talk to it:
-   - First touch with **RKDevTool v2.92** → *Read Flash Info* latches Loader
-     (`rockusb.sys` auto-binds PID 320A). It stays put 60 s+.
-   - Then **Zadig**: select the 320A interface, replace its driver with
-     **WinUSB** (one-time, while Loader is latched) so `rkdeveloptool` can use
-     it.
-4. Verify from the Mabu repo root:
-   ```powershell
-   .\tools\rkdeveloptool\rkdeveloptool.exe ld
-   # expect: ... Vid=0x2207,Pid=0x320a ... Loader
-   ```
-   `scripts\latch-loader.ps1` automates the poll-and-latch if you prefer.
+   ~10 seconds; `scripts\latch-loader.ps1` polls and latches it the instant it
+   appears (no human timing needed). If you miss it, u-boot continues to Android
+   (you'll see PID 0006) — just `adb reboot loader` from there, or power-cycle
+   and re-run the latch.
+
+### Driver binding (usually already done)
+`rkdeveloptool` needs **WinUSB** bound to PID 320A. On a PC that has flashed
+before, this **persists** — on the validated PC, 320A came up already
+`Service=WinUSB` and `rkdeveloptool ld` worked immediately, no Zadig step. Only
+the **first time** on a given PC do you need:
+- **RKDevTool v2.92** → *Read Flash Info* to latch Loader (`rockusb.sys`
+  auto-binds 320A; stays put 60 s+), then **Zadig** → replace 320A's driver with
+  **WinUSB**.
+
+Verify from the Mabu repo root:
+```powershell
+.\tools\rkdeveloptool\rkdeveloptool.exe ld
+# expect: ... Vid=0x2207,Pid=0x320a ... Loader
+```
 
 > If you can't catch Loader at all, re-read Section 1's enumeration note —
 > usually it's D+/D- polarity or timing on the harness, not the host port.
@@ -248,6 +269,21 @@ What it does, in order (`scripts/flash-mabu.ps1` → `scripts/liberate-mabu.ps1`
 After `/data` wipe, **WiFi credentials are gone**. The script pauses and asks
 you to join WiFi on the touch UI before app installs proceed.
 
+> **Gotcha — wipe "FAILED at chunk 0":** the very first `wl` immediately after
+> the inter-phase Loader re-catch can wedge (Loader needs a moment to be
+> "warm"). The patches are already written, so just **re-run the wipe** — it
+> succeeds once Loader is warm. Manual equivalent, with Loader caught:
+> `.\scripts\wipe-data-head.ps1 -SizeMB 96` (re-zeroing already-zeroed chunks is
+> harmless), then `rkdeveloptool rd` to reboot.
+
+> **Headless / non-interactive runs:** the WiFi pause above is a `Read-Host`,
+> which hangs an unattended shell. To stage it: run
+> `.\scripts\flash-mabu.ps1 -WipeData -SkipApps` (does all 8 patches + the
+> inter-phase reset + 96 MB wipe, then exits cleanly **before** the pause), then
+> drive the app installs yourself over adb. USB adb comes up authorized right
+> after the wipe (the adbd auth-bypass patch), so you usually don't need WiFi for
+> the installs — `adb install` pushes work fine (see the transport note below).
+
 **Result:** plain Android 8.1, Lawnchair home, F-Droid, ADB open (USB + WiFi on
 port 5555, no auth dialog). Verify:
 
@@ -257,10 +293,23 @@ adb -s <tablet-ip>:5555 shell getprop ro.device_owner   # expect empty
 adb -s <tablet-ip>:5555 shell "pm list packages | grep -iE 'esper|shoonya'"  # expect empty
 ```
 
-> **Transport note:** WiFi ADB (`adb connect <ip>:5555`) is the most reliable
-> transport on this build. USB ADB can sit `offline`/`unauthorized` on some
-> units due to lingering Esper DPM behavior. Set a static DHCP lease for the
-> tablet so the IP is stable.
+> **Transport note (important — learned the hard way):** there are three USB
+> transports here and they are *not* equally reliable on this hardware:
+> - **Loader USB (`rkdeveloptool`)** — rock-solid. Wrote 96 MB + all patches and
+>   read back hundreds of KB with zero issues. Reads do wedge after ~28 MB
+>   cumulative *per Loader session* (power-cycle / re-catch to continue).
+> - **Android USB adb — pushes (`adb install`, `adb push`)** — fine, multi-MB
+>   (F-Droid 12 MB, Lawnchair 17 MB installed cleanly).
+> - **Android USB adb — pulls (`adb pull`, device→host)** — **flaky.** Large
+>   inbound transfers wedge after a cumulative **~80–128 KB per boot**, then the
+>   device drops to `offline` and only a **power-cycle** recovers it. Splitting
+>   into small chunks only buys a few before the same cumulative wedge.
+>
+> **So: for anything you need to read *off* the device (e.g. the SELinux policy
+> in Section 6), use WiFi adb.** WiFi adb is reliable and the patched adbd
+> **listens on TCP 5555 out of the box** — once the tablet is on WiFi,
+> `adb connect <ip>:5555` just works (pulled 293 KB in 0.4 s where USB wedged at
+> 128 KB). Set a static DHCP lease so the IP is stable.
 
 ---
 
@@ -358,79 +407,114 @@ Then launch the app — it connects to the bridge and the robot tracks faces.
 
 ---
 
-### Tier 2 — Permanent SELinux policy patch (apply while harness is connected)
+### Tier 2 — Permanent SELinux policy patch (VALIDATED 2026-06-14)
 
 Add one rule so `untrusted_app` can open the serial device directly — then the
 bridge is unnecessary and the app talks to `/dev/ttyS1` natively.
 
-**The rule** (already prepared at `../Mabu/selinux/mabu_serial_access.te`):
+**The rule** (also at `../Mabu/selinux/mabu_serial_access.te`):
 ```
 allow untrusted_app serial_device:chr_file { open read write getattr ioctl };
 ```
 
-Because `/system` can only be written via the Loader on this device (no root,
-no rw remount), the patched policy has to be flashed the same way the liberation
-patches are. **Use magiskpolicy** to parse and re-serialize the binary policy
-correctly — don't hand-poke bytes.
+This was performed end-to-end on unit `2022010501038`. The exact procedure,
+with the gotchas that actually bit, follows. `/system`/`/vendor` are read-only
+with no root, so the patched policy is written by raw eMMC overwrite via Loader.
 
-> **Where magiskpolicy runs:** magiskpolicy is an Android-native binary, not a
-> Linux/glibc one — the staged copies under
-> `../tools/magiskpolicy/` (`magiskpolicy-armeabi-v7a` for the 32-bit RK3288,
-> Magisk v30.7) run **on the Mabu**, not in WSL. We push it to the device and
-> patch the policy *file* there (pure file I/O — no root needed; `--live`
-> kernel reload would need root, which we don't have, so we patch the file and
-> flash it). The WSL `setools`/`audit2allow` install is for *inspecting* policy
-> (`sesearch`, `seinfo`), not for the injection step.
+> **Which file?** On this H7R 8.1 build there is **only** one policy file:
+> `/vendor/etc/selinux/precompiled_sepolicy` (299,979 B).
+> `/system/etc/selinux/precompiled_sepolicy` **does not exist** — don't chase it.
 
-1. **Pull the precompiled policy file** that `init` loads (world-readable):
-   ```bash
-   adb -s <ip>:5555 pull /vendor/etc/selinux/precompiled_sepolicy ./precompiled_sepolicy
-   adb -s <ip>:5555 pull /system/etc/selinux/precompiled_sepolicy ./system_sepolicy   # if present
-   ```
-   (`../Mabu/selinux/sepolicy.bin` is a reference copy from unit 4.)
+> **Where magiskpolicy runs — on the Mabu, not the host.** magiskpolicy is an
+> Android binary. The staged `../tools/magiskpolicy/magiskpolicy-armeabi-v7a`
+> (32-bit ARM, for RK3288) runs **on the device** and patches the policy *file*
+> (pure file I/O, no root). We tried extracting an **x86_64** magiskpolicy from
+> `Magisk.apk` (`lib/x86_64/libmagiskpolicy.so`) to patch on the host — it is
+> **also an Android binary** (interpreter `/system/bin/linker64`) and does **not**
+> run in WSL glibc. So: patch on-device, period. (WSL `setools` is only for
+> *inspecting* policy, not injection.)
 
-2. **Patch on-device with the ARM magiskpolicy** (file-to-file, shell domain):
-   ```bash
-   adb -s <ip>:5555 push ../tools/magiskpolicy/magiskpolicy-armeabi-v7a /data/local/tmp/magiskpolicy
-   adb -s <ip>:5555 shell chmod 755 /data/local/tmp/magiskpolicy
-   adb -s <ip>:5555 push ./precompiled_sepolicy /data/local/tmp/sepolicy.in
-   adb -s <ip>:5555 shell "/data/local/tmp/magiskpolicy --load /data/local/tmp/sepolicy.in \
-     --save /data/local/tmp/sepolicy.out \
-     'allow untrusted_app serial_device chr_file { open read write getattr ioctl }'"
-   adb -s <ip>:5555 pull /data/local/tmp/sepolicy.out ./precompiled_sepolicy.patched
-   ```
-   (Alternative: build a host `magiskpolicy` for x86_64 and do step 2 entirely
-   in WSL — the on-device path above avoids that compile.)
+**Step 1 — patch the policy on-device** (Loader not needed yet; do this from an
+adb shell — WiFi adb if you'll pull it, see below):
+```bash
+DEV=<ip>:5555
+adb -s $DEV push ../tools/magiskpolicy/magiskpolicy-armeabi-v7a /data/local/tmp/magiskpolicy
+adb -s $DEV shell chmod 755 /data/local/tmp/magiskpolicy
+adb -s $DEV shell "cp /vendor/etc/selinux/precompiled_sepolicy /data/local/tmp/sepolicy.in && \
+  /data/local/tmp/magiskpolicy --load /data/local/tmp/sepolicy.in \
+    --save /data/local/tmp/sepolicy.out \
+    'allow untrusted_app serial_device chr_file { open read write getattr ioctl }' && echo PATCH_OK"
+adb -s $DEV shell "ls -l /data/local/tmp/sepolicy.in /data/local/tmp/sepolicy.out; \
+  sha256sum /data/local/tmp/sepolicy.in /data/local/tmp/sepolicy.out"
+```
+On the validated unit the patch was **byte-for-byte the same size** (299,979 B
+in and out) — magiskpolicy only flipped permission bits in the existing
+access-vector table. **Same size ⇒ same 74 ext4 blocks ⇒ a raw overwrite is
+block-safe** (the Size caveat below never triggered). Confirm `in ≠ out` by hash
+so you know the rule was actually added.
 
-3. **Flash it back to `/system` via Loader.** Identify which policy file `init`
-   loads at boot — on this build runtime uses the **precompiled** policy. Patch
-   **both** to be safe:
-   - `/system/etc/selinux/precompiled_sepolicy`
-   - `/vendor/etc/selinux/precompiled_sepolicy`
+**Step 2 — pull the patched policy to the host (use WiFi adb).** A 293 KB `adb
+pull` over **USB wedges** (~80–128 KB inbound ceiling per boot — see the
+transport note in Section 4). Over WiFi it's instant:
+```bash
+adb -s $DEV pull /data/local/tmp/sepolicy.out  ../Mabu/firmware/scratch/sepolicy.patched
+adb -s $DEV pull /data/local/tmp/sepolicy.in   ../Mabu/firmware/scratch/sepolicy.orig
+```
 
-   Locate each file's ext4 data blocks (same ext4-inode-walk technique the
-   liberation used — see `../Mabu/scripts/find-esper-files.py`), then write the
-   patched bytes with `rkdeveloptool wl <LBA> sepolicy.patched`.
+**Step 3 — locate the file's eMMC blocks** with the ext4 inode-walk
+`../Mabu/scripts/find-vendor-file.py` (new; the vendor analogue of
+`find-esper-files.py`). Reboot to Loader (`adb reboot loader`), dump the vendor
+head, and walk to the file:
+```powershell
+# vendor partition starts at LBA 0x592000. Dump ~24 MB (under the 28 MB
+# read-wedge) — enough for the metadata/inodes:
+.\tools\rkdeveloptool\rkdeveloptool.exe rl 0x592000 49152 firmware\scratch\vendor-head.img
+python scripts\find-vendor-file.py firmware\scratch\vendor-head.img 0x592000 etc selinux precompiled_sepolicy
+```
+On the validated build the walk resolved root → `etc`(203) → `selinux`(907) →
+`precompiled_sepolicy` = **inode 911**, a **single contiguous 74-block extent at
+abs LBA `0x5A8AB8`** (592 sectors). *(The selinux directory's own block sat past
+24 MB; the script tells you that LBA so you can dump just that one block to read
+its dirents. The LBA can differ per build — re-derive it, don't hardcode
+`0x5A8AB8` blindly.)*
 
-   > **Size caveat (important):** adding the rule makes the policy a few bytes
-   > larger. A raw sector overwrite is only safe if the patched file still
-   > occupies the **same number of 4 KB ext4 blocks** as the original (pad the
-   > write with the original trailing bytes / NULs to the block boundary). If it
-   > spills into a new block, do **not** raw-overwrite — instead rebuild and
-   > flash the whole `/system` image (the "clean firmware flash" path in
-   > `HANDOFF.md`), or use the AOSP rebuild path below.
+**Step 4 — verify the location, write, verify the write** (Loader USB is
+reliable):
+```powershell
+# read back the located bytes; the first 299979 must equal sepolicy.orig:
+.\tools\rkdeveloptool\rkdeveloptool.exe rl 0x5A8AB8 586 firmware\scratch\readback.bin
+#   -> sha256(readback[0..299978]) == sha256(sepolicy.orig)   [confirms location]
+# write the patched policy:
+.\tools\rkdeveloptool\rkdeveloptool.exe wl 0x5A8AB8 firmware\scratch\sepolicy.patched
+# read back and confirm it now equals sepolicy.patched:
+.\tools\rkdeveloptool\rkdeveloptool.exe rl 0x5A8AB8 586 firmware\scratch\verify.bin
+#   -> sha256(verify[0..299978]) == sha256(sepolicy.patched)  [confirms write]
+.\tools\rkdeveloptool\rkdeveloptool.exe rd        # reboot to Android
+```
 
-4. **Reboot and verify** the denial is gone:
-   ```bash
-   adb -s <ip>:5555 shell "dmesg | grep ttyS1"   # no new avc: denied
-   ```
+**Step 5 — verify after reboot** (WiFi adb):
+```bash
+adb connect <ip>:5555
+adb -s <ip>:5555 shell "sha256sum /vendor/etc/selinux/precompiled_sepolicy"  # == patched hash
+adb -s <ip>:5555 shell "getenforce"                                          # Enforcing
+adb -s <ip>:5555 shell "ls -lZ /dev/ttyS1"                                   # ...serial_device:s0
+```
+On the validated unit all three checked out (patched hash **persisted**,
+Enforcing, correct label). Note `/sys/fs/selinux/policy` is root-only, so you
+**cannot** hash the live loaded policy as shell — the definitive functional
+proof is an `untrusted_app` actually opening `/dev/ttyS1` (run the Facetrack app,
+Section 5/7, and confirm motors move with the Tier-1 bridge **off**).
+
+   > **Size caveat (didn't trigger here, but watch for it on other builds):** if
+   > magiskpolicy's output is *larger* than the original and spills into an
+   > extra 4 KB ext4 block, a raw overwrite would corrupt the next file. Only
+   > raw-overwrite when out-size ≤ original block count. Otherwise rebuild and
+   > flash the whole `/vendor` (or `/system`) image, or use the AOSP path below.
 
 **Cleanest alternative (if you have an AOSP tree for this board):** drop
 `mabu_serial_access.te` into `system/sepolicy/private/`, run `m sepolicy`, and
-flash the resulting `precompiled_sepolicy` — no size/round-trip risk. See
-`../Mabu/selinux/README.md` and `apply-patch.sh` (note: `apply-patch.sh`
-documents the procedure but stops short of a turnkey binary merge — magiskpolicy
-in step 2 above is the turnkey piece it's missing).
+flash the resulting `precompiled_sepolicy` — no locate/size/round-trip risk. See
+`../Mabu/selinux/README.md`.
 
 **After the permanent fix lands**, revert the app to direct serial (every line
 is marked `// TEMP` in `MabuMotors.kt`):
@@ -478,13 +562,13 @@ Protocol reference (don't hand-compute checksums — use the code):
 
 ## 9. Quick checklist
 
-- [ ] Loader caught (PID 320A), WinUSB bound via Zadig
-- [ ] `flash-mabu.ps1 -WipeData -RestoreMabu` completes
+- [ ] Loader caught (PID 320A) — `adb reboot loader` if adb is up, else power-on window
+- [ ] `flash-mabu.ps1 -WipeData -RestoreMabu` completes (re-run wipe if it "FAILED at chunk 0")
 - [ ] Device Owner clear, no esper/shoonya packages
-- [ ] WiFi ADB on 5555, static lease set
+- [ ] WiFi ADB on 5555, static lease set (the reliable transport for pulls)
 - [ ] Launcher + apps installed
 - [ ] **SELinux: Tier 1 bridge running → app moves motors**
-- [ ] **SELinux: Tier 2 policy patch applied (optional, permanent) → revert app to direct serial**
+- [ ] **SELinux: Tier 2 policy patch applied (optional, permanent)** — magiskpolicy on-device → `find-vendor-file.py` → Loader `wl` → verify persisted + Enforcing → revert app to direct serial
 - [ ] Motor calibration done
 - [ ] Unit closed up
 
@@ -535,14 +619,23 @@ unrelated tooling.)
 
 ### A.4 Permanent SELinux fix toolchain (Tier 2 — optional)
 Only needed to apply the permanent `allow untrusted_app serial_device` policy
-rule. The Tier-1 TCP bridge needs none of this (just adb).
+rule. The Tier-1 TCP bridge needs none of this (just adb). The validated Tier-2
+path is **adb (WiFi) + on-device ARM magiskpolicy + `find-vendor-file.py` +
+`rkdeveloptool` + Python** — WSL is **not** actually required for the injection.
 
 | Tool | Source | Verify |
 |---|---|---|
-| **WSL** + an Ubuntu distro | **winget** `Microsoft.WSL`, then `wsl --install -d Ubuntu` (reboot required) | `wsl -l -v` shows Ubuntu |
-| `setools`, `policycoreutils`, `adb` (in WSL — for *inspecting* policy) | `sudo apt-get install setools policycoreutils adb` | `seinfo --version` |
-| **magiskpolicy** (binary-policy patcher — runs **on the Mabu**, ARM) | **staged** `../tools/magiskpolicy/magiskpolicy-armeabi-v7a` (extracted from Magisk v30.7) | `file` shows "ARM ... for Android" |
-| Policy rule + reference | **bundled** `assets/selinux/mabu_serial_access.te`, `assets/selinux/apply-patch.sh` | — |
+| **adb** (WiFi, on 5555) | platform-tools (A.2) | `adb connect <ip>:5555` |
+| **magiskpolicy** (binary-policy patcher — runs **on the Mabu**, ARM) | **staged** `../tools/magiskpolicy/magiskpolicy-armeabi-v7a` (Magisk v30.7) | `file` shows "ARM ... for Android" |
+| **`find-vendor-file.py`** (ext4 inode-walk → file LBA) | **bundled** `../Mabu/scripts/find-vendor-file.py` | needs **Python 3** on host |
+| `rkdeveloptool` (dump + `wl` the policy) | **bundled** (A.2) | `rkdeveloptool ld` |
+| Policy rule + reference | **bundled** `assets/selinux/mabu_serial_access.te` | — |
+| WSL + `setools`/`policycoreutils` | **winget** `Microsoft.WSL` + `apt` | `seinfo --version` — **inspection only, optional** |
+
+> **Dead end, documented so you don't repeat it:** the **x86_64** magiskpolicy in
+> `Magisk.apk` (`lib/x86_64/libmagiskpolicy.so`) is an **Android** binary
+> (interpreter `/system/bin/linker64`), so it will **not** run in WSL to patch
+> the policy host-side. Patch on the Mabu with the ARM build instead.
 
 ### A.5 One-shot winget install (build + deploy + Git)
 Run in an **elevated** PowerShell:
@@ -560,10 +653,16 @@ winget install -e --id Microsoft.WSL         --accept-package-agreements --accep
 After Android Studio installs, **launch it once** and let the Setup Wizard
 download the SDK, or install components headlessly with `sdkmanager`.
 
-### A.6 Status on the current flashing PC (2026-06-13)
+### A.6 Status on the current flashing PC (updated 2026-06-14)
 | Capability | Ready? |
 |---|---|
-| Flash a new Mabu (A.2) | ✅ all installed; direct USB 3 connection validated |
-| Deploy a prebuilt APK (adb) | ✅ |
+| Flash a new Mabu (A.2) | ✅ **validated end-to-end** on unit `2022010501038` over direct USB 3 (no hub) |
+| Deploy a prebuilt APK (adb) | ✅ (USB push or WiFi) |
 | **Build** the Android app (A.3) | ✅ Android Studio 2026.1 + bundled JDK 21 installed — **launch once to download the SDK** |
-| Permanent SELinux fix (A.4) | ✅ WSL Ubuntu 26.04 + setools/policycoreutils/adb installed; `magiskpolicy` (ARM) staged at `../tools/magiskpolicy/`. (Tier-1 bridge needs none of this.) |
+| Permanent SELinux fix (A.4) | ✅ **Tier 2 validated** — patched policy written to `/vendor` precompiled_sepolicy via Loader, persisted + Enforcing after reboot. `magiskpolicy` (ARM) + `find-vendor-file.py` + Python are what's actually used. |
+
+> **Validated-flash facts (unit 2022010501038, H7R 8.1 `OPM6.171019.030.E1`):**
+> State-A active Esper; `adb reboot loader` worked on stock; full liberate +
+> 96 MB wipe + F-Droid/Lawnchair/factorymode + Tier-2 SELinux all succeeded.
+> `/vendor` policy file LBA `0x5A8AB8`. WiFi adb (5555) was essential for pulling
+> the policy (USB pulls wedge ~128 KB).
