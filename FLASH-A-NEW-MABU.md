@@ -270,20 +270,37 @@ allow untrusted_app serial_device:chr_file { open read write getattr ioctl };
 
 Because `/system` can only be written via the Loader on this device (no root,
 no rw remount), the patched policy has to be flashed the same way the liberation
-patches are. **Cleanest turnkey path is magiskpolicy** (it parses and
-re-serializes the binary policy correctly — don't hand-poke bytes):
+patches are. **Use magiskpolicy** to parse and re-serialize the binary policy
+correctly — don't hand-poke bytes.
 
-1. **Pull the live binary policy** (from a unit already liberated to Tier-1):
-   ```bash
-   adb -s <ip>:5555 pull /sys/fs/selinux/policy ./sepolicy.bin
-   ```
-   (The repo also keeps a reference copy at `../Mabu/selinux/sepolicy.bin`.)
+> **Where magiskpolicy runs:** magiskpolicy is an Android-native binary, not a
+> Linux/glibc one — the staged copies under
+> `../tools/magiskpolicy/` (`magiskpolicy-armeabi-v7a` for the 32-bit RK3288,
+> Magisk v30.7) run **on the Mabu**, not in WSL. We push it to the device and
+> patch the policy *file* there (pure file I/O — no root needed; `--live`
+> kernel reload would need root, which we don't have, so we patch the file and
+> flash it). The WSL `setools`/`audit2allow` install is for *inspecting* policy
+> (`sesearch`, `seinfo`), not for the injection step.
 
-2. **Patch it offline** (WSL/Linux):
+1. **Pull the precompiled policy file** that `init` loads (world-readable):
    ```bash
-   magiskpolicy --load sepolicy.bin --save sepolicy.patched \
-     "allow untrusted_app serial_device chr_file { open read write getattr ioctl }"
+   adb -s <ip>:5555 pull /vendor/etc/selinux/precompiled_sepolicy ./precompiled_sepolicy
+   adb -s <ip>:5555 pull /system/etc/selinux/precompiled_sepolicy ./system_sepolicy   # if present
    ```
+   (`../Mabu/selinux/sepolicy.bin` is a reference copy from unit 4.)
+
+2. **Patch on-device with the ARM magiskpolicy** (file-to-file, shell domain):
+   ```bash
+   adb -s <ip>:5555 push ../tools/magiskpolicy/magiskpolicy-armeabi-v7a /data/local/tmp/magiskpolicy
+   adb -s <ip>:5555 shell chmod 755 /data/local/tmp/magiskpolicy
+   adb -s <ip>:5555 push ./precompiled_sepolicy /data/local/tmp/sepolicy.in
+   adb -s <ip>:5555 shell "/data/local/tmp/magiskpolicy --load /data/local/tmp/sepolicy.in \
+     --save /data/local/tmp/sepolicy.out \
+     'allow untrusted_app serial_device chr_file { open read write getattr ioctl }'"
+   adb -s <ip>:5555 pull /data/local/tmp/sepolicy.out ./precompiled_sepolicy.patched
+   ```
+   (Alternative: build a host `magiskpolicy` for x86_64 and do step 2 entirely
+   in WSL — the on-device path above avoids that compile.)
 
 3. **Flash it back to `/system` via Loader.** Identify which policy file `init`
    loads at boot — on this build runtime uses the **precompiled** policy. Patch
@@ -425,8 +442,8 @@ rule. The Tier-1 TCP bridge needs none of this (just adb).
 | Tool | Source | Verify |
 |---|---|---|
 | **WSL** + an Ubuntu distro | **winget** `Microsoft.WSL`, then `wsl --install -d Ubuntu` (reboot required) | `wsl -l -v` shows Ubuntu |
-| `setools`, `policycoreutils`, `adb` (in WSL) | `sudo apt-get install setools policycoreutils adb` | `seinfo --version` |
-| **magiskpolicy** (binary-policy patcher — the turnkey piece) | build from Magisk, or grab a prebuilt `magiskpolicy`/`sepolicy-inject` | `magiskpolicy --help` |
+| `setools`, `policycoreutils`, `adb` (in WSL — for *inspecting* policy) | `sudo apt-get install setools policycoreutils adb` | `seinfo --version` |
+| **magiskpolicy** (binary-policy patcher — runs **on the Mabu**, ARM) | **staged** `../tools/magiskpolicy/magiskpolicy-armeabi-v7a` (extracted from Magisk v30.7) | `file` shows "ARM ... for Android" |
 | Policy rule + reference | **bundled** `assets/selinux/mabu_serial_access.te`, `assets/selinux/apply-patch.sh` | — |
 
 ### A.5 One-shot winget install (build + deploy + Git)
@@ -450,5 +467,5 @@ download the SDK, or install components headlessly with `sdkmanager`.
 |---|---|
 | Flash a new Mabu (A.2) | ✅ all installed (hardware USB-2 hub still required) |
 | Deploy a prebuilt APK (adb) | ✅ |
-| **Build** the Android app (A.3) | ⏳ Android Studio installing via winget; SDK download on first launch |
-| Permanent SELinux fix (A.4) | ❌ WSL distro + setools + magiskpolicy not yet installed (Tier-1 bridge works without it) |
+| **Build** the Android app (A.3) | ✅ Android Studio 2026.1 + bundled JDK 21 installed — **launch once to download the SDK** |
+| Permanent SELinux fix (A.4) | ✅ WSL Ubuntu 26.04 + setools/policycoreutils/adb installed; `magiskpolicy` (ARM) staged at `../tools/magiskpolicy/`. (Tier-1 bridge needs none of this.) |
