@@ -1,0 +1,13 @@
+# Build / tooling artifacts
+*.log
+*.tmp
+
+# OS cruft
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Local firmware / dumps must never be committed here
+*.img
+*.bin
+sepolicy*

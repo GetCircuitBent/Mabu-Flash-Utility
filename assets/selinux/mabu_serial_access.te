@@ -1,0 +1,15 @@
+# mabu_serial_access.te
+#
+# Grants the Mabu face-tracking app direct read/write access to /dev/ttyS1.
+#
+# /dev/ttyS1 is labeled u:object_r:serial_device:s0 on this device.
+# The app runs as u:r:untrusted_app:s0 which has no default access to
+# serial_device. This rule adds the minimum permissions needed.
+#
+# Verified against the running policy pulled from unit 4 on 2026-05-28
+# (see sepolicy.bin in this directory for the binary reference).
+#
+# HOW TO APPLY (requires USB access -- see ../README.md):
+#   See apply-patch.sh in this directory.
+
+allow untrusted_app serial_device:chr_file { open read write getattr ioctl };
