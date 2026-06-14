@@ -26,6 +26,10 @@ raw-eMMC patches (disable dm-verity, neutralize Esper, open ADB) plus a 96 MB
 kernel `selinux=permissive` flag is ignored and the policy re-enforces at boot,
 so your app can't drive the motors. Section 6 is the prepared fix for that.
 
+> ⚠️ **On any unit that still has Mabu software, capture it FIRST (Section 3A) —
+> liberate without `-WipeData`, pull the APKs + `/sdcard`, *then* wipe.** The
+> wipe is irreversible and the consumer Mabu app has never been archived.
+
 ```powershell
 # from the Mabu repo root, Loader caught on the harness:
 .\scripts\flash-mabu.ps1 -WipeData -RestoreMabu
@@ -113,7 +117,93 @@ don't reliably trigger the `/data` reformat.
 
 ---
 
+## 3A. Capture the original Mabu software — BEFORE any wipe (V3, required)
+
+> ⚠️ **Do NOT run `-WipeData` until this is done.** The `/data` wipe is
+> irreversible and destroys things we have **never archived** on any unit:
+> the patient-facing **consumer Mabu app**, `/sdcard` assets, and per-unit
+> motor calibration. On a brand-new unit this is a one-shot chance to capture
+> them. Skip this section only if `pm list packages | grep -i catalia` comes
+> back empty (already factory-reset — nothing left to save).
+
+The catch-22: a stock unit's ADB is unauthorized (Esper suppresses the
+approval dialog), so you can't capture until adbd is patched. So **liberate
+without wiping first**, capture, *then* wipe.
+
+**Step 1 — apply the patches only (NO wipe).** With Loader caught, from the
+Mabu repo root:
+```powershell
+.\scripts\flash-mabu.ps1 -SkipApps      # = the 8 patches + reset; no /data wipe, no app install
+```
+(Equivalent: `.\scripts\liberate-mabu.ps1 -Reset`.) This gives unconditional
+ADB while leaving `/data` intact.
+
+**Step 2 — get on ADB (prefer WiFi).** Esper can wedge *USB* ADB within ~5 s of
+boot; WiFi ADB is the stable transport and the patched adbd listens on 5555:
+```powershell
+# find the tablet IP (router DHCP table, or: nmap -p 5555 192.168.x.0/24), then:
+adb connect <tablet-ip>:5555
+adb -s <tablet-ip>:5555 shell echo ok
+```
+
+**Step 3 — sanity-check the build BEFORE trusting the byte offsets.** The
+liberation LBAs assume the byte-identical H7R 8.1 build. Confirm this unit
+matches; if the fingerprint differs, STOP — the hardcoded sector offsets may
+not line up and need re-deriving:
+```powershell
+adb -s <tablet-ip>:5555 shell getprop ro.build.fingerprint
+# expect: rockchip/H7R/H7R:8.1.0/OPM6.171019.030.E1/...:user/release-keys
+adb -s <tablet-ip>:5555 shell getprop ro.serialno
+```
+
+**Step 4 — capture what a non-root shell CAN reach.** Set `$SER` to the unit
+serial:
+```powershell
+$dev = "<tablet-ip>:5555"; $SER = "<serialno>"
+$out = "..\Mabu\mabu-archive\unit-$SER"; New-Item -ItemType Directory -Force $out | Out-Null
+
+# 4a. Which catalia/Mabu packages exist + where their APKs live
+adb -s $dev shell "pm list packages -f | grep -iE 'catalia|mabu'" | Tee-Object "$out\packages.txt"
+
+# 4b. Pull every catalia APK path printed above (APKs in /data/app are world-readable).
+#     Example for one package dir — repeat per path from packages.txt:
+#   adb -s $dev pull /data/app/com.catalia.<app>-<hash>/base.apk  "$out\com.catalia.<app>.apk"
+
+# 4c. /sdcard assets (animations, voice, sound.raw) — readable
+adb -s $dev pull /sdcard "$out\sdcard"
+
+# 4d. State snapshots
+adb -s $dev shell getprop                                  | Tee-Object "$out\getprop.txt"  | Out-Null
+adb -s $dev shell "dumpsys package com.catalia.factorymode" | Tee-Object "$out\dumpsys-factorymode.txt" | Out-Null
+
+# 4e. Best-effort tar of catalia data (private /data/data is 0700 — most will be
+#     "Permission denied" without root; that's expected. APK dirs still come through.)
+adb -s $dev shell "tar cf /sdcard/mabu-$SER.tar /data/app/com.catalia.* 2>/dev/null; ls -la /sdcard/mabu-$SER.tar"
+adb -s $dev pull /sdcard/mabu-$SER.tar "$out\mabu-$SER.tar"
+```
+
+**Step 5 — verify the capture before proceeding.** Confirm the APKs and tar are
+non-empty in `..\Mabu\mabu-archive\unit-$SER\`. If the **consumer** Mabu app
+(anything `com.catalia.*` that is NOT `factorymode`) showed up in 4a, that's a
+first-ever capture — make sure it pulled.
+
+> **Note on calibration:** per-unit motor zeros live in
+> `/data/data/com.catalia.factorymode/` (owner-only, shell can't read) and are
+> lost in the wipe. They're re-derived after flashing via Factory Mode's
+> calibration wizard (Section 7) — the robot only needs *some* current values,
+> not the originals. The only thing genuinely unrecoverable is the consumer
+> app if it's Esper-deployed and not in `/data/app`.
+
+Once the capture is verified, continue to Section 4 and re-catch Loader for the
+wipe.
+
+---
+
 ## 4. Flash: liberate + provision (one command)
+
+> Run this **only after Section 3A** on any unit that still had Mabu software.
+> On an already-factory-reset unit (Section 3A step 1 found no `catalia`
+> packages) you can run it directly.
 
 From the **Mabu repo root** (`../Mabu/`), with Loader caught:
 
