@@ -7,9 +7,14 @@
 #      enter via wifi/usb adb 'reboot loader'.
 #   2. Apply liberate-mabu patches (parameter + adbd + 3x EOCD + 2x init).
 #   3. Optionally wipe /data head (-WipeData; needed for active Esper).
-#   4. Reset to Android. Wait for adb (usb or wifi).
+#   4. Reset to Android. Wait for WiFi adb (installs/pulls run over WiFi).
 #   5. Install user-facing apps: F-Droid, Lawnchair. Set Lawnchair home.
 #   6. Optionally install Mabu factory mode + push assets (-RestoreMabu).
+#
+# Transport rule (matches FLASH-A-NEW-MABU.md): USB is used ONLY when 100%
+# necessary -- the Loader flash itself and the adb 'reboot loader' calls that
+# enter Loader. USB adb on this hardware times out too fast to rely on, so the
+# whole install/provision phase (5/6) runs over WiFi adb on 5555.
 #
 # Use cases:
 #   - Fresh Esper-active Mabu:
@@ -51,7 +56,10 @@ function Fail($msg)    { Write-Host "  $msg" -ForegroundColor Red }
 function Test-Loader { (& $RK ld 2>&1) -match 'Vid=0x2207,Pid=0x320a.*Loader' }
 
 function Find-AdbDevice {
-    param([string] $PreferIp, [int] $TimeoutSec = 180)
+    # -WifiOnly: never fall back to USB. USB adb on this hardware times out too
+    # fast to use for installs/pulls, so the provision phase passes -WifiOnly and
+    # connects over WiFi (5555) only. USB is reserved for entering Loader.
+    param([string] $PreferIp, [int] $TimeoutSec = 180, [switch] $WifiOnly)
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
     while ((Get-Date) -lt $deadline) {
         # try wifi first if hint
@@ -62,12 +70,15 @@ function Find-AdbDevice {
                 if ($ok -match '^ok') { return "${PreferIp}:5555" }
             }
         }
-        # then any usb device
-        $usb = & $ADB devices 2>&1 | Where-Object { $_ -match '^\d+\s+device$' }
-        if ($usb) {
-            $serial = ($usb[0] -split '\s+')[0]
-            $ok = & $ADB -s $serial shell echo ok 2>&1
-            if ($ok -match '^ok') { return $serial }
+        # then any usb device (only when USB is acceptable -- i.e. just to enter
+        # Loader; skipped under -WifiOnly so installs never run over flaky USB)
+        if (-not $WifiOnly) {
+            $usb = & $ADB devices 2>&1 | Where-Object { $_ -match '^\d+\s+device$' }
+            if ($usb) {
+                $serial = ($usb[0] -split '\s+')[0]
+                $ok = & $ADB -s $serial shell echo ok 2>&1
+                if ($ok -match '^ok') { return $serial }
+            }
         }
         Start-Sleep -Seconds 3
     }
@@ -138,18 +149,26 @@ if ($SkipApps) {
     exit 0
 }
 
-Section 'Waiting for adb (usb or wifi)'
+Section 'Waiting for WiFi adb'
+Info 'USB adb on this hardware times out too fast for installs/pulls --'
+Info "the provision phase runs over WiFi adb (${WifiIp}:5555)."
 if ($WipeData) {
     Warn '/data was wiped: WiFi credentials are gone.'
     Warn 'On the tablet touch UI, connect to WiFi. Then come back here.'
     Read-Host 'Press Enter once WiFi is associated on the tablet'
 }
-$dev = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 180
+$dev = Find-AdbDevice -PreferIp $WifiIp -WifiOnly -TimeoutSec 180
 if (-not $dev) {
-    Fail 'Timed out waiting for adb. Check usb cable / wifi connection.'
+    Warn "Could not reach WiFi adb at ${WifiIp}:5555."
+    Warn 'Make sure the tablet is on WiFi (static lease at that IP, or pass -WifiIp).'
+    Read-Host 'Press Enter to retry WiFi adb (Ctrl+C to abort)'
+    $dev = Find-AdbDevice -PreferIp $WifiIp -WifiOnly -TimeoutSec 180
+}
+if (-not $dev) {
+    Fail 'Timed out waiting for WiFi adb. Check the tablet WiFi / IP.'
     exit 1
 }
-Ok "Connected: $dev"
+Ok "Connected over WiFi: $dev"
 
 # Quick audit
 Section 'Post-boot audit'
