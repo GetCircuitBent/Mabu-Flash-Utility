@@ -1,0 +1,139 @@
+Activity Resolver Table:
+  Non-Data Actions:
+      android.intent.action.MAIN:
+        693a624 io.esper.remoteviewer/.MainActivity filter 353f590
+          Action: "android.intent.action.MAIN"
+
+Receiver Resolver Table:
+  Non-Data Actions:
+      android.intent.action.BATTERY_OKAY:
+        d54e58d io.esper.remoteviewer/androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryNotLowProxy filter 83a57b7
+          Action: "android.intent.action.BATTERY_OKAY"
+          Action: "android.intent.action.BATTERY_LOW"
+      android.intent.action.ACTION_POWER_DISCONNECTED:
+        324e342 io.esper.remoteviewer/androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryChargingProxy filter f403eb6
+          Action: "android.intent.action.ACTION_POWER_CONNECTED"
+          Action: "android.intent.action.ACTION_POWER_DISCONNECTED"
+      android.intent.action.DEVICE_STORAGE_LOW:
+        aff0f53 io.esper.remoteviewer/androidx.work.impl.background.systemalarm.ConstraintProxy$StorageNotLowProxy filter 61b4b24
+          Action: "android.intent.action.DEVICE_STORAGE_LOW"
+          Action: "android.intent.action.DEVICE_STORAGE_OK"
+      android.net.conn.CONNECTIVITY_CHANGE:
+        2770090 io.esper.remoteviewer/androidx.work.impl.background.systemalarm.ConstraintProxy$NetworkStateProxy filter c5c268d
+          Action: "android.net.conn.CONNECTIVITY_CHANGE"
+      android.intent.action.DEVICE_STORAGE_OK:
+        aff0f53 io.esper.remoteviewer/androidx.work.impl.background.systemalarm.ConstraintProxy$StorageNotLowProxy filter 61b4b24
+          Action: "android.intent.action.DEVICE_STORAGE_LOW"
+          Action: "android.intent.action.DEVICE_STORAGE_OK"
+      com.google.android.c2dm.intent.RECEIVE:
+        e374d89 io.esper.remoteviewer/com.google.firebase.iid.FirebaseInstanceIdReceiver filter fe77651
+          Action: "com.google.android.c2dm.intent.RECEIVE"
+      android.intent.action.BATTERY_LOW:
+        d54e58d io.esper.remoteviewer/androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryNotLowProxy filter 83a57b7
+          Action: "android.intent.action.BATTERY_OKAY"
+          Action: "android.intent.action.BATTERY_LOW"
+      android.intent.action.TIMEZONE_CHANGED:
+        821f18e io.esper.remoteviewer/androidx.work.impl.background.systemalarm.RescheduleReceiver filter 5099042
+          Action: "android.intent.action.BOOT_COMPLETED"
+          Action: "android.intent.action.TIME_SET"
+          Action: "android.intent.action.TIMEZONE_CHANGED"
+      android.intent.action.TIME_SET:
+        821f18e io.esper.remoteviewer/androidx.work.impl.background.systemalarm.RescheduleReceiver filter 5099042
+          Action: "android.intent.action.BOOT_COMPLETED"
+          Action: "android.intent.action.TIME_SET"
+          Action: "android.intent.action.TIMEZONE_CHANGED"
+      android.intent.action.BOOT_COMPLETED:
+        821f18e io.esper.remoteviewer/androidx.work.impl.background.systemalarm.RescheduleReceiver filter 5099042
+          Action: "android.intent.action.BOOT_COMPLETED"
+          Action: "android.intent.action.TIME_SET"
+          Action: "android.intent.action.TIMEZONE_CHANGED"
+      android.intent.action.ACTION_POWER_CONNECTED:
+        324e342 io.esper.remoteviewer/androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryChargingProxy filter f403eb6
+          Action: "android.intent.action.ACTION_POWER_CONNECTED"
+          Action: "android.intent.action.ACTION_POWER_DISCONNECTED"
+      androidx.work.impl.background.systemalarm.UpdateProxies:
+        fe14daf io.esper.remoteviewer/androidx.work.impl.background.systemalarm.ConstraintProxyUpdateReceiver filter 412b853
+          Action: "androidx.work.impl.background.systemalarm.UpdateProxies"
+
+Registered ContentProviders:
+  io.esper.remoteviewer/com.google.firebase.provider.FirebaseInitProvider:
+    Provider{cf395bc io.esper.remoteviewer/com.google.firebase.provider.FirebaseInitProvider}
+  io.esper.remoteviewer/androidx.work.impl.WorkManagerInitializer:
+    Provider{6be3945 io.esper.remoteviewer/androidx.work.impl.WorkManagerInitializer}
+
+ContentProvider Authorities:
+  [io.esper.remoteviewer.firebaseinitprovider]:
+    Provider{cf395bc io.esper.remoteviewer/com.google.firebase.provider.FirebaseInitProvider}
+      applicationInfo=ApplicationInfo{4cf989a io.esper.remoteviewer}
+  [io.esper.remoteviewer.workmanager-init]:
+    Provider{6be3945 io.esper.remoteviewer/androidx.work.impl.WorkManagerInitializer}
+      applicationInfo=ApplicationInfo{4cf989a io.esper.remoteviewer}
+
+Key Set Manager:
+  [io.esper.remoteviewer]
+      Signing KeySets: 6
+
+Packages:
+  Package [io.esper.remoteviewer] (dff15cb):
+    userId=10054
+    pkg=Package{44251a8 io.esper.remoteviewer}
+    codePath=/data/app/io.esper.remoteviewer-n-8FF91fPh8oJCvbL6YUMw==
+    resourcePath=/data/app/io.esper.remoteviewer-n-8FF91fPh8oJCvbL6YUMw==
+    legacyNativeLibraryDir=/data/app/io.esper.remoteviewer-n-8FF91fPh8oJCvbL6YUMw==/lib
+    primaryCpuAbi=armeabi-v7a
+    secondaryCpuAbi=null
+    versionCode=10023725 minSdk=21 targetSdk=30
+    versionName=v1.2.3725
+    splits=[base]
+    apkSigningVersion=2
+    applicationInfo=ApplicationInfo{4cf989a io.esper.remoteviewer}
+    flags=[ HAS_CODE ALLOW_CLEAR_USER_DATA ]
+    privateFlags=[ PARTIALLY_DIRECT_BOOT_AWARE PRIVATE_FLAG_ACTIVITIES_RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION ]
+    dataDir=/data/user/0/io.esper.remoteviewer
+    supportsScreens=[small, medium, large, xlarge, resizeable, anyDensity]
+    timeStamp=2022-12-04 19:09:59
+    firstInstallTime=2022-12-04 19:10:02
+    lastUpdateTime=2022-12-04 19:10:02
+    installerPackageName=io.shoonya.shoonyadpc
+    signatures=PackageSignatures{50e24c1 [64a6243c]}
+    installPermissionsFixed=true installStatus=1
+    pkgFlags=[ HAS_CODE ALLOW_CLEAR_USER_DATA ]
+    requested permissions:
+      android.permission.INTERNET
+      android.permission.ACCESS_NETWORK_STATE
+      android.permission.FOREGROUND_SERVICE
+      io.esper.remoteconfig.READ
+      android.permission.DISABLE_KEYGUARD
+      io.esper.commons.datacache.READ_WRITE
+      android.permission.WAKE_LOCK
+      com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE
+      com.google.android.c2dm.permission.RECEIVE
+      android.permission.RECEIVE_BOOT_COMPLETED
+    install permissions:
+      io.esper.commons.datacache.READ_WRITE: granted=true
+      android.permission.RECEIVE_BOOT_COMPLETED: granted=true
+      android.permission.INTERNET: granted=true
+      io.esper.remoteconfig.READ: granted=true
+      android.permission.ACCESS_NETWORK_STATE: granted=true
+      android.permission.DISABLE_KEYGUARD: granted=true
+      android.permission.WAKE_LOCK: granted=true
+    User 0: ceDataInode=-4294965603 installed=true hidden=false suspended=false stopped=true notLaunched=true enabled=0 instant=false virtual=false
+    overlay paths:
+      /vendor/overlay/framework-res__auto_generated_rro.apk
+      gids=[3003]
+      runtime permissions:
+
+Package Changes:
+  Sequence number=0
+
+
+Dexopt state:
+  [io.esper.remoteviewer]
+    path: /data/app/io.esper.remoteviewer-n-8FF91fPh8oJCvbL6YUMw==/base.apk
+      arm: /data/app/io.esper.remoteviewer-n-8FF91fPh8oJCvbL6YUMw==/oat/arm/base.odex[status=kOatUpToDate, compilation_f
+      ilter=quicken]
+
+
+Compiler stats:
+  [io.esper.remoteviewer]
+    (No recorded stats)

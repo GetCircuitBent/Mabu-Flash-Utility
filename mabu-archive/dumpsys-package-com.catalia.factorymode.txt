@@ -1,0 +1,73 @@
+Activity Resolver Table:
+  Non-Data Actions:
+      android.intent.action.MAIN:
+        7227fdb com.catalia.factorymode/com.catalia.mabu.navigation.MainActivity filter d3b9eab
+          Action: "android.intent.action.MAIN"
+          Category: "android.intent.category.LAUNCHER"
+
+Key Set Manager:
+  [com.catalia.factorymode]
+      Signing KeySets: 8
+
+Packages:
+  Package [com.catalia.factorymode] (b075a78):
+    userId=10056
+    pkg=Package{824551 com.catalia.factorymode}
+    codePath=/data/app/com.catalia.factorymode-YDvBArWZwjppaHN2413JIg==
+    resourcePath=/data/app/com.catalia.factorymode-YDvBArWZwjppaHN2413JIg==
+    legacyNativeLibraryDir=/data/app/com.catalia.factorymode-YDvBArWZwjppaHN2413JIg==/lib
+    primaryCpuAbi=armeabi-v7a
+    secondaryCpuAbi=null
+    versionCode=158 minSdk=23 targetSdk=27
+    versionName=158 d2f1b081bb6867454ff396d6fab724aeb1340378
+    splits=[base]
+    apkSigningVersion=2
+    applicationInfo=ApplicationInfo{63c61b6 com.catalia.factorymode}
+    flags=[ DEBUGGABLE HAS_CODE ALLOW_CLEAR_USER_DATA ]
+    privateFlags=[ PRIVATE_FLAG_ACTIVITIES_RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION ]
+    dataDir=/data/user/0/com.catalia.factorymode
+    supportsScreens=[small, medium, large, xlarge, resizeable, anyDensity]
+    timeStamp=2022-12-04 19:28:55
+    firstInstallTime=2022-12-04 19:28:57
+    lastUpdateTime=2022-12-04 19:28:57
+    installerPackageName=io.shoonya.shoonyadpc
+    signatures=PackageSignatures{63f3eb7 [711f621b]}
+    installPermissionsFixed=true installStatus=1
+    pkgFlags=[ DEBUGGABLE HAS_CODE ALLOW_CLEAR_USER_DATA ]
+    requested permissions:
+      android.permission.CAMERA
+      android.permission.RECEIVE_BOOT_COMPLETED
+      android.permission.WAKE_LOCK
+      android.permission.WRITE_EXTERNAL_STORAGE
+      android.permission.RECORD_AUDIO
+      android.permission.MODIFY_AUDIO_SETTINGS
+      android.permission.READ_PHONE_STATE
+      android.permission.READ_EXTERNAL_STORAGE
+    install permissions:
+      android.permission.MODIFY_AUDIO_SETTINGS: granted=true
+      android.permission.RECEIVE_BOOT_COMPLETED: granted=true
+      android.permission.WAKE_LOCK: granted=true
+    User 0: ceDataInode=-4294964850 installed=true hidden=false suspended=false stopped=false notLaunched=false enabled=0 instant=false virtual=false
+    overlay paths:
+      /vendor/overlay/framework-res__auto_generated_rro.apk
+      runtime permissions:
+        android.permission.READ_EXTERNAL_STORAGE: granted=true, flags=[ POLICY_FIXED ]
+        android.permission.READ_PHONE_STATE: granted=true, flags=[ POLICY_FIXED ]
+        android.permission.CAMERA: granted=true, flags=[ POLICY_FIXED ]
+        android.permission.WRITE_EXTERNAL_STORAGE: granted=true, flags=[ POLICY_FIXED ]
+        android.permission.RECORD_AUDIO: granted=true, flags=[ POLICY_FIXED ]
+
+Package Changes:
+  Sequence number=0
+
+
+Dexopt state:
+  [com.catalia.factorymode]
+    path: /data/app/com.catalia.factorymode-YDvBArWZwjppaHN2413JIg==/base.apk
+      arm: /data/app/com.catalia.factorymode-YDvBArWZwjppaHN2413JIg==/oat/arm/base.odex[status=kOatUpToDate, compilation
+      _filter=quicken]
+
+
+Compiler stats:
+  [com.catalia.factorymode]
+    (No recorded stats)

@@ -7,7 +7,5 @@ Thumbs.db
 desktop.ini
 .DS_Store
 
-# Local firmware / dumps must never be committed here
-*.img
-*.bin
-sepolicy*
+# Scratch / working dumps -- never commit these
+firmware/scratch/

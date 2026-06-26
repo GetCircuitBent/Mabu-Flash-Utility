@@ -1,0 +1,464 @@
+Activity Resolver Table:
+  Non-Data Actions:
+      android.intent.action.MAIN:
+        f91aaf9 io.shoonya.shoonyadpc/com.shoonyaos.shoonyadpc.activities.Dashboard filter ba2671c
+          Action: "android.intent.action.MAIN"
+          Action: "android.app.action.PROVISIONING_SUCCESSFUL"
+          Category: "android.intent.category.HOME"
+          Category: "android.intent.category.LAUNCHER"
+          Category: "android.intent.category.DEFAULT"
+        8b3da3e io.shoonya.shoonyadpc/com.shoonyaos.shoonyadpc.activities.InvisibleActivityForResult filter b389f25
+          Action: "android.intent.action.MAIN"
+      android.app.action.PROVISIONING_SUCCESSFUL:
+        f91aaf9 io.shoonya.shoonyadpc/com.shoonyaos.shoonyadpc.activities.Dashboard filter ba2671c
+          Action: "android.intent.action.MAIN"
+          Action: "android.app.action.PROVISIONING_SUCCESSFUL"
+          Category: "android.intent.category.HOME"
+          Category: "android.intent.category.LAUNCHER"
+          Category: "android.intent.category.DEFAULT"
+
+Receiver Resolver Table:
+  Schemes:
+      package:
+        b07009f io.shoonya.shoonyadpc/com.google.android.apps.work.dpcsupport.AccountManagementWhitelistEnforcer$ContinuousEnforcer filter 6432b84
+          Action: "android.intent.action.PACKAGE_ADDED"
+          Action: "android.intent.action.PACKAGE_CHANGED"
+          Scheme: "package"
+
+  Non-Data Actions:
+      android.hardware.usb.action.USB_DEVICE_ATTACHED:
+        e25e5ec io.shoonya.shoonyadpc/com.shoonyaos.shoonya_monitoring.receivers.USBDeviceReceiver filter 6219eb5
+          Action: "android.hardware.usb.action.USB_DEVICE_ATTACHED"
+      android.intent.action.BATTERY_OKAY:
+        2b8fdb5 io.shoonya.shoonyadpc/androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryNotLowProxy filter 7eadc33
+          Action: "android.intent.action.BATTERY_OKAY"
+          Action: "android.intent.action.BATTERY_LOW"
+      android.app.action.PROFILE_PROVISIONING_COMPLETE:
+        50f5c4a io.shoonya.shoonyadpc/com.shoonyaos.shoonyadpc.receivers.AdminReceiver filter cf973e
+          Action: "android.app.action.DEVICE_ADMIN_ENABLED"
+          Action: "android.app.action.PROFILE_PROVISIONING_COMPLETE"
+      android.intent.action.ACTION_POWER_DISCONNECTED:
+        e507bb io.shoonya.shoonyadpc/androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryChargingProxy filter f1e57a2
+          Action: "android.intent.action.ACTION_POWER_CONNECTED"
+          Action: "android.intent.action.ACTION_POWER_DISCONNECTED"
+      android.intent.action.PHONE_STATE:
+        f8174d8 io.shoonya.shoonyadpc/com.shoonyaos.shoonyadpc.receivers.CallInterceptor filter a9a7131
+          Action: "android.intent.action.PHONE_STATE"
+          Action: "android.intent.action.NEW_OUTGOING_CALL"
+          mPriority=999, mHasPartialTypes=false
+      android.intent.action.DEVICE_STORAGE_LOW:
+        2c8c031 io.shoonya.shoonyadpc/androidx.work.impl.background.systemalarm.ConstraintProxy$StorageNotLowProxy filter 897bf0
+          Action: "android.intent.action.DEVICE_STORAGE_LOW"
+          Action: "android.intent.action.DEVICE_STORAGE_OK"
+      android.net.conn.CONNECTIVITY_CHANGE:
+        eef316 io.shoonya.shoonyadpc/androidx.work.impl.background.systemalarm.ConstraintProxy$NetworkStateProxy filter 9ed1569
+          Action: "android.net.conn.CONNECTIVITY_CHANGE"
+      android.intent.action.DEVICE_STORAGE_OK:
+        2c8c031 io.shoonya.shoonyadpc/androidx.work.impl.background.systemalarm.ConstraintProxy$StorageNotLowProxy filter 897bf0
+          Action: "android.intent.action.DEVICE_STORAGE_LOW"
+          Action: "android.intent.action.DEVICE_STORAGE_OK"
+      com.samsung.android.knox.intent.action.KNOX_LICENSE_STATUS:
+        cd26497 io.shoonya.shoonyadpc/com.shoonyadpc.knox.KnoxLicenseStatusReceiver filter 9a910bb
+          Action: "com.samsung.android.knox.intent.action.KNOX_LICENSE_STATUS"
+      android.app.action.DEVICE_ADMIN_ENABLED:
+        50f5c4a io.shoonya.shoonyadpc/com.shoonyaos.shoonyadpc.receivers.AdminReceiver filter cf973e
+          Action: "android.app.action.DEVICE_ADMIN_ENABLED"
+          Action: "android.app.action.PROFILE_PROVISIONING_COMPLETE"
+      lenovo.csdk.intent.action.LICENSE_STATUS:
+        4050684 io.shoonya.shoonyadpc/com.shoonyaos.shoonyadpc.receivers.CSDKLicenseReceiver filter bb749d8
+          Action: "lenovo.csdk.intent.action.LICENSE_STATUS"
+      SHOONYA_ALARM_ACTION_REPORT:
+        c382e6d io.shoonya.shoonyadpc/com.shoonyaos.shoonya_monitoring.receivers.ScheduledReportReceiver filter fa9e94a
+          Action: "SHOONYA_ALARM_ACTION_REPORT"
+          Action: "SHOONYA_ALARM_ACTION_INSTANT"
+          Action: "SHOONYA_ALARM_SECURITY"
+      com.google.android.c2dm.intent.RECEIVE:
+        75f2aa2 io.shoonya.shoonyadpc/com.google.firebase.iid.FirebaseInstanceIdReceiver filter df3ef6d
+          Action: "com.google.android.c2dm.intent.RECEIVE"
+      android.intent.action.QUICKBOOT_POWEROFF:
+        dceb333 io.shoonya.shoonyadpc/com.shoonyaos.shoonyadpc.receivers.ShutdownTracker filter f255016
+          Action: "android.intent.action.ACTION_SHUTDOWN"
+          Action: "android.intent.action.QUICKBOOT_POWEROFF"
+      android.intent.action.BATTERY_LOW:
+        2b8fdb5 io.shoonya.shoonyadpc/androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryNotLowProxy filter 7eadc33
+          Action: "android.intent.action.BATTERY_OKAY"
+          Action: "android.intent.action.BATTERY_LOW"
+      android.intent.action.TIMEZONE_CHANGED:
+        80e06f0 io.shoonya.shoonyadpc/androidx.work.impl.background.systemalarm.RescheduleReceiver filter eae4bee
+          Action: "android.intent.action.BOOT_COMPLETED"
+          Action: "android.intent.action.TIME_SET"
+          Action: "android.intent.action.TIMEZONE_CHANGED"
+      android.intent.action.TIME_SET:
+        80e06f0 io.shoonya.shoonyadpc/androidx.work.impl.background.systemalarm.RescheduleReceiver filter eae4bee
+          Action: "android.intent.action.BOOT_COMPLETED"
+          Action: "android.intent.action.TIME_SET"
+          Action: "android.intent.action.TIMEZONE_CHANGED"
+      android.intent.action.BOOT_COMPLETED:
+        1b64469 io.shoonya.shoonyadpc/com.shoonyaos.shoonyadpc.receivers.BootReceiver filter 6c799f
+          Action: "android.intent.action.BOOT_COMPLETED"
+        5a94eee io.shoonya.shoonyadpc/com.shoonyaos.shoonya_monitoring.receivers.BootReceiver filter b386aec
+          Action: "android.intent.action.BOOT_COMPLETED"
+        80e06f0 io.shoonya.shoonyadpc/androidx.work.impl.background.systemalarm.RescheduleReceiver filter eae4bee
+          Action: "android.intent.action.BOOT_COMPLETED"
+          Action: "android.intent.action.TIME_SET"
+          Action: "android.intent.action.TIMEZONE_CHANGED"
+      android.intent.action.ACTION_POWER_CONNECTED:
+        e507bb io.shoonya.shoonyadpc/androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryChargingProxy filter f1e57a2
+          Action: "android.intent.action.ACTION_POWER_CONNECTED"
+          Action: "android.intent.action.ACTION_POWER_DISCONNECTED"
+      SHOONYA_ALARM_ACTION_INSTANT:
+        c382e6d io.shoonya.shoonyadpc/com.shoonyaos.shoonya_monitoring.receivers.ScheduledReportReceiver filter fa9e94a
+          Action: "SHOONYA_ALARM_ACTION_REPORT"
+          Action: "SHOONYA_ALARM_ACTION_INSTANT"
+          Action: "SHOONYA_ALARM_SECURITY"
+      SHOONYA_ALARM_SECURITY:
+        c382e6d io.shoonya.shoonyadpc/com.shoonyaos.shoonya_monitoring.receivers.ScheduledReportReceiver filter fa9e94a
+          Action: "SHOONYA_ALARM_ACTION_REPORT"
+          Action: "SHOONYA_ALARM_ACTION_INSTANT"
+          Action: "SHOONYA_ALARM_SECURITY"
+      androidx.work.impl.background.systemalarm.UpdateProxies:
+        9374f8f io.shoonya.shoonyadpc/androidx.work.impl.background.systemalarm.ConstraintProxyUpdateReceiver filter 36d088f
+          Action: "androidx.work.impl.background.systemalarm.UpdateProxies"
+      android.intent.action.NEW_OUTGOING_CALL:
+        f8174d8 io.shoonya.shoonyadpc/com.shoonyaos.shoonyadpc.receivers.CallInterceptor filter a9a7131
+          Action: "android.intent.action.PHONE_STATE"
+          Action: "android.intent.action.NEW_OUTGOING_CALL"
+          mPriority=999, mHasPartialTypes=false
+      android.intent.action.ACTION_SHUTDOWN:
+        dceb333 io.shoonya.shoonyadpc/com.shoonyaos.shoonyadpc.receivers.ShutdownTracker filter f255016
+          Action: "android.intent.action.ACTION_SHUTDOWN"
+          Action: "android.intent.action.QUICKBOOT_POWEROFF"
+      SHOONYA_RESTART_DPC:
+        e64a21c io.shoonya.shoonyadpc/com.shoonyaos.shoonyadpc.utils.ShoonyaHelperBridge filter 84dfd97
+          Action: "SHOONYA_RESTART_DPC"
+
+Service Resolver Table:
+  Non-Data Actions:
+      com.android.vending.dpc.APPLICATION_RESTRICTIONS_PROXY:
+        7e5be25 io.shoonya.shoonyadpc/com.google.android.apps.work.dpcsupport.ManagedConfigurationsProxy filter 20a5c43
+          Action: "com.android.vending.dpc.APPLICATION_RESTRICTIONS_PROXY"
+      android.app.action.DEVICE_ADMIN_SERVICE:
+        25f6bfa io.shoonya.shoonyadpc/com.shoonyaos.shoonyadpc.services.EsperDeviceAdminService filter 3aa8df2
+          Action: "android.app.action.DEVICE_ADMIN_SERVICE"
+      com.google.firebase.INSTANCE_ID_EVENT:
+        2e355ab io.shoonya.shoonyadpc/com.shoonyaos.shoonyadpc.services.EsperFcmIdService filter 45a9ca7
+          Action: "com.google.firebase.INSTANCE_ID_EVENT"
+      com.google.android.gms.gcm.ACTION_TASK_READY:
+        c27c408 io.shoonya.shoonyadpc/com.firebase.jobdispatcher.GooglePlayReceiver filter e023bf9
+          Action: "com.google.android.gms.gcm.ACTION_TASK_READY"
+      com.google.firebase.MESSAGING_EVENT:
+        d917a1 io.shoonya.shoonyadpc/com.shoonyaos.shoonyadpc.services.ShoonyaCloudMessagingService filter 8b3c166
+          Action: "com.google.firebase.MESSAGING_EVENT"
+        9284dc6 io.shoonya.shoonyadpc/com.google.firebase.messaging.FirebaseMessagingService filter 557e2c0
+          Action: "com.google.firebase.MESSAGING_EVENT"
+          mPriority=-500, mHasPartialTypes=false
+      com.firebase.jobdispatcher.ACTION_EXECUTE:
+        affa187 io.shoonya.shoonyadpc/com.shoonyaos.shoonya_monitoring.services.DevicePropertiesService filter 679c554
+          Action: "com.firebase.jobdispatcher.ACTION_EXECUTE"
+      android.accessibilityservice.AccessibilityService:
+        77918b4 io.shoonya.shoonyadpc/com.shoonyaos.shoonyadpc.services.ShoonyaActivityDetectionService filter ef0ccfd
+          Action: "android.accessibilityservice.AccessibilityService"
+
+Permissions:
+  Permission [io.esper.commons.datacache.READ_WRITE] (34e8cdd):
+    sourcePackage=io.shoonya.shoonyadpc
+    uid=10030 gids=null type=0 prot=normal
+    perm=Permission{74b8052 io.esper.commons.datacache.READ_WRITE}
+    packageSetting=PackageSetting{daacf23 io.shoonya.shoonyadpc/10030}
+  Permission [io.esper.remoteconfig.READ] (4e90c20):
+    sourcePackage=io.shoonya.shoonyadpc
+    uid=10030 gids=null type=0 prot=normal
+    perm=Permission{9ac19d9 io.esper.remoteconfig.READ}
+    packageSetting=PackageSetting{daacf23 io.shoonya.shoonyadpc/10030}
+
+Registered ContentProviders:
+  io.shoonya.shoonyadpc/androidx.work.impl.WorkManagerInitializer:
+    Provider{4fd4f9e io.shoonya.shoonyadpc/androidx.work.impl.WorkManagerInitializer}
+  io.shoonya.shoonyadpc/com.google.firebase.perf.provider.FirebasePerfProvider:
+    Provider{513a7f io.shoonya.shoonyadpc/com.google.firebase.perf.provider.FirebasePerfProvider}
+  io.shoonya.shoonyadpc/com.google.firebase.provider.FirebaseInitProvider:
+    Provider{fa2ca4c io.shoonya.shoonyadpc/com.google.firebase.provider.FirebaseInitProvider}
+  io.shoonya.shoonyadpc/io.esper.remoteconfig.database.RemoteConfigProvider:
+    Provider{4bb7a95 io.shoonya.shoonyadpc/io.esper.remoteconfig.database.RemoteConfigProvider}
+  io.shoonya.shoonyadpc/com.shoonyaos.shoonyadpc.database.providers.EsperSharedDataContentProvider:
+    Provider{76ac7aa io.shoonya.shoonyadpc/com.shoonyaos.shoonyadpc.database.providers.EsperSharedDataContentProvider}
+
+ContentProvider Authorities:
+  [io.shoonya.shoonyadpc.firebaseinitprovider]:
+    Provider{fa2ca4c io.shoonya.shoonyadpc/com.google.firebase.provider.FirebaseInitProvider}
+      applicationInfo=ApplicationInfo{8c8ff9b io.shoonya.shoonyadpc}
+  [io.esper.commons.datacache.provider]:
+    Provider{76ac7aa io.shoonya.shoonyadpc/com.shoonyaos.shoonyadpc.database.providers.EsperSharedDataContentProvider}
+      applicationInfo=ApplicationInfo{8c8ff9b io.shoonya.shoonyadpc}
+  [io.shoonya.shoonyadpc.workmanager-init]:
+    Provider{4fd4f9e io.shoonya.shoonyadpc/androidx.work.impl.WorkManagerInitializer}
+      applicationInfo=ApplicationInfo{8c8ff9b io.shoonya.shoonyadpc}
+  [io.esper.remoteconfig.RemoteConfigProvider]:
+    Provider{4bb7a95 io.shoonya.shoonyadpc/io.esper.remoteconfig.database.RemoteConfigProvider}
+      applicationInfo=ApplicationInfo{8c8ff9b io.shoonya.shoonyadpc}
+  [io.shoonya.shoonyadpc.firebaseperfprovider]:
+    Provider{513a7f io.shoonya.shoonyadpc/com.google.firebase.perf.provider.FirebasePerfProvider}
+      applicationInfo=ApplicationInfo{8c8ff9b io.shoonya.shoonyadpc}
+
+Key Set Manager:
+  [io.shoonya.shoonyadpc]
+      Signing KeySets: 6
+
+Packages:
+  Package [io.shoonya.shoonyadpc] (daacf23):
+    userId=10030
+    pkg=Package{8583f38 io.shoonya.shoonyadpc}
+    codePath=/data/app/io.shoonya.shoonyadpc-M__7C78hicSdrLPt9-wbDw==
+    resourcePath=/data/app/io.shoonya.shoonyadpc-M__7C78hicSdrLPt9-wbDw==
+    legacyNativeLibraryDir=/data/app/io.shoonya.shoonyadpc-M__7C78hicSdrLPt9-wbDw==/lib
+    primaryCpuAbi=armeabi-v7a
+    secondaryCpuAbi=null
+    versionCode=70084021 minSdk=19 targetSdk=30
+    versionName=v7.8.4021
+    splits=[base]
+    apkSigningVersion=2
+    applicationInfo=ApplicationInfo{8c8ff9b io.shoonya.shoonyadpc}
+    flags=[ SYSTEM HAS_CODE ALLOW_CLEAR_USER_DATA UPDATED_SYSTEM_APP LARGE_HEAP ]
+    privateFlags=[ PARTIALLY_DIRECT_BOOT_AWARE PRIVATE_FLAG_ACTIVITIES_RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION ]
+    dataDir=/data/user/0/io.shoonya.shoonyadpc
+    supportsScreens=[small, medium, large, xlarge, resizeable, anyDensity]
+    timeStamp=2022-12-04 19:28:21
+    firstInstallTime=2008-12-31 19:00:00
+    lastUpdateTime=2022-12-04 19:28:26
+    installerPackageName=io.shoonya.shoonyadpc
+    signatures=PackageSignatures{e262b11 [64a6243c]}
+    installPermissionsFixed=true installStatus=1
+    pkgFlags=[ SYSTEM HAS_CODE ALLOW_CLEAR_USER_DATA UPDATED_SYSTEM_APP LARGE_HEAP ]
+    declared permissions:
+      io.esper.remoteconfig.READ: prot=normal, INSTALLED
+      io.esper.commons.datacache.READ_WRITE: prot=normal, INSTALLED
+    requested permissions:
+      android.permission.CHANGE_WIFI_STATE
+      android.permission.ACCESS_WIFI_STATE
+      android.permission.CHANGE_NETWORK_STATE
+      android.permission.INTERNET
+      android.permission.CAMERA
+      android.permission.READ_EXTERNAL_STORAGE
+      android.permission.SET_WALLPAPER
+      android.permission.WRITE_EXTERNAL_STORAGE
+      android.permission.MANAGE_EXTERNAL_STORAGE
+      android.permission.ACCESS_NETWORK_STATE
+      android.permission.READ_PHONE_STATE
+      android.permission.ACCESS_FINE_LOCATION
+      android.permission.ACCESS_BACKGROUND_LOCATION
+      android.permission.RECEIVE_BOOT_COMPLETED
+      android.permission.SYSTEM_ALERT_WINDOW
+      android.permission.KILL_BACKGROUND_PROCESSES
+      android.permission.LOCAL_MAC_ADDRESS
+      android.permission.DOWNLOAD_WITHOUT_NOTIFICATION
+      android.permission.GET_ACCOUNTS
+      android.permission.MANAGE_ACCOUNTS
+      android.permission.WRITE_SYNC_SETTINGS
+      com.google.android.providers.gsf.permission.READ_GSERVICES
+      android.permission.READ_PROFILE
+      android.permission.READ_CONTACTS
+      android.permission.BLUETOOTH
+      android.permission.BLUETOOTH_ADMIN
+      android.permission.MODIFY_AUDIO_SETTINGS
+      android.permission.READ_CALL_LOG
+      android.permission.ANSWER_PHONE_CALLS
+      android.permission.CALL_PHONE
+      android.permission.PROCESS_OUTGOING_CALLS
+      android.permission.FLASHLIGHT
+      android.permission.FOREGROUND_SERVICE
+      android.permission.SET_TIME
+      android.permission.SET_TIME_ZONE
+      android.permission.WRITE_SETTINGS
+      android.permission.DISABLE_KEYGUARD
+      android.permission.SET_WALLPAPER_HINTS
+      android.permission.QUERY_ALL_PACKAGES
+      com.samsung.android.knox.permission.KNOX_REMOTE_CONTROL
+      com.samsung.android.knox.permission.KNOX_APN
+      com.samsung.android.knox.permission.KNOX_RESTRICTION_MGMT
+      com.samsung.android.knox.permission.KNOX_CUSTOM_SYSTEM
+      com.samsung.android.knox.permission.KNOX_CUSTOM_SETTING
+      com.samsung.android.knox.permission.KNOX_APP_MGMT
+      com.samsung.android.knox.permission.KNOX_DATE_TIME
+      io.esper.otamanager.MANAGE_OTA
+      android.permission.READ_PRIVILEGED_PHONE_STATE
+      com.google.android.gms.permission.ACTIVITY_RECOGNITION
+      android.permission.ACTIVITY_RECOGNITION
+      android.permission.PACKAGE_USAGE_STATS
+      android.permission.ACCESS_COARSE_LOCATION
+      android.permission.USE_BIOMETRIC
+      android.permission.USE_FINGERPRINT
+      android.permission.WAKE_LOCK
+      com.google.android.c2dm.permission.RECEIVE
+      com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE
+    install permissions:
+      android.permission.DOWNLOAD_WITHOUT_NOTIFICATION: granted=true
+      android.permission.WRITE_SETTINGS: granted=true
+      android.permission.MODIFY_AUDIO_SETTINGS: granted=true
+      android.permission.MANAGE_ACCOUNTS: granted=true
+      android.permission.SYSTEM_ALERT_WINDOW: granted=true
+      android.permission.CHANGE_NETWORK_STATE: granted=true
+      android.permission.WRITE_SYNC_SETTINGS: granted=true
+      android.permission.RECEIVE_BOOT_COMPLETED: granted=true
+      io.esper.otamanager.MANAGE_OTA: granted=true
+      android.permission.READ_PROFILE: granted=true
+      android.permission.BLUETOOTH: granted=true
+      android.permission.INTERNET: granted=true
+      android.permission.BLUETOOTH_ADMIN: granted=true
+      android.permission.CHANGE_WIFI_STATE: granted=true
+      android.permission.FLASHLIGHT: granted=true
+      android.permission.ACCESS_NETWORK_STATE: granted=true
+      android.permission.DISABLE_KEYGUARD: granted=true
+      android.permission.SET_WALLPAPER: granted=true
+      android.permission.KILL_BACKGROUND_PROCESSES: granted=true
+      android.permission.USE_FINGERPRINT: granted=true
+      android.permission.SET_WALLPAPER_HINTS: granted=true
+      android.permission.ACCESS_WIFI_STATE: granted=true
+      android.permission.WAKE_LOCK: granted=true
+    User 0: ceDataInode=-4294966792 installed=true hidden=false suspended=false stopped=false notLaunched=false enabled=0 instant=false virtual=false
+    overlay paths:
+      /vendor/overlay/framework-res__auto_generated_rro.apk
+      gids=[3002, 3003, 3001]
+      runtime permissions:
+        android.permission.READ_CALL_LOG: granted=true, flags=[ POLICY_FIXED ]
+        android.permission.ACCESS_FINE_LOCATION: granted=true, flags=[ POLICY_FIXED ]
+        android.permission.ANSWER_PHONE_CALLS: granted=true, flags=[ POLICY_FIXED ]
+        android.permission.READ_EXTERNAL_STORAGE: granted=true, flags=[ POLICY_FIXED ]
+        android.permission.ACCESS_COARSE_LOCATION: granted=true, flags=[ POLICY_FIXED ]
+        android.permission.READ_PHONE_STATE: granted=true, flags=[ POLICY_FIXED ]
+        android.permission.CALL_PHONE: granted=true, flags=[ POLICY_FIXED ]
+        android.permission.CAMERA: granted=true, flags=[ POLICY_FIXED ]
+        android.permission.PROCESS_OUTGOING_CALLS: granted=true, flags=[ POLICY_FIXED ]
+        android.permission.GET_ACCOUNTS: granted=true, flags=[ POLICY_FIXED ]
+        android.permission.WRITE_EXTERNAL_STORAGE: granted=true, flags=[ POLICY_FIXED ]
+        android.permission.READ_CONTACTS: granted=true, flags=[ POLICY_FIXED ]
+      enabledComponents:
+        com.shoonyaos.shoonyadpc.services.EsperDeviceAdminService
+        androidx.work.impl.background.systemjob.SystemJobService
+
+Hidden system packages:
+  Package [io.shoonya.shoonyadpc] (785b476):
+    userId=10030
+    pkg=Package{a2dfa77 io.shoonya.shoonyadpc}
+    codePath=/system/app/esperdpc
+    resourcePath=/system/app/esperdpc
+    legacyNativeLibraryDir=/system/app/esperdpc/lib
+    primaryCpuAbi=armeabi-v7a
+    secondaryCpuAbi=null
+    versionCode=70063452 minSdk=19 targetSdk=30
+    versionName=v7.6.3452
+    splits=[base]
+    apkSigningVersion=1
+    applicationInfo=ApplicationInfo{6ee16e4 io.shoonya.shoonyadpc}
+    flags=[ HAS_CODE ALLOW_CLEAR_USER_DATA LARGE_HEAP ]
+    privateFlags=[ PARTIALLY_DIRECT_BOOT_AWARE PRIVATE_FLAG_ACTIVITIES_RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION ]
+    dataDir=null
+    supportsScreens=[small, medium, large, xlarge, resizeable, anyDensity]
+    timeStamp=2008-12-31 19:00:00
+    firstInstallTime=2008-12-31 19:00:00
+    lastUpdateTime=2008-12-31 19:00:00
+    signatures=PackageSignatures{6b1674d []}
+    installPermissionsFixed=false installStatus=1
+    pkgFlags=[ SYSTEM ]
+    declared permissions:
+      io.esper.remoteconfig.READ: prot=normal
+      io.esper.commons.datacache.READ_WRITE: prot=normal
+    requested permissions:
+      android.permission.CHANGE_WIFI_STATE
+      android.permission.ACCESS_WIFI_STATE
+      android.permission.CHANGE_NETWORK_STATE
+      android.permission.INTERNET
+      android.permission.CAMERA
+      android.permission.READ_EXTERNAL_STORAGE
+      android.permission.SET_WALLPAPER
+      android.permission.WRITE_EXTERNAL_STORAGE
+      android.permission.MANAGE_EXTERNAL_STORAGE
+      android.permission.ACCESS_NETWORK_STATE
+      android.permission.READ_PHONE_STATE
+      android.permission.ACCESS_FINE_LOCATION
+      android.permission.ACCESS_BACKGROUND_LOCATION
+      android.permission.RECEIVE_BOOT_COMPLETED
+      android.permission.SYSTEM_ALERT_WINDOW
+      android.permission.KILL_BACKGROUND_PROCESSES
+      android.permission.LOCAL_MAC_ADDRESS
+      android.permission.DOWNLOAD_WITHOUT_NOTIFICATION
+      android.permission.GET_ACCOUNTS
+      android.permission.MANAGE_ACCOUNTS
+      android.permission.WRITE_SYNC_SETTINGS
+      com.google.android.providers.gsf.permission.READ_GSERVICES
+      android.permission.READ_PROFILE
+      android.permission.READ_CONTACTS
+      android.permission.BLUETOOTH
+      android.permission.BLUETOOTH_ADMIN
+      android.permission.MODIFY_AUDIO_SETTINGS
+      android.permission.READ_CALL_LOG
+      android.permission.ANSWER_PHONE_CALLS
+      android.permission.CALL_PHONE
+      android.permission.PROCESS_OUTGOING_CALLS
+      android.permission.FLASHLIGHT
+      android.permission.FOREGROUND_SERVICE
+      android.permission.SET_TIME
+      android.permission.SET_TIME_ZONE
+      android.permission.WRITE_SETTINGS
+      android.permission.DISABLE_KEYGUARD
+      android.permission.SET_WALLPAPER_HINTS
+      android.permission.QUERY_ALL_PACKAGES
+      com.samsung.android.knox.permission.KNOX_REMOTE_CONTROL
+      com.samsung.android.knox.permission.KNOX_APN
+      com.samsung.android.knox.permission.KNOX_RESTRICTION_MGMT
+      com.samsung.android.knox.permission.KNOX_CUSTOM_SYSTEM
+      com.samsung.android.knox.permission.KNOX_CUSTOM_SETTING
+      com.samsung.android.knox.permission.KNOX_APP_MGMT
+      com.samsung.android.knox.permission.KNOX_DATE_TIME
+      io.esper.otamanager.MANAGE_OTA
+      android.permission.READ_PRIVILEGED_PHONE_STATE
+      com.google.android.gms.permission.ACTIVITY_RECOGNITION
+      android.permission.ACTIVITY_RECOGNITION
+      android.permission.PACKAGE_USAGE_STATS
+      android.permission.ACCESS_COARSE_LOCATION
+      android.permission.USE_BIOMETRIC
+      android.permission.USE_FINGERPRINT
+      android.permission.WAKE_LOCK
+      com.google.android.c2dm.permission.RECEIVE
+      com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE
+    install permissions:
+      android.permission.DOWNLOAD_WITHOUT_NOTIFICATION: granted=true
+      android.permission.WRITE_SETTINGS: granted=true
+      android.permission.MODIFY_AUDIO_SETTINGS: granted=true
+      android.permission.MANAGE_ACCOUNTS: granted=true
+      android.permission.SYSTEM_ALERT_WINDOW: granted=true
+      android.permission.CHANGE_NETWORK_STATE: granted=true
+      android.permission.WRITE_SYNC_SETTINGS: granted=true
+      android.permission.RECEIVE_BOOT_COMPLETED: granted=true
+      io.esper.otamanager.MANAGE_OTA: granted=true
+      android.permission.READ_PROFILE: granted=true
+      android.permission.BLUETOOTH: granted=true
+      android.permission.INTERNET: granted=true
+      android.permission.BLUETOOTH_ADMIN: granted=true
+      android.permission.CHANGE_WIFI_STATE: granted=true
+      android.permission.FLASHLIGHT: granted=true
+      android.permission.ACCESS_NETWORK_STATE: granted=true
+      android.permission.DISABLE_KEYGUARD: granted=true
+      android.permission.SET_WALLPAPER: granted=true
+      android.permission.KILL_BACKGROUND_PROCESSES: granted=true
+      android.permission.USE_FINGERPRINT: granted=true
+      android.permission.SET_WALLPAPER_HINTS: granted=true
+      android.permission.ACCESS_WIFI_STATE: granted=true
+      android.permission.WAKE_LOCK: granted=true
+    User 0: ceDataInode=0 installed=true hidden=false suspended=false stopped=false notLaunched=false enabled=0 instant=false virtual=false
+      gids=[3002, 3003, 3001]
+      runtime permissions:
+
+Package Changes:
+  Sequence number=0
+
+
+Dexopt state:
+  [io.shoonya.shoonyadpc]
+    path: /data/app/io.shoonya.shoonyadpc-M__7C78hicSdrLPt9-wbDw==/base.apk
+      arm: /data/app/io.shoonya.shoonyadpc-M__7C78hicSdrLPt9-wbDw==/oat/arm/base.odex[status=kOatUpToDate, compilation_f
+      ilter=quicken]
+
+
+Compiler stats:
+  [io.shoonya.shoonyadpc]
+    (No recorded stats)

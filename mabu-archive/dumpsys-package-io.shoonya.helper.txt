@@ -1,0 +1,90 @@
+Receiver Resolver Table:
+  Schemes:
+      package:
+        6935e7c io.shoonya.helper/.EventsReceiver filter 55913b
+          Action: "android.intent.action.PACKAGE_ADDED"
+          Scheme: "package"
+
+  Non-Data Actions:
+      com.android.vending.INSTALL_REFERRER:
+        3713305 io.shoonya.helper/com.google.android.gms.measurement.AppMeasurementInstallReferrerReceiver filter 5510058
+          Action: "com.android.vending.INSTALL_REFERRER"
+      com.google.android.c2dm.intent.RECEIVE:
+        f9c6f5a io.shoonya.helper/com.google.firebase.iid.FirebaseInstanceIdReceiver filter da825b1
+          Action: "com.google.android.c2dm.intent.RECEIVE"
+
+Service Resolver Table:
+  Non-Data Actions:
+      android.accessibilityservice.AccessibilityService:
+        925058b io.shoonya.helper/.services.EsperRemoteAccessibilityService filter 82e1bca
+          Action: "android.accessibilityservice.AccessibilityService"
+
+Registered ContentProviders:
+  io.shoonya.helper/com.google.firebase.provider.FirebaseInitProvider:
+    Provider{f5e668 io.shoonya.helper/com.google.firebase.provider.FirebaseInitProvider}
+
+ContentProvider Authorities:
+  [io.shoonya.helper.firebaseinitprovider]:
+    Provider{f5e668 io.shoonya.helper/com.google.firebase.provider.FirebaseInitProvider}
+      applicationInfo=ApplicationInfo{156fa81 io.shoonya.helper}
+
+Key Set Manager:
+  [io.shoonya.helper]
+      Signing KeySets: 6
+
+Packages:
+  Package [io.shoonya.helper] (3222726):
+    userId=10046
+    pkg=Package{adc6f67 io.shoonya.helper}
+    codePath=/system/app/esperhelper
+    resourcePath=/system/app/esperhelper
+    legacyNativeLibraryDir=/system/app/esperhelper/lib
+    primaryCpuAbi=armeabi-v7a
+    secondaryCpuAbi=null
+    versionCode=70050002 minSdk=19 targetSdk=29
+    versionName=v7.5.0002
+    splits=[base]
+    apkSigningVersion=1
+    applicationInfo=ApplicationInfo{156fa81 io.shoonya.helper}
+    flags=[ SYSTEM HAS_CODE ALLOW_CLEAR_USER_DATA ]
+    privateFlags=[ PARTIALLY_DIRECT_BOOT_AWARE PRIVATE_FLAG_ACTIVITIES_RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION ]
+    dataDir=/data/user/0/io.shoonya.helper
+    supportsScreens=[small, medium, large, xlarge, resizeable, anyDensity]
+    timeStamp=2008-12-31 19:00:00
+    firstInstallTime=2008-12-31 19:00:00
+    lastUpdateTime=2008-12-31 19:00:00
+    signatures=PackageSignatures{a770114 [64a6243c]}
+    installPermissionsFixed=true installStatus=1
+    pkgFlags=[ SYSTEM HAS_CODE ALLOW_CLEAR_USER_DATA ]
+    requested permissions:
+      android.permission.FOREGROUND_SERVICE
+      android.permission.INTERNET
+      android.permission.DISABLE_KEYGUARD
+      android.permission.ACCESS_NETWORK_STATE
+      android.permission.WAKE_LOCK
+      com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE
+      com.google.android.c2dm.permission.RECEIVE
+    install permissions:
+      android.permission.INTERNET: granted=true
+      android.permission.ACCESS_NETWORK_STATE: granted=true
+      android.permission.DISABLE_KEYGUARD: granted=true
+      android.permission.WAKE_LOCK: granted=true
+    User 0: ceDataInode=-4294966567 installed=true hidden=false suspended=false stopped=false notLaunched=false enabled=0 instant=false virtual=false
+    overlay paths:
+      /vendor/overlay/framework-res__auto_generated_rro.apk
+      gids=[3003]
+      runtime permissions:
+
+Package Changes:
+  Sequence number=0
+
+
+Dexopt state:
+  [io.shoonya.helper]
+    path: /system/app/esperhelper/esperhelper.apk
+      arm: /system/app/esperhelper/oat/arm/esperhelper.odex[status=kOatUpToDate, compilation_filter=quicken]
+
+
+Compiler stats:
+  [io.shoonya.helper]
+    (No recorded stats)

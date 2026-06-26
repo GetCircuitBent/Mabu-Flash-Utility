@@ -1,0 +1,102 @@
+Service Resolver Table:
+  Non-Data Actions:
+      com.shoonyaos.oculus.plugin.supervisor.priviledged:
+        77bdbd com.shoonyaos.oculus.plugin.supervisor.h7r/com.shoonyaos.oculus.plugin.supervisor.services.EventInjectionService filter c3252f2
+          Action: "com.shoonyaos.oculus.plugin.supervisor.priviledged"
+
+Key Set Manager:
+  [com.shoonyaos.oculus.plugin.supervisor.h7r]
+      Signing KeySets: 1
+
+Packages:
+  Package [com.shoonyaos.oculus.plugin.supervisor.h7r] (bf98fb2):
+    userId=10031
+    pkg=Package{8b69b03 com.shoonyaos.oculus.plugin.supervisor.h7r}
+    codePath=/system/app/espersupervisor
+    resourcePath=/system/app/espersupervisor
+    legacyNativeLibraryDir=/system/app/espersupervisor/lib
+    primaryCpuAbi=null
+    secondaryCpuAbi=null
+    versionCode=20040000 minSdk=21 targetSdk=28
+    versionName=v2.4.0
+    splits=[base]
+    apkSigningVersion=2
+    applicationInfo=ApplicationInfo{4d1a80 com.shoonyaos.oculus.plugin.supervisor.h7r}
+    flags=[ SYSTEM HAS_CODE ALLOW_CLEAR_USER_DATA ALLOW_BACKUP ]
+    privateFlags=[ PRIVATE_FLAG_ACTIVITIES_RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION ]
+    dataDir=/data/user/0/com.shoonyaos.oculus.plugin.supervisor.h7r
+    supportsScreens=[small, medium, large, xlarge, resizeable, anyDensity]
+    timeStamp=2008-12-31 19:00:00
+    firstInstallTime=2008-12-31 19:00:00
+    lastUpdateTime=2008-12-31 19:00:00
+    signatures=PackageSignatures{de778b9 [b1a1812f]}
+    installPermissionsFixed=true installStatus=1
+    pkgFlags=[ SYSTEM HAS_CODE ALLOW_CLEAR_USER_DATA ALLOW_BACKUP ]
+    requested permissions:
+      android.permission.ACCESS_SURFACE_FLINGER
+      android.permission.READ_FRAME_BUFFER
+      android.permission.INJECT_EVENTS
+      android.permission.CAPTURE_SECURE_VIDEO_OUTPUT
+      android.permission.CAPTURE_VIDEO_OUTPUT
+      android.permission.WRITE_SETTINGS
+      android.permission.WRITE_SECURE_SETTINGS
+      android.permission.INSTALL_PACKAGES
+      android.permission.DELETE_PACKAGES
+      android.permission.READ_EXTERNAL_STORAGE
+      android.permission.WRITE_EXTERNAL_STORAGE
+      android.permission.SET_TIME_ZONE
+      android.permission.REBOOT
+      android.permission.UPDATE_APP_OPS_STATS
+      android.permission.TETHER_PRIVILEGED
+      android.permission.ACCESS_WIFI_STATE
+      android.permission.CHANGE_WIFI_STATE
+      android.permission.CHANGE_NETWORK_STATE
+      android.permission.OVERRIDE_WIFI_CONFIG
+      android.permission.MODIFY_PHONE_STATE
+      android.permission.WRITE_APN_SETTINGS
+      android.permission.BLUETOOTH_PRIVILEGED
+      android.permission.CHANGE_CONFIGURATION
+      android.permission.SET_TIME
+    install permissions:
+      android.permission.WRITE_SETTINGS: granted=true
+      android.permission.INSTALL_PACKAGES: granted=true
+      android.permission.CHANGE_NETWORK_STATE: granted=true
+      android.permission.SET_TIME_ZONE: granted=true
+      android.permission.ACCESS_SURFACE_FLINGER: granted=true
+      android.permission.TETHER_PRIVILEGED: granted=true
+      android.permission.WRITE_SECURE_SETTINGS: granted=true
+      android.permission.BLUETOOTH_PRIVILEGED: granted=true
+      android.permission.CAPTURE_SECURE_VIDEO_OUTPUT: granted=true
+      android.permission.SET_TIME: granted=true
+      android.permission.WRITE_APN_SETTINGS: granted=true
+      android.permission.CHANGE_WIFI_STATE: granted=true
+      android.permission.CHANGE_CONFIGURATION: granted=true
+      android.permission.REBOOT: granted=true
+      android.permission.OVERRIDE_WIFI_CONFIG: granted=true
+      android.permission.CAPTURE_VIDEO_OUTPUT: granted=true
+      android.permission.ACCESS_WIFI_STATE: granted=true
+      android.permission.MODIFY_PHONE_STATE: granted=true
+      android.permission.READ_FRAME_BUFFER: granted=true
+      android.permission.INJECT_EVENTS: granted=true
+      android.permission.UPDATE_APP_OPS_STATS: granted=true
+      android.permission.DELETE_PACKAGES: granted=true
+    User 0: ceDataInode=-4294966443 installed=true hidden=false suspended=false stopped=false notLaunched=false enabled=0 instant=false virtual=false
+    overlay paths:
+      /vendor/overlay/framework-res__auto_generated_rro.apk
+      runtime permissions:
+        android.permission.READ_EXTERNAL_STORAGE: granted=true, flags=[ POLICY_FIXED ]
+        android.permission.WRITE_EXTERNAL_STORAGE: granted=true, flags=[ POLICY_FIXED ]
+
+Package Changes:
+  Sequence number=0
+
+
+Dexopt state:
+  [com.shoonyaos.oculus.plugin.supervisor.h7r]
+    path: /system/app/espersupervisor/espersupervisor.apk
+      arm: /system/app/espersupervisor/oat/arm/espersupervisor.odex[status=kOatUpToDate, compilation_filter=quicken]
+
+
+Compiler stats:
+  [com.shoonyaos.oculus.plugin.supervisor.h7r]
+    (No recorded stats)
