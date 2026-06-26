@@ -36,9 +36,20 @@ so your app can't drive the motors. Section 6 is the prepared fix for that.
 >   still being finalized — skip it for a plain flash).
 
 ```powershell
-# FLASH (default): from the Mabu repo root, Loader caught on the harness:
-.\scripts\flash-mabu.ps1 -WipeData -RestoreMabu
+# FLASH (default): from the repo root, with a booted adb-reachable unit.
+# The script auto-detects the Esper state and wipes /data only when needed
+# (State A) -- no need to pass -WipeData yourself:
+.\scripts\flash-mabu.ps1 -RestoreMabu
 ```
+
+> **Auto-detect (the `/data` wipe is the only thing it decides):** the script
+> probes the unit over adb before entering Loader. If the live Esper DPC
+> `io.shoonya.shoonyadpc` is present (**State A**), it wipes `/data` (96 MB); if
+> it's absent (**State B**, factory-reset), it runs **patch-only** and skips the
+> wipe. Force either way with `-WipeData` or `-NoWipe`. If the state can't be
+> probed (e.g. you pre-caught Loader, so there's no Android to query), it
+> **defaults to wiping** — let the script catch Loader from a booted unit if you
+> want the auto choice.
 
 ---
 
@@ -84,16 +95,25 @@ timing, not the host port:
 ## 2. Understand the two starting states
 
 A factory unit is in one of two states; they need slightly different handling
-(both are covered by `flash-mabu.ps1`):
+(both are covered by `flash-mabu.ps1`, which **auto-detects which one** — see
+below):
 
-| State | What you see | Treatment |
-|---|---|---|
-| **A. Active Esper** | Kiosk / Mabu dashboard boots, USB ADB wedges within ~5 s | Patches **+ 96 MB `/data` wipe** (the real DPC, `io.shoonya.shoonyadpc`, lives in `/data/app` and survives the /system patches) |
-| **B. Factory-reset Esper** | Normal-ish boot, no kiosk, but Device Owner ref still set | Patches alone are enough; `/data` wipe optional |
+| State | What you see | Treatment | Auto-detected by |
+|---|---|---|---|
+| **A. Active Esper** | Kiosk / Mabu dashboard boots, USB ADB wedges within ~5 s | Patches **+ 96 MB `/data` wipe** (the real DPC, `io.shoonya.shoonyadpc`, lives in `/data/app` and survives the /system patches) | `pm path io.shoonya.shoonyadpc` returns a package |
+| **B. Factory-reset Esper** | Normal-ish boot, no kiosk, but Device Owner ref still set | Patches alone are enough; `/data` wipe skipped | that package is **absent** |
 
-When in doubt, use `-WipeData`. 96 MB is the validated sweet spot — larger wipes
-(256 MB+) have correlated with a Settings/Dev-Options regression; smaller wipes
-don't reliably trigger the `/data` reformat.
+**The script picks for you:** it runs `pm path io.shoonya.shoonyadpc` over adb
+before entering Loader and wipes only on State A. (Esper's `/system` apps —
+espersupervisor etc. — survive a factory reset, so they're present in *both*
+states and can't distinguish them; the `/data`-resident shoonya DPC is the
+reliable signal.) Override with `-WipeData` (force wipe) or `-NoWipe` (force
+patch-only). **When the state can't be probed — e.g. Loader was already caught,
+so there's no Android to query — it defaults to wiping.**
+
+96 MB is the validated wipe sweet spot — larger wipes (256 MB+) have correlated
+with a Settings/Dev-Options regression; smaller wipes don't reliably trigger the
+`/data` reformat.
 
 ---
 
@@ -236,11 +256,17 @@ wipe.
 > Section 3A first if you explicitly want **flash and capture** on a unit that
 > still has Mabu software worth keeping.
 
-From the **Mabu repo root** (`../Mabu/`), with Loader caught:
+From the repo root, with a **booted, adb-reachable unit** (so the script can
+detect the state and reboot it into Loader itself):
 
 ```powershell
-.\scripts\flash-mabu.ps1 -WipeData -RestoreMabu
+.\scripts\flash-mabu.ps1 -RestoreMabu
 ```
+
+The script auto-detects State A vs B and wipes `/data` only on State A (see
+Section 2). Add `-WipeData` to force the wipe or `-NoWipe` to force patch-only.
+If you've **already caught Loader** the state can't be probed, so it defaults to
+wiping — pass `-WipeData`/`-NoWipe` explicitly in that case.
 
 What it does, in order (`scripts/flash-mabu.ps1` → `scripts/liberate-mabu.ps1`):
 
@@ -572,7 +598,7 @@ Protocol reference (don't hand-compute checksums — use the code):
 ## 9. Quick checklist
 
 - [ ] Loader caught (PID 320A) — `adb reboot loader` if adb is up, else power-on window
-- [ ] `flash-mabu.ps1 -WipeData -RestoreMabu` completes (re-run wipe if it "FAILED at chunk 0")
+- [ ] `flash-mabu.ps1 -RestoreMabu` completes — confirm the "Detected State X" / "Wipe policy" line matches the unit (force with `-WipeData`/`-NoWipe` if needed; re-run wipe if it "FAILED at chunk 0")
 - [ ] Device Owner clear, no esper/shoonya packages
 - [ ] Re-joined WiFi, WiFi ADB on 5555, static lease set (the working transport for all on-device adb — USB only for the Loader flash + opening adb)
 - [ ] Launcher + apps installed
