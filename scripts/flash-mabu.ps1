@@ -3,13 +3,23 @@
 # Unified Mabu liberation + restore script.
 #
 # Phases:
-#   1. Detect Rockchip Loader (PID 0x320A). If not present, attempt to
-#      enter via wifi/usb adb 'reboot loader'.
+#   1. Detect Rockchip Loader (PID 0x320A). If not present, find an adb device,
+#      AUTO-DETECT the Esper state (A vs B), then enter Loader via 'reboot loader'.
 #   2. Apply liberate-mabu patches (parameter + adbd + 3x EOCD + 2x init).
-#   3. Optionally wipe /data head (-WipeData; needed for active Esper).
+#   3. Wipe /data head when the unit is State A (or forced/undetermined).
 #   4. Reset to Android. Wait for WiFi adb (installs/pulls run over WiFi).
 #   5. Install user-facing apps: F-Droid, Lawnchair. Set Lawnchair home.
 #   6. Optionally install Mabu factory mode + push assets (-RestoreMabu).
+#
+# State auto-detection (the /data wipe is the only thing that differs):
+#   - State A (active Esper): the live DPC io.shoonya.shoonyadpc lives in
+#     /data/app and survives the /system patches, so it MUST be wiped. Detected
+#     by that package being installed. -> wipe (default).
+#   - State B (factory-reset Esper): no live /data DPC; the patches alone
+#     liberate it. -> patch-only (skips the 96 MB wipe, far less USB traffic).
+#   Override the auto choice with -WipeData (force wipe) or -NoWipe (force
+#   patch-only). If state can't be determined (e.g. Loader was already caught,
+#   so there's no Android to probe), the SAFE DEFAULT is to wipe.
 #
 # Transport rule (matches FLASH-A-NEW-MABU.md): USB is used ONLY when 100%
 # necessary -- the Loader flash itself and the adb 'reboot loader' calls that
@@ -17,20 +27,23 @@
 # whole install/provision phase (5/6) runs over WiFi adb on 5555.
 #
 # Use cases:
-#   - Fresh Esper-active Mabu:
-#       .\flash-mabu.ps1 -WipeData -RestoreMabu
-#   - Already-liberated unit re-applying patches:
+#   - Fresh Esper Mabu (auto-detects A->wipe / B->patch-only):
 #       .\flash-mabu.ps1 -RestoreMabu
+#   - Force a full wipe regardless of detected state:
+#       .\flash-mabu.ps1 -WipeData -RestoreMabu
+#   - Force patch-only (skip the wipe) on a known State-B unit:
+#       .\flash-mabu.ps1 -NoWipe -RestoreMabu
 #   - Just neutralize the new init.esper.rc + sdo.sh on a previously-patched unit:
 #       .\flash-mabu.ps1 -SkipApps
 #
-# After -WipeData, wifi creds are wiped. The device will need wifi set up
-# via the touch UI before -RestoreMabu / app installs can proceed. The
+# When the unit is wiped, wifi creds are wiped too. The device will need wifi
+# set up via the touch UI before -RestoreMabu / app installs can proceed. The
 # script will pause and ask you to set up wifi when this happens.
 
 [CmdletBinding()]
 param(
-    [switch] $WipeData,          # zero head of /data; needed when Esper kiosk policies are active
+    [switch] $WipeData,          # FORCE the /data wipe regardless of detected state
+    [switch] $NoWipe,            # FORCE patch-only (skip the wipe) regardless of detected state
     [int]    $WipeMB = 96,       # 96 MB matches v3 procedure (preserves Dev Options on this build)
     [switch] $RestoreMabu,       # install factorymode + push animations/voice assets
     [switch] $SkipApps,          # only do Loader-side patches; no F-Droid/Lawnchair
@@ -54,6 +67,24 @@ function Warn($msg)    { Write-Host "  $msg" -ForegroundColor Yellow }
 function Fail($msg)    { Write-Host "  $msg" -ForegroundColor Red }
 
 function Test-Loader { (& $RK ld 2>&1) -match 'Vid=0x2207,Pid=0x320a.*Loader' }
+
+function Get-MabuState {
+    # Classify the booted unit as 'A', 'B', or 'Unknown' over adb.
+    #   A = active Esper: the live DPC io.shoonya.shoonyadpc is installed in
+    #       /data/app. It survives the /system patches, so the /data wipe is
+    #       required. (Esper's /system apps -- espersupervisor etc. -- persist
+    #       through a factory reset, so they DON'T distinguish A from B; the
+    #       /data-resident shoonya DPC is the reliable signal.)
+    #   B = factory-reset Esper: no live /data DPC; patches alone liberate it.
+    #   Unknown = no working shell to probe (caller decides; default is to wipe).
+    param([string] $Dev)
+    if (-not $Dev) { return 'Unknown' }
+    $alive = & $ADB -s $Dev shell 'echo MABU_OK' 2>&1
+    if ($alive -notmatch 'MABU_OK') { return 'Unknown' }   # adb wedged/offline
+    $dpc = & $ADB -s $Dev shell 'pm path io.shoonya.shoonyadpc 2>/dev/null' 2>&1
+    if ($dpc -match 'package:') { return 'A' }
+    return 'B'
+}
 
 function Find-AdbDevice {
     # -WifiOnly: never fall back to USB. USB adb on this hardware times out too
@@ -85,18 +116,28 @@ function Find-AdbDevice {
     return $null
 }
 
-# --- Phase 1: Catch / verify Loader ---
+# --- Phase 1: Catch / verify Loader, auto-detect Esper state ---
 Section 'Loader detection'
+$state = 'Unknown'
 if (Test-Loader) {
     Ok 'Loader already present.'
+    Warn 'Device is in Loader (not Android), so the Esper state cannot be probed.'
+    Warn 'State -> Unknown. If you want auto-detect, let the script catch Loader'
+    Warn 'from a booted unit instead, or pass -WipeData / -NoWipe explicitly.'
 } else {
-    Info 'Loader not seen. Attempting to enter via adb reboot loader.'
+    Info 'Loader not seen. Finding an adb device to detect state and enter Loader.'
     $dev = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 30
     if (-not $dev) {
         Fail 'No adb device and no Loader. Power-cycle the tablet to catch Loader, then re-run.'
         exit 1
     }
-    Info "Found adb device: $dev. Rebooting into Loader."
+    $state = Get-MabuState -Dev $dev
+    switch ($state) {
+        'A' { Ok  "Detected State A (active Esper DPC in /data) at $dev." }
+        'B' { Ok  "Detected State B (factory-reset Esper) at $dev." }
+        default { Warn "Could not determine Esper state at $dev (adb may be wedging)." }
+    }
+    Info "Rebooting into Loader."
     & $ADB -s $dev shell reboot loader 2>&1 | Out-Null
     for ($i = 0; $i -lt 30; $i++) {
         Start-Sleep -Seconds 1
@@ -105,18 +146,29 @@ if (Test-Loader) {
     if (-not (Test-Loader)) { Fail 'Loader did not appear in 30s.'; exit 1 }
 }
 
+# --- Decide wipe policy: explicit flags win, else auto from detected state ---
+if ($WipeData -and $NoWipe) { Fail 'Pass only one of -WipeData / -NoWipe.'; exit 1 }
+if     ($WipeData) { $doWipe = $true;  $wipeWhy = 'forced by -WipeData' }
+elseif ($NoWipe)   { $doWipe = $false; $wipeWhy = 'forced by -NoWipe' }
+elseif ($state -eq 'A') { $doWipe = $true;  $wipeWhy = 'auto: State A (active /data DPC must be wiped)' }
+elseif ($state -eq 'B') { $doWipe = $false; $wipeWhy = 'auto: State B (patches alone suffice)' }
+else                    { $doWipe = $true;  $wipeWhy = 'auto: state undetermined -> safe default = wipe' }
+Section 'Wipe policy'
+if ($doWipe) { Ok  "/data wipe: ON  ($wipeWhy)" }
+else         { Ok  "/data wipe: OFF ($wipeWhy)" }
+
 # --- Phase 2: Apply patches ---
 Section 'Applying liberation patches'
 & (Join-Path $Root 'scripts/liberate-mabu.ps1')
 if ($LASTEXITCODE -ne 0) { Fail 'liberate-mabu.ps1 failed.'; exit 1 }
 Ok 'All 8 patches written.'
 
-# --- Phase 3: Optional /data wipe ---
+# --- Phase 3: /data wipe (State A / forced / undetermined) ---
 # A single Loader session can do all 8 small patch writes OR a 96 MB wipe,
 # but doing patches+wipe back-to-back wedges Loader on the first wipe chunk.
 # Workaround: reset between phases. This means rebooting to Android,
 # letting adb come up, then `reboot loader` to re-enter Loader fresh.
-if ($WipeData) {
+if ($doWipe) {
     Section 'Resetting Loader between patch and wipe phases'
     Info 'Loader wedges if we do patches + 16 MB write back-to-back.'
     Info 'Booting to Android, then re-entering Loader via adb.'
@@ -152,7 +204,7 @@ if ($SkipApps) {
 Section 'Waiting for WiFi adb'
 Info 'USB adb on this hardware times out too fast for installs/pulls --'
 Info "the provision phase runs over WiFi adb (${WifiIp}:5555)."
-if ($WipeData) {
+if ($doWipe) {
     Warn '/data was wiped: WiFi credentials are gone.'
     Warn 'On the tablet touch UI, connect to WiFi. Then come back here.'
     Read-Host 'Press Enter once WiFi is associated on the tablet'
