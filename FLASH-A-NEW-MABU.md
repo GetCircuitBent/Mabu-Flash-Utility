@@ -260,7 +260,9 @@ What it does, in order (`scripts/flash-mabu.ps1` → `scripts/liberate-mabu.ps1`
    corrupts the ext4 superblock so vold reformats `/data` clean on boot,
    removing the in-`/data` Esper DPC. (Done in a separate Loader session; doing
    patches + wipe back-to-back wedges Loader.)
-3. **Reset to Android**, wait for ADB (USB or WiFi).
+3. **Reset to Android**, wait for ADB to come up, then **join WiFi and switch to
+   WiFi adb** for everything that follows (see the transport rule below — USB adb
+   on this hardware times out too fast to rely on).
 4. **Install F-Droid + Lawnchair**, set Lawnchair as home.
 5. **(`-RestoreMabu`)** install `com.catalia.factorymode` + push animation/voice
    assets, grant runtime perms. *(Factory-test app, not the consumer app — the
@@ -281,8 +283,9 @@ you to join WiFi on the touch UI before app installs proceed.
 > `.\scripts\flash-mabu.ps1 -WipeData -SkipApps` (does all 8 patches + the
 > inter-phase reset + 96 MB wipe, then exits cleanly **before** the pause), then
 > drive the app installs yourself over adb. USB adb comes up authorized right
-> after the wipe (the adbd auth-bypass patch), so you usually don't need WiFi for
-> the installs — `adb install` pushes work fine (see the transport note below).
+> after the wipe (the adbd auth-bypass patch), but it **times out too fast to rely
+> on** — join WiFi and run the installs over WiFi adb (`adb connect <ip>:5555`).
+> See the transport rule below.
 
 **Result:** plain Android 8.1, Lawnchair home, F-Droid, ADB open (USB + WiFi on
 port 5555, no auth dialog). Verify:
@@ -293,23 +296,29 @@ adb -s <tablet-ip>:5555 shell getprop ro.device_owner   # expect empty
 adb -s <tablet-ip>:5555 shell "pm list packages | grep -iE 'esper|shoonya'"  # expect empty
 ```
 
-> **Transport note (important — learned the hard way):** there are three USB
-> transports here and they are *not* equally reliable on this hardware:
-> - **Loader USB (`rkdeveloptool`)** — rock-solid. Wrote 96 MB + all patches and
->   read back hundreds of KB with zero issues. Reads do wedge after ~28 MB
->   cumulative *per Loader session* (power-cycle / re-catch to continue).
-> - **Android USB adb — pushes (`adb install`, `adb push`)** — fine, multi-MB
->   (F-Droid 12 MB, Lawnchair 17 MB installed cleanly).
-> - **Android USB adb — pulls (`adb pull`, device→host)** — **flaky.** Large
->   inbound transfers wedge after a cumulative **~80–128 KB per boot**, then the
->   device drops to `offline` and only a **power-cycle** recovers it. Splitting
->   into small chunks only buys a few before the same cumulative wedge.
+> **Transport rule (important — learned the hard way): use USB only when it is
+> 100% necessary; do everything else over WiFi.** USB is *only* genuinely needed
+> for two things:
+> - **The Loader flash itself (`rkdeveloptool`)** — rock-solid, and there is no
+>   WiFi alternative. Wrote 96 MB + all patches with zero issues. (Loader *reads*
+>   wedge after ~28 MB cumulative per session — power-cycle / re-catch to continue.)
+> - **Opening adb** — i.e. the auth-bypass patch the flash writes. That is the
+>   *only* job USB adb has.
 >
-> **So: for anything you need to read *off* the device (e.g. the SELinux policy
-> in Section 6), use WiFi adb.** WiFi adb is reliable and the patched adbd
-> **listens on TCP 5555 out of the box** — once the tablet is on WiFi,
-> `adb connect <ip>:5555` just works (pulled 293 KB in 0.4 s where USB wedged at
-> 128 KB). Set a static DHCP lease so the IP is stable.
+> Once adb is open, **switch to WiFi adb (`adb connect <ip>:5555`) for everything
+> else** — app installs, shell, verification, and especially pulls. **Android USB
+> adb times out too fast to rely on:**
+> - **USB pulls (`adb pull`, device→host)** wedge after a cumulative **~80–128 KB
+>   per boot**, then the device drops to `offline` and only a **power-cycle**
+>   recovers it. Chunking only buys a few before the same cumulative wedge.
+> - **USB pushes (`adb install`, `adb push`)** can complete for small payloads but
+>   time out / wedge unpredictably under any real load — don't plan around them.
+>
+> The patched adbd **listens on TCP 5555 out of the box**, so once the tablet is
+> on WiFi, `adb connect <ip>:5555` just works (pulled 293 KB in 0.4 s where USB
+> wedged at 128 KB). **Caveat:** the `/data` wipe erases WiFi credentials, so
+> re-join WiFi on the touch UI first (the script pauses for exactly this). Set a
+> static DHCP lease so the IP is stable.
 
 ---
 
@@ -565,7 +574,7 @@ Protocol reference (don't hand-compute checksums — use the code):
 - [ ] Loader caught (PID 320A) — `adb reboot loader` if adb is up, else power-on window
 - [ ] `flash-mabu.ps1 -WipeData -RestoreMabu` completes (re-run wipe if it "FAILED at chunk 0")
 - [ ] Device Owner clear, no esper/shoonya packages
-- [ ] WiFi ADB on 5555, static lease set (the reliable transport for pulls)
+- [ ] Re-joined WiFi, WiFi ADB on 5555, static lease set (the working transport for all on-device adb — USB only for the Loader flash + opening adb)
 - [ ] Launcher + apps installed
 - [ ] **SELinux: Tier 1 bridge running → app moves motors**
 - [ ] **SELinux: Tier 2 policy patch applied (optional, permanent)** — magiskpolicy on-device → `find-vendor-file.py` → Loader `wl` → verify persisted + Enforcing → revert app to direct serial
