@@ -38,7 +38,7 @@ param(
     [string] $UsbSerial,         # if known; else autodetect
     [string] $LawnchairApk = 'apks/Lawnchair.apk',
     [string] $FDroidApk    = 'apks/F-Droid.apk',
-    [string] $MabuArchive  = 'mabu-archive/unit-2022010501476'
+    [string] $MabuArchive  = 'mabu-archive'
 )
 
 $ErrorActionPreference = 'Stop'
