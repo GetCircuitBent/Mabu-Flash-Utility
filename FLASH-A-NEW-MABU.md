@@ -57,10 +57,36 @@ so your app can't drive the motors. Section 6 is the prepared fix for that.
 
 ### Hardware
 - The Mabu unit, opened enough to reach the **30-pin internal header** (these
-  units have no external USB port or buttons). USB OTG is broken out on pins
-  21/23/25/27 (VCCUSB / OTG_ID / OTG_DM / OTG_DP) — see the pinout in
-  `../Mabu/README.md`. **D+/D- polarity is the classic wiring gotcha**; if you
-  get "device descriptor request failed," swap OTG_DM/OTG_DP.
+  units have no external USB port or buttons). USB OTG is on pins 3/5/7/9
+  (OTG_DP / OTG_DM / OTG_ID / VCCUSB). **D+/D- polarity is the classic wiring
+  gotcha**; if you get "device descriptor request failed," swap OTG_DM/OTG_DP.
+
+  **30-pin header pinout — 2 mm pitch, 2x15 dual-row.**
+  Red stripe (pin 1) is at the GND/USB end, opposite the DCIN/power end.
+  Pin 1 verified with meter (both pins 1 and 2 are GND).
+
+  | Col A  | Pin |   | Pin | Col B  |
+  |--------|-----|---|-----|--------|
+  | GND    |  1  |   |  2  | GND    |
+  | OTG_DP |  3  |   |  4  | ADKEY  |
+  | OTG_DM |  5  |   |  6  | GND    |
+  | OTG_ID |  7  |   |  8  | VCC    |
+  | VCCUSB |  9  |   | 10  | PDM    |
+  | PWRON  | 11  |   | 12  | IN3P   |
+  | GND    | 13  |   | 14  | GND    |
+  | RX     | 15  |   | 16  | SCL    |
+  | TX     | 17  |   | 18  | SDA    |
+  | RTS    | 19  |   | 20  | CTS    |
+  | GND    | 21  |   | 22  | GND    |
+  | SPKN   | 23  |   | 24  | SPKP   |
+  | GND    | 25  |   | 26  | GND    |
+  | GND    | 27  |   | 28  | DCIN   |
+  | DCIN   | 29  |   | 30  | DCIN   |
+
+  Functional groups: USB OTG (pins 3/5/7/9 + GND), motor UART (TX/RX/RTS/CTS
+  pins 15-20), PMIC I2C (SDA/SCL pins 16/18), audio (SPKN/SPKP pins 23/24,
+  PDM pin 10, IN3P pin 12), buttons (PWRON pin 11, ADKEY resistor-ladder pin 4),
+  power (DCIN pins 28-30, VCC pin 8).
 - The internal USB programming harness (we have only one — each liberation is a
   one-shot-per-unit opportunity; plan the session). A direct USB 3 connection
   from the harness to the PC is sufficient — no hub needed.
