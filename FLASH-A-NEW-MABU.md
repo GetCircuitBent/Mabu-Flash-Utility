@@ -20,11 +20,11 @@ face-tracking app, which needs motor access that SELinux blocks by default.
 ## 0. The one-paragraph version
 
 Catch the Rockchip Loader on power-on, run one PowerShell script that writes 8
-raw-eMMC patches (disable dm-verity, neutralize Esper, open ADB) plus a 96 MB
-`/data` wipe, boot to plain Android, sideload your launcher + your app. The
-**one thing that script does NOT solve is SELinux** — on this `user` build the
-kernel `selinux=permissive` flag is ignored and the policy re-enforces at boot,
-so your app can't drive the motors. Section 6 is the prepared fix for that.
+raw-eMMC patches (disable dm-verity, neutralize Esper, open ADB), optionally
+wipes `/data`, boots to plain Android, installs F-Droid + Lawnchair + Mabu
+factory mode, **patches the SELinux vendor policy** so the facetrack app can
+drive the motors natively, then runs a 12-check self-test and prints pass/fail.
+One command handles the full unit.
 
 > **Two operations — pick one up front:**
 > - **Flash** (default) — overwrite and provision the unit, with **no attempt to
@@ -37,19 +37,41 @@ so your app can't drive the motors. Section 6 is the prepared fix for that.
 
 ```powershell
 # FLASH (default): from the repo root, with a booted adb-reachable unit.
-# The script auto-detects the Esper state and wipes /data only when needed
-# (State A) -- no need to pass -WipeData yourself:
 .\scripts\flash-mabu.ps1 -RestoreMabu
 ```
 
-> **Auto-detect (the `/data` wipe is the only thing it decides):** the script
-> probes the unit over adb before entering Loader. If the live Esper DPC
-> `io.shoonya.shoonyadpc` is present (**State A**), it wipes `/data` (96 MB); if
-> it's absent (**State B**, factory-reset), it runs **patch-only** and skips the
-> wipe. Force either way with `-WipeData` or `-NoWipe`. If the state can't be
-> probed (e.g. you pre-caught Loader, so there's no Android to query), it
-> **defaults to wiping** — let the script catch Loader from a booted unit if you
-> want the auto choice.
+> **State auto-detect:** the script probes the unit over adb and classifies it:
+> - **State A** (active Esper DPC in `/data`) → patches + 96 MB `/data` wipe
+> - **State B** (factory-reset Esper, no live DPC) → patches only, no wipe
+> - **Liberated** (already patched — `init.esper.rc` zeroed, no Esper control) →
+>   skip Loader entirely, go straight to app install + SELinux fix. Safe to re-run
+>   after an interrupted provisioning phase.
+> - **Unknown** (can't probe) → wipes as a safe default
+>
+> Force with `-WipeData` or `-NoWipe`. If Loader was pre-caught (no Android to
+> probe), state is Unknown and the script wipes.
+
+### Script flags
+
+| Flag | Effect |
+|---|---|
+| `-RestoreMabu` | Install Mabu factory mode APK + push animation/voice assets |
+| `-WipeData` | Force `/data` wipe regardless of detected state |
+| `-NoWipe` | Force patch-only (skip wipe) regardless of detected state |
+| `-SkipApps` | Loader patches only — no app install, no SELinux fix, no self-test |
+| `-SkipSELinux` | Skip the SELinux policy fix phase |
+| `-WifiIp <ip>` | WiFi hint for first adb connect attempt (auto-discovered at runtime) |
+
+### What the script does, in order
+
+1. **Detect state** (A / B / Liberated / Unknown)
+2. **Enter Loader** and apply 8 liberation patches *(skipped for Liberated)*
+3. **Wipe `/data` head** (96 MB) if State A or forced *(skipped for B / Liberated)*
+4. **Reset** to Android
+5. **Install apps** — F-Droid, Lawnchair (set as home)
+6. **Restore Mabu** — factory mode APK + assets *(if `-RestoreMabu`)*
+7. **SELinux fix** — on-device `magiskpolicy` patch → Loader write to `0x5A8AB8` *(skippable with `-SkipSELinux`)*
+8. **Self-test** — 12 checks: liberation, apps, SELinux policy SHA, AVC denial check, WiFi adb
 
 ---
 
@@ -570,7 +592,16 @@ Then launch the app — it connects to the bridge and the robot tracks faces.
 
 ---
 
-### Tier 2 — Permanent SELinux policy patch (VALIDATED 2026-06-14)
+### Tier 2 — Permanent SELinux policy patch (VALIDATED; now automated)
+
+> **`flash-mabu.ps1` applies this automatically as Phase 7.** The manual steps
+> below are reference only — follow them if you need to re-apply the fix outside
+> of a full flash run, or if you're debugging the automated path.
+>
+> **Known-good hashes (H7R Android 8.1):**
+> - Stock policy: `7f26df2d…`
+> - Patched policy: `03f180a2…` (same 299,979 B — bit-flip in the AV table)
+> - Vendor partition LBA: `0x5A8AB8` (592 sectors, inode 911, confirmed on two units)
 
 Add one rule so `untrusted_app` can open the serial device directly — then the
 bridge is unnecessary and the app talks to `/dev/ttyS1` natively.
@@ -580,7 +611,7 @@ bridge is unnecessary and the app talks to `/dev/ttyS1` natively.
 allow untrusted_app serial_device:chr_file { open read write getattr ioctl };
 ```
 
-This was performed end-to-end on unit `2022010501038`. The exact procedure,
+This was performed end-to-end on units `2022010501038` and `2022010501537`. The exact procedure,
 with the gotchas that actually bit, follows. `/system`/`/vendor` are read-only
 with no root, so the patched policy is written by raw eMMC overwrite via Loader.
 

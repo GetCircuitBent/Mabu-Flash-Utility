@@ -47,6 +47,7 @@ param(
     [int]    $WipeMB = 96,       # 96 MB matches v3 procedure (preserves Dev Options on this build)
     [switch] $RestoreMabu,       # install factorymode + push animations/voice assets
     [switch] $SkipApps,          # only do Loader-side patches; no F-Droid/Lawnchair
+    [switch] $SkipSELinux,       # skip the SELinux policy fix (already applied, or not needed)
     [string] $WifiIp = '192.168.0.18',  # initial hint only; auto-discovered from the device (wlan0) at runtime
     [string] $UsbSerial,         # if known; else autodetect
     [string] $LawnchairApk = 'apks/Lawnchair.apk',
@@ -150,20 +151,24 @@ function Confirm-LoaderWinUsb {
 }
 
 function Get-MabuState {
-    # Classify the booted unit as 'A', 'B', or 'Unknown' over adb.
-    #   A = active Esper: the live DPC io.shoonya.shoonyadpc is installed in
-    #       /data/app. It survives the /system patches, so the /data wipe is
-    #       required. (Esper's /system apps -- espersupervisor etc. -- persist
-    #       through a factory reset, so they DON'T distinguish A from B; the
-    #       /data-resident shoonya DPC is the reliable signal.)
-    #   B = factory-reset Esper: no live /data DPC; patches alone liberate it.
-    #   Unknown = no working shell to probe (caller decides; default is to wipe).
+    # Classify the booted unit as 'A', 'B', 'Liberated', or 'Unknown' over adb.
+    #   A         = active Esper: live DPC io.shoonya.shoonyadpc in /data/app.
+    #               Patches alone don't suffice; /data wipe required.
+    #   B         = factory-reset Esper: no live /data DPC; patches alone suffice.
+    #   Liberated = already patched: init.esper.rc was zeroed, so init.svc.set-device-owner
+    #               was never defined and its getprop returns empty. Skip Loader entirely.
+    #   Unknown   = no working shell to probe (caller decides; default is to wipe).
     param([string] $Dev)
     if (-not $Dev) { return 'Unknown' }
     $alive = & $ADB -s $Dev shell 'echo MABU_OK' 2>&1
     if ($alive -notmatch 'MABU_OK') { return 'Unknown' }   # adb wedged/offline
     $dpc = & $ADB -s $Dev shell 'pm path io.shoonya.shoonyadpc 2>/dev/null' 2>&1
     if ($dpc -match 'package:') { return 'A' }
+    # On unpatched units init.esper.rc defines the set-device-owner service, so
+    # getprop init.svc.set-device-owner is 'stopped' after boot. When the RC file
+    # has been zeroed the service is never registered and the prop is empty.
+    $svc = & $ADB -s $Dev shell 'getprop init.svc.set-device-owner' 2>&1
+    if ($svc -match '^\s*$') { return 'Liberated' }
     return 'B'
 }
 
@@ -216,6 +221,121 @@ function Get-DeviceWifiIp {
     return $null
 }
 
+function Apply-SELinuxFix {
+    # Patch /vendor/etc/selinux/precompiled_sepolicy to allow untrusted_app to
+    # open/write serial_device (needed for the facetrack app to drive the motors).
+    # Uses on-device magiskpolicy (ARM), pulls the result, then writes it via Loader.
+    #   Stock SHA:   7f26df2d...
+    #   Patched SHA: 03f180a2...
+    param([string] $Dev)
+    Section 'SELinux policy fix'
+    $sha = (& $ADB -s $Dev shell 'sha256sum /vendor/etc/selinux/precompiled_sepolicy 2>/dev/null' 2>&1) -join ''
+    if ($sha -match '03f180a2') { Ok 'SELinux policy already patched (03f180a2) -- skipping.'; return }
+    if ($sha -match '7f26df2d') { Info 'Stock policy confirmed (7f26df2d) -- applying fix.' }
+    else { Warn "Unexpected policy SHA: $sha -- proceeding anyway." }
+
+    $mp = Join-Path $Root 'tools/magiskpolicy/magiskpolicy-armeabi-v7a'
+    if (-not (Test-Path $mp)) { Warn 'tools/magiskpolicy/magiskpolicy-armeabi-v7a not found -- skipping.'; return }
+    & $ADB -s $Dev push $mp /data/local/tmp/magiskpolicy 2>&1 | Out-Null
+    & $ADB -s $Dev shell 'chmod 755 /data/local/tmp/magiskpolicy' 2>&1 | Out-Null
+
+    $r = & $ADB -s $Dev shell "cp /vendor/etc/selinux/precompiled_sepolicy /data/local/tmp/sepolicy.in && /data/local/tmp/magiskpolicy --load /data/local/tmp/sepolicy.in --save /data/local/tmp/sepolicy.out 'allow untrusted_app serial_device chr_file { open read write getattr ioctl }' && echo PATCH_OK" 2>&1
+    if ($r -notmatch 'PATCH_OK') { Warn "magiskpolicy failed: $($r -join ' ') -- skipping."; return }
+    Ok 'On-device patch succeeded.'
+
+    $outFile = Join-Path $Root 'firmware\scratch\sepolicy.patched'
+    & $ADB -s $Dev pull /data/local/tmp/sepolicy.out $outFile 2>&1 | Out-Null
+    if (-not (Test-Path $outFile)) { Warn 'Pull failed -- skipping Loader write.'; return }
+    $patchedSha = (Get-FileHash $outFile -Algorithm SHA256).Hash.ToLower()
+    Info "Patched SHA256: $patchedSha"
+    if ($patchedSha -notmatch '^03f180a2') { Warn "Patched SHA unexpected ($patchedSha) -- aborting Loader write."; return }
+
+    Info 'Entering Loader for policy write...'
+    & $ADB -s $Dev shell reboot loader 2>&1 | Out-Null
+    for ($i = 0; $i -lt 30; $i++) { Start-Sleep -Seconds 1; if (Test-Loader) { Ok "Loader caught after ${i}s."; break } }
+    if (-not (Test-Loader)) { Warn 'Loader not caught. Apply SELinux fix manually (wl 0x5A8AB8 firmware\scratch\sepolicy.patched).'; return }
+    Confirm-LoaderWinUsb
+
+    & $RK wl 0x5A8AB8 $outFile 2>&1 | ForEach-Object { Info $_ }
+    Ok 'Policy written to vendor partition.'
+    & $RK rd 2>&1 | Out-Null
+    Ok 'Reset issued -- device will reboot with patched SELinux policy.'
+}
+
+function Run-SelfTest {
+    param([string] $Dev)
+    Section 'Self-test'
+    $stP = 0; $stF = 0; $stW = 0
+
+    # --- Liberation ---
+    $v = (& $ADB -s $Dev shell 'getprop ro.device_owner' 2>&1) -join ''
+    if ($v -match '^\s*$|false') { Ok  '[PASS] No device owner';                       $stP++ }
+    else                         { Fail "[FAIL] No device owner  (got: $v)";            $stF++ }
+
+    $v = (& $ADB -s $Dev shell 'getprop init.svc.set-device-owner' 2>&1) -join ''
+    if ($v -match '^\s*$')       { Ok  '[PASS] init.esper.rc zeroed';                  $stP++ }
+    else                         { Fail "[FAIL] init.esper.rc zeroed  (got: $v)";       $stF++ }
+
+    $v = (& $ADB -s $Dev shell 'pm path io.shoonya.shoonyadpc 2>/dev/null' 2>&1) -join ''
+    if ($v -match '^\s*$')       { Ok  '[PASS] Esper DPC absent from /data';           $stP++ }
+    else                         { Fail "[FAIL] Esper DPC absent from /data  (got: $v)"; $stF++ }
+
+    $v = (& $ADB -s $Dev shell 'getprop ro.boot.veritymode' 2>&1) -join ''
+    if ($v -match 'disabled')    { Ok  '[PASS] dm-verity disabled';                    $stP++ }
+    else                         { Fail "[FAIL] dm-verity disabled  (got: $v)";         $stF++ }
+
+    # --- Apps ---
+    $v = (& $ADB -s $Dev shell 'pm list packages org.fdroid.fdroid 2>/dev/null' 2>&1) -join ''
+    if ($v -match 'package:')    { Ok  '[PASS] F-Droid installed';                     $stP++ }
+    else                         { Fail '[FAIL] F-Droid installed';                     $stF++ }
+
+    $v = (& $ADB -s $Dev shell 'pm list packages app.lawnchair 2>/dev/null' 2>&1) -join ''
+    if ($v -match 'package:')    { Ok  '[PASS] Lawnchair installed';                   $stP++ }
+    else                         { Fail '[FAIL] Lawnchair installed';                   $stF++ }
+
+    $v = (& $ADB -s $Dev shell 'cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME 2>/dev/null' 2>&1) -join ''
+    if ($v -match 'lawnchair')   { Ok  '[PASS] Lawnchair is home launcher';            $stP++ }
+    else                         { Fail "[FAIL] Lawnchair is home launcher  (got: $v)"; $stF++ }
+
+    $v = (& $ADB -s $Dev shell 'pm list packages com.catalia.factorymode 2>/dev/null' 2>&1) -join ''
+    if ($v -match 'package:')    { Ok  '[PASS] Mabu factory mode installed';           $stP++ }
+    else                         { Fail '[FAIL] Mabu factory mode installed';           $stF++ }
+
+    # --- SELinux ---
+    $v = (& $ADB -s $Dev shell 'getenforce' 2>&1) -join ''
+    if ($v -match 'Enforcing')   { Ok  '[PASS] SELinux enforcing';                     $stP++ }
+    else                         { Fail "[FAIL] SELinux enforcing  (got: $v)";          $stF++ }
+
+    $v = (& $ADB -s $Dev shell 'sha256sum /vendor/etc/selinux/precompiled_sepolicy 2>/dev/null' 2>&1) -join ''
+    if ($v -match '03f180a2')    { Ok  '[PASS] SELinux policy patched (03f180a2)';     $stP++ }
+    else                         { Fail "[FAIL] SELinux policy patched  (got: $v)";     $stF++ }
+
+    # Functional: force-stop factory mode, clear logcat, relaunch, check for serial_device denials
+    & $ADB -s $Dev shell 'am force-stop com.catalia.factorymode' 2>&1 | Out-Null
+    & $ADB -s $Dev logcat -c 2>&1 | Out-Null
+    & $ADB -s $Dev shell 'am start -n com.catalia.factorymode/com.catalia.mabu.navigation.MainActivity' 2>&1 | Out-Null
+    Start-Sleep -Seconds 3
+    $denials = @(& $ADB -s $Dev logcat -d 2>&1 | Where-Object { $_ -match 'avc.*denied.*serial_device|serial_device.*avc.*denied' })
+    if ($denials.Count -eq 0) { Ok  '[PASS] No serial_device AVC denials on factory mode launch'; $stP++ }
+    else                      { Fail "[FAIL] serial_device AVC denial: $($denials[0])";            $stF++ }
+
+    # --- WiFi adb (warn only -- quarantine/isolated nets block WiFi-to-Ethernet) ---
+    $wlanOut = (& $ADB -s $Dev shell 'ip addr show wlan0 2>/dev/null' 2>&1) -join ' '
+    $wlanIp  = ([regex]::Match($wlanOut, 'inet\s+(\d{1,3}(?:\.\d{1,3}){3})')).Groups[1].Value
+    if ($wlanIp) {
+        $r  = (& $ADB connect "${wlanIp}:5555" 2>&1) -join ''
+        $ok = if ($r -match 'connected to|already connected') { (& $ADB -s "${wlanIp}:5555" shell echo ok 2>&1) -join '' } else { '' }
+        if   ($ok -match 'ok') { Ok   "[PASS] WiFi adb reachable ($wlanIp`:5555)";             $stP++ }
+        else                   { Warn "[WARN] WiFi adb unreachable ($wlanIp`:5555) -- network isolation?"; $stW++ }
+    } else { Warn '[WARN] WiFi adb: no IP on wlan0'; $stW++ }
+
+    # --- Summary ---
+    Write-Host ''
+    $col = if ($stF -gt 0) { 'Red' } elseif ($stW -gt 0) { 'Yellow' } else { 'Green' }
+    Write-Host "  Self-test: $stP passed  $stF failed  $stW warnings" -ForegroundColor $col
+    if ($stF -gt 0) { Warn 'One or more checks FAILED -- review before deploying this unit.' }
+}
+
 function Enable-WifiAdb {
     # Switch adbd into TCP mode on 5555 and connect over WiFi. THE PATCHED ADBD
     # DOES NOT AUTO-LISTEN ON 5555 on every unit (it didn't on 2022010501038), so
@@ -229,8 +349,24 @@ function Enable-WifiAdb {
     $ip = Get-DeviceWifiIp -Dev $UsbDev
     if (-not $ip) { Warn 'Could not read tablet WiFi IP (is it associated to WiFi?).'; return $null }
     Info "Tablet WiFi IP: $ip"
-    & $ADB -s $UsbDev shell 'setprop persist.adb.tcp.port 5555' 2>&1 | Out-Null  # best-effort persist
-    & $ADB -s $UsbDev tcpip 5555 2>&1 | Out-Null                                 # restarts adbd in TCP mode
+    # Try WiFi connect first -- adbd may already be listening on 5555 (e.g. from a
+    # prior run), avoiding USB adb calls that can hang after an aborted session.
+    $r = & $ADB connect "${ip}:5555" 2>&1
+    if ($r -match 'connected to|already connected') {
+        $ok = & $ADB -s "${ip}:5555" shell echo ok 2>&1
+        if ($ok -match '^ok') { $script:WifiIp = $ip; return "${ip}:5555" }
+    }
+    # Not already listening -- switch adbd to TCP mode via USB.
+    # Both calls can hang when USB adb is wedged; cap each at 8s.
+    $spJob = Start-Job { param($adb,$dev) & $adb -s $dev shell 'setprop persist.adb.tcp.port 5555' 2>&1 } -ArgumentList $ADB,$UsbDev
+    if (-not (Wait-Job $spJob -Timeout 8)) { Stop-Job $spJob }
+    Remove-Job $spJob -Force
+    $tcpJob = Start-Job { param($adb,$dev) & $adb -s $dev tcpip 5555 2>&1 } -ArgumentList $ADB,$UsbDev
+    if (-not (Wait-Job $tcpJob -Timeout 8)) {
+        Stop-Job $tcpJob
+        Warn 'adb tcpip timed out (USB adb wedged); will try WiFi connect anyway.'
+    }
+    Remove-Job $tcpJob -Force
     Start-Sleep -Seconds 3
     for ($i = 0; $i -lt 10; $i++) {
         $r = & $ADB connect "${ip}:5555" 2>&1
@@ -261,28 +397,36 @@ if (Test-Loader) {
     }
     $state = Get-MabuState -Dev $dev
     switch ($state) {
-        'A' { Ok  "Detected State A (active Esper DPC in /data) at $dev." }
-        'B' { Ok  "Detected State B (factory-reset Esper) at $dev." }
-        default { Warn "Could not determine Esper state at $dev (adb may be wedging)." }
+        'A'         { Ok   "Detected State A (active Esper DPC in /data) at $dev." }
+        'B'         { Ok   "Detected State B (factory-reset Esper) at $dev." }
+        'Liberated' { Ok   "Device already liberated at $dev -- skipping Loader flash." }
+        default     { Warn "Could not determine Esper state at $dev (adb may be wedging)." }
     }
-    # Switch on WiFi adb NOW, while USB is up. This gives the inter-phase Loader
-    # re-catch a reliable transport instead of depending on USB re-enumerating
-    # after the reboot (it often doesn't on this hardware). persist.adb.tcp.port
-    # is set too, so 5555 keeps listening across the (data-preserving) reboot.
-    $wifiDev = Enable-WifiAdb -UsbDev $dev
-    if ($wifiDev) { Ok "WiFi adb enabled at $wifiDev"; $dev = $wifiDev }
-    else          { Warn 'WiFi adb not established now; inter-phase will retry over USB/WiFi.' }
-    Info "Rebooting into Loader."
-    & $ADB -s $dev shell reboot loader 2>&1 | Out-Null
-    for ($i = 0; $i -lt 30; $i++) {
-        Start-Sleep -Seconds 1
-        if (Test-Loader) { Ok "Loader caught after ${i}s."; break }
+    if ($state -ne 'Liberated') {
+        # Switch on WiFi adb NOW, while USB is up. This gives the inter-phase Loader
+        # re-catch a reliable transport instead of depending on USB re-enumerating
+        # after the reboot (it often doesn't on this hardware). persist.adb.tcp.port
+        # is set too, so 5555 keeps listening across the (data-preserving) reboot.
+        $wifiDev = Enable-WifiAdb -UsbDev $dev
+        if ($wifiDev) { Ok "WiFi adb enabled at $wifiDev"; $dev = $wifiDev }
+        else          { Warn 'WiFi adb not established now; inter-phase will retry over USB/WiFi.' }
+        Info "Rebooting into Loader."
+        & $ADB -s $dev shell reboot loader 2>&1 | Out-Null
+        for ($i = 0; $i -lt 30; $i++) {
+            Start-Sleep -Seconds 1
+            if (Test-Loader) { Ok "Loader caught after ${i}s."; break }
+        }
+        if (-not (Test-Loader)) { Fail 'Loader did not appear in 30s.'; exit 1 }
     }
-    if (-not (Test-Loader)) { Fail 'Loader did not appear in 30s.'; exit 1 }
+}
+
+if ($state -eq 'Liberated') {
+    Info 'Skipping wipe policy, patches, and wipe -- device is already liberated.'
 }
 
 # --- Decide wipe policy: explicit flags win, else auto from detected state ---
-if ($WipeData -and $NoWipe) { Fail 'Pass only one of -WipeData / -NoWipe.'; exit 1 }
+if ($state -ne 'Liberated' -and $WipeData -and $NoWipe) { Fail 'Pass only one of -WipeData / -NoWipe.'; exit 1 }
+if ($state -ne 'Liberated') {
 if     ($WipeData) { $doWipe = $true;  $wipeWhy = 'forced by -WipeData' }
 elseif ($NoWipe)   { $doWipe = $false; $wipeWhy = 'forced by -NoWipe' }
 elseif ($state -eq 'A') { $doWipe = $true;  $wipeWhy = 'auto: State A (active /data DPC must be wiped)' }
@@ -349,12 +493,17 @@ if ($doWipe) {
 Section 'Resetting device'
 & $RK rd 2>&1 | Out-Null
 Ok 'Reset issued.'
+} # end if ($state -ne 'Liberated') -- wipe policy / patches / wipe / Loader reset
 
 if ($SkipApps) {
     Write-Host ""
     Ok 'Loader-side patches done. SkipApps requested -- no userspace install.'
     exit 0
 }
+
+# Destructive Loader work is done. Provisioning is best-effort; a transient
+# adb hiccup should warn, not abort the whole script.
+$ErrorActionPreference = 'Continue'
 
 Section 'Provisioning transport (WiFi adb)'
 Info 'USB adb on this hardware times out too fast for installs/pulls --'
@@ -391,14 +540,14 @@ Ok "Provisioning over: $dev"
 
 # Quick audit
 Section 'Post-boot audit'
-$audit = & $ADB -s $dev shell 'echo DO=$(getprop ro.device_owner); echo SDOSVC=$(getprop init.svc.set-device-owner); dumpsys device_policy | grep -E "Device managed:|provisioningState" | head -3; pm list packages | grep -iE "esper|shoonya" | head -5' 2>&1
+$audit = & $ADB -s $dev shell 'echo DO=$(getprop ro.device_owner); echo SDOSVC=$(getprop init.svc.set-device-owner); dumpsys device_policy 2>/dev/null | grep -E "Device managed|provisioningState" | head -3; pm list packages 2>/dev/null | grep -iE "esper|shoonya" | head -5' 2>&1
 $audit | ForEach-Object { Info $_ }
 
 # --- Phase 5: Install user-facing apps ---
 Section 'Installing user apps'
 foreach ($apk in @($FDroidApk, $LawnchairApk)) {
     if (-not (Test-Path (Join-Path $Root $apk))) { Warn "Missing APK: $apk -- skipping"; continue }
-    $r = & $ADB -s $dev install (Join-Path $Root $apk) 2>&1 | Select-Object -Last 1
+    $r = (& $ADB -s $dev install (Join-Path $Root $apk) 2>&1) | Where-Object { $_ -notmatch 'RemoteException' } | Select-Object -Last 1
     Info "$apk : $r"
 }
 & $ADB -s $dev shell 'cmd package set-home-activity app.lawnchair/.LawnchairLauncher' 2>&1 | Out-Null
@@ -412,7 +561,7 @@ if ($RestoreMabu) {
         Info 'com.catalia.factorymode already installed -- skipping APK install.'
     } else {
         $apk = Join-Path $Root "$MabuArchive/apks/com.catalia.factorymode.apk"
-        $r = & $ADB -s $dev install $apk 2>&1 | Select-Object -Last 1
+        $r = (& $ADB -s $dev install $apk 2>&1) | Where-Object { $_ -notmatch 'RemoteException' } | Select-Object -Last 1
         Info "factorymode install: $r"
     }
     foreach ($p in 'CAMERA','RECORD_AUDIO','READ_PHONE_STATE','READ_EXTERNAL_STORAGE','WRITE_EXTERNAL_STORAGE') {
@@ -434,6 +583,25 @@ if ($RestoreMabu) {
     }
 }
 
+# --- Phase 7: SELinux policy fix ---
+if (-not $SkipApps -and -not $SkipSELinux) {
+    # Find a live adb device for the on-device patch step. After the RestoreMabu
+    # phase the device is still up; after a plain flash it may need a moment.
+    $selinuxDev = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 60 -WifiOnly:($dev -match ':\d+$')
+    if (-not $selinuxDev) { $selinuxDev = $dev }
+    Apply-SELinuxFix -Dev $selinuxDev
+}
+
+# --- Phase 8: Self-test ---
+# The SELinux fix ends with a Loader reset; wait for the device to come back
+# before running tests. If SELinux was skipped the device is already up.
+if (-not $SkipApps) {
+    Info 'Waiting for device to come up for self-test...'
+    $testDev = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 120
+    if ($testDev) { Run-SelfTest -Dev $testDev }
+    else          { Warn 'Self-test skipped: no adb device found after reboot.' }
+}
+
 Section 'Done'
 Ok "Unit at $dev liberated and provisioned. Verify on-device:"
 Info '  - Home screen = Lawnchair (long-press to customize)'
@@ -441,4 +609,7 @@ Info '  - F-Droid available for additional apps'
 if ($RestoreMabu) {
     Info '  - Mabu Factory Mode launches motor diagnostics'
     Info '  - Open Trouble Shooting/Motor Debug to recalibrate motors'
+}
+if (-not $SkipSELinux) {
+    Info '  - SELinux fix applied: untrusted_app can open serial_device (motors)'
 }
