@@ -54,19 +54,32 @@ $sw = [System.Diagnostics.Stopwatch]::StartNew()
 $completed = 0
 for ($i = 0; $i -lt $NChunks; $i++) {
     $lba = $BaseLBA + $i * $ChunkSec
-    $proc = Start-Process -FilePath $Rk -ArgumentList @('wl', $lba, $Zeros) `
-                          -NoNewWindow -PassThru `
-                          -RedirectStandardOutput "$env:TEMP\wl-out.txt" `
-                          -RedirectStandardError  "$env:TEMP\wl-err.txt"
-    $finished = $proc.WaitForExit(45000)
-    if (-not $finished) {
+    # Run rkdeveloptool via a .NET process, NOT Start-Process. Two reasons:
+    #  1. We control the argument string, so the payload path is quoted properly
+    #     -- a repo path with a space ("...\Claude Projects\...") otherwise
+    #     reaches rkdeveloptool as extra args -> "Parameter of [WL] command is
+    #     invalid" (it looked like a chunk-0 "wedge" but the write never ran).
+    #  2. Start-Process -PassThru misreports ExitCode here (it returned nonzero
+    #     even when the 16 MB write completed at 100%). A real Process gives the
+    #     true exit code, and WaitForExit(timeout) still guards a genuine wedge.
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName               = $Rk
+    $psi.Arguments              = ('wl {0} "{1}"' -f $lba, $Zeros)
+    $psi.UseShellExecute        = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError  = $true
+    $psi.CreateNoWindow         = $true
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $null = $proc.StandardOutput.ReadToEndAsync()   # drain pipes so it can't block
+    $null = $proc.StandardError.ReadToEndAsync()
+    if (-not $proc.WaitForExit(45000)) {
         Write-Host ("  WEDGED at chunk {0} (LBA 0x{1:X}) after 45s -- killing" -f $i, $lba) -ForegroundColor Red
-        try { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue } catch {}
+        try { $proc.Kill() } catch {}
         Get-Process rkdeveloptool -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
         break
     }
     if ($proc.ExitCode -ne 0) {
-        Write-Host ("  FAILED at chunk {0} -- Loader probably wedged" -f $i) -ForegroundColor Red
+        Write-Host ("  FAILED at chunk {0} (exit {1}) -- Loader probably wedged" -f $i, $proc.ExitCode) -ForegroundColor Red
         break
     }
     $completed = $i + 1

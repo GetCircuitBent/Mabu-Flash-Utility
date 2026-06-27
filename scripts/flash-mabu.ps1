@@ -47,7 +47,7 @@ param(
     [int]    $WipeMB = 96,       # 96 MB matches v3 procedure (preserves Dev Options on this build)
     [switch] $RestoreMabu,       # install factorymode + push animations/voice assets
     [switch] $SkipApps,          # only do Loader-side patches; no F-Droid/Lawnchair
-    [string] $WifiIp = '192.168.0.18',  # static lease; override if IP changes
+    [string] $WifiIp = '192.168.0.18',  # initial hint only; auto-discovered from the device (wlan0) at runtime
     [string] $UsbSerial,         # if known; else autodetect
     [string] $LawnchairApk = 'apks/Lawnchair.apk',
     [string] $FDroidApk    = 'apks/F-Droid.apk',
@@ -60,6 +60,16 @@ $RK = Join-Path $Root 'tools/rkdeveloptool/rkdeveloptool.exe'
 $ADB = (Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Google.PlatformTools_*\platform-tools\adb.exe" | Select-Object -First 1).FullName
 if (-not $ADB) { throw "adb.exe not found" }
 
+# Pre-start the adb server NOW, while errors are non-fatal. The very first adb
+# call otherwise prints "* daemon not running; starting now at tcp:5037" to
+# stderr, and with $ErrorActionPreference='Stop' the 2>&1 capture turns that
+# banner into a terminating NativeCommandError that aborts the whole script
+# mid-flash (bit us right after the patch phase). Starting it here means no later
+# adb call emits that banner.
+$ErrorActionPreference = 'Continue'
+& $ADB start-server 2>&1 | Out-Null
+$ErrorActionPreference = 'Stop'
+
 function Section($msg) { Write-Host "" -ForegroundColor Cyan; Write-Host "==== $msg ====" -ForegroundColor Cyan }
 function Info($msg)    { Write-Host "  $msg" -ForegroundColor Gray }
 function Ok($msg)      { Write-Host "  $msg" -ForegroundColor Green }
@@ -67,6 +77,77 @@ function Warn($msg)    { Write-Host "  $msg" -ForegroundColor Yellow }
 function Fail($msg)    { Write-Host "  $msg" -ForegroundColor Red }
 
 function Test-Loader { (& $RK ld 2>&1) -match 'Vid=0x2207,Pid=0x320a.*Loader' }
+
+function Get-LoaderDriverService {
+    # Driver service bound to Loader PID 320A (e.g. 'WinUSB' or 'Rockusb'), or
+    # $null if the device isn't present. rkdeveloptool needs WinUSB; when the
+    # device is bound to Rockchip's 'Rockusb' (rockusb.sys), 'ld' still LISTS the
+    # Loader but any read/write fails with "creating comm object failed".
+    $d = Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
+         Where-Object { $_.InstanceId -match 'VID_2207&PID_320A' } | Select-Object -First 1
+    if (-not $d) { return $null }
+    return (Get-PnpDeviceProperty -InstanceId $d.InstanceId -KeyName 'DEVPKEY_Device_Service' -ErrorAction SilentlyContinue).Data
+}
+
+function Find-Zadig {
+    # Locate a Zadig exe: winget package dir first, then Program Files.
+    $c = @()
+    $c += Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\akeo.ie.Zadig_*" -Filter 'zadig*.exe' -Recurse -ErrorAction SilentlyContinue
+    $c += Get-ChildItem "$env:ProgramFiles","${env:ProgramFiles(x86)}" -Filter 'zadig*.exe' -Recurse -ErrorAction SilentlyContinue
+    return ($c | Select-Object -First 1).FullName
+}
+
+function Confirm-LoaderWinUsb {
+    # Gate before any Loader read/write: ensure PID 320A is bound to WinUSB.
+    # If it's on Rockusb (the default after a first-ever Loader catch on a PC),
+    # auto-launch Zadig so the user can rebind 320A -> WinUSB (one-time; persists),
+    # then re-verify. Returns once WinUSB is confirmed; exits on failure.
+    Section 'Loader driver binding (WinUSB)'
+    $svc = Get-LoaderDriverService
+    if ($svc -match 'WinUSB|libusb') { Ok "PID 320A bound to '$svc' -- rkdeveloptool can talk to it."; return }
+
+    Warn "PID 320A is bound to '$svc', not WinUSB."
+    Warn "rkdeveloptool can SEE Loader but writes fail ('creating comm object failed')."
+    Warn 'Launching Zadig to rebind 320A -> WinUSB (one-time per PC; it persists).'
+    $zadig = Find-Zadig
+    if ($zadig) {
+        Info "Zadig: $zadig"
+        Start-Process $zadig
+        Write-Host ""
+        Warn 'In Zadig:'
+        Warn '  1. Options -> List All Devices'
+        Warn "  2. In the dropdown pick 'Rockusb Device' (USB ID 2207 320A)"
+        Warn '  3. Set the target driver to WinUSB, then click Replace Driver'
+        Warn "  4. Wait for 'Driver Installed Successfully'"
+        Warn 'Keep the tablet powered / in Loader the whole time -- do NOT power-cycle.'
+    } else {
+        Fail 'Zadig not found. Install it (winget install -e --id akeo.ie.Zadig)'
+        Fail 'and rebind 320A -> WinUSB manually, then re-run this script.'
+        exit 1
+    }
+    Read-Host 'Press Enter after Zadig reports the WinUSB driver is installed'
+
+    # Re-verify the binding (device re-enumerates on rebind; allow a moment).
+    for ($i = 0; $i -lt 20; $i++) {
+        $svc = Get-LoaderDriverService
+        if ($svc -match 'WinUSB|libusb') { break }
+        Start-Sleep -Seconds 1
+    }
+    if ($svc -notmatch 'WinUSB|libusb') {
+        Fail "PID 320A still bound to '$svc'. Re-run Zadig (target WinUSB), then re-run this script."
+        exit 1
+    }
+    # Confirm rkdeveloptool sees Loader again after the rebind.
+    if (-not (Test-Loader)) {
+        Warn 'Loader not visible right after rebind; waiting for re-enumeration...'
+        for ($i = 0; $i -lt 15; $i++) { Start-Sleep -Seconds 1; if (Test-Loader) { break } }
+    }
+    if (-not (Test-Loader)) {
+        Fail 'Loader gone after rebind. Re-catch Loader (hold ADKEY through power-on) and re-run.'
+        exit 1
+    }
+    Ok "PID 320A now bound to '$svc'. rkdeveloptool ready."
+}
 
 function Get-MabuState {
     # Classify the booted unit as 'A', 'B', or 'Unknown' over adb.
@@ -104,8 +185,11 @@ function Find-AdbDevice {
         # then any usb device (only when USB is acceptable -- i.e. just to enter
         # Loader; skipped under -WifiOnly so installs never run over flaky USB)
         if (-not $WifiOnly) {
-            $usb = & $ADB devices 2>&1 | Where-Object { $_ -match '^\d+\s+device$' }
-            if ($usb) {
+            # @() forces an array: a single 'serial<TAB>device' match is otherwise
+            # a scalar string, so $usb[0] would index its first CHARACTER (e.g.
+            # '2' of 2022...), producing "device '2' not found".
+            $usb = @(& $ADB devices 2>&1 | Where-Object { $_ -match '^\S+\s+device$' -and $_ -notmatch ':\d+\s+device$' })
+            if ($usb.Count -gt 0) {
                 $serial = ($usb[0] -split '\s+')[0]
                 $ok = & $ADB -s $serial shell echo ok 2>&1
                 if ($ok -match '^ok') { return $serial }
@@ -113,6 +197,50 @@ function Find-AdbDevice {
         }
         Start-Sleep -Seconds 3
     }
+    return $null
+}
+
+function Get-DeviceWifiIp {
+    # The device's WiFi (wlan0) IPv4, read over an existing adb connection, or
+    # $null. Don't trust a hardcoded static lease -- a freshly-wiped unit DHCPs a
+    # random IP, so we always re-read the real one.
+    param([string] $Dev)
+    if (-not $Dev) { return $null }
+    $out = (& $ADB -s $Dev shell 'ip -f inet addr show wlan0 2>/dev/null' 2>&1) -join "`n"
+    $ip  = ([regex]::Match($out, 'inet\s+(\d{1,3}(?:\.\d{1,3}){3})')).Groups[1].Value
+    if (-not $ip) {
+        $out = (& $ADB -s $Dev shell 'ip route 2>/dev/null' 2>&1) -join "`n"
+        $ip  = ([regex]::Match($out, 'wlan0.*\bsrc\s+(\d{1,3}(?:\.\d{1,3}){3})')).Groups[1].Value
+    }
+    if ($ip -match '^\d{1,3}(\.\d{1,3}){3}$') { return $ip }
+    return $null
+}
+
+function Enable-WifiAdb {
+    # Switch adbd into TCP mode on 5555 and connect over WiFi. THE PATCHED ADBD
+    # DOES NOT AUTO-LISTEN ON 5555 on every unit (it didn't on 2022010501038), so
+    # the provision phase must turn it on explicitly -- this is the step that was
+    # missing and why WiFi adb never came up. Also sets persist.adb.tcp.port so
+    # WiFi adb survives a reboot that KEEPS /data (the inter-phase Loader
+    # re-catch); the /data wipe clears it, so Phase 4 re-runs this. Returns
+    # "<ip>:5555" or $null. $UsbDev = a USB adb serial to issue the switch over.
+    param([string] $UsbDev)
+    if (-not $UsbDev) { return $null }
+    $ip = Get-DeviceWifiIp -Dev $UsbDev
+    if (-not $ip) { Warn 'Could not read tablet WiFi IP (is it associated to WiFi?).'; return $null }
+    Info "Tablet WiFi IP: $ip"
+    & $ADB -s $UsbDev shell 'setprop persist.adb.tcp.port 5555' 2>&1 | Out-Null  # best-effort persist
+    & $ADB -s $UsbDev tcpip 5555 2>&1 | Out-Null                                 # restarts adbd in TCP mode
+    Start-Sleep -Seconds 3
+    for ($i = 0; $i -lt 10; $i++) {
+        $r = & $ADB connect "${ip}:5555" 2>&1
+        if ($r -match 'connected to|already connected') {
+            $ok = & $ADB -s "${ip}:5555" shell echo ok 2>&1
+            if ($ok -match '^ok') { $script:WifiIp = $ip; return "${ip}:5555" }
+        }
+        Start-Sleep -Seconds 2
+    }
+    Warn "tcpip enabled but ${ip}:5555 unreachable (WiFi client isolation, or different subnet)."
     return $null
 }
 
@@ -137,6 +265,13 @@ if (Test-Loader) {
         'B' { Ok  "Detected State B (factory-reset Esper) at $dev." }
         default { Warn "Could not determine Esper state at $dev (adb may be wedging)." }
     }
+    # Switch on WiFi adb NOW, while USB is up. This gives the inter-phase Loader
+    # re-catch a reliable transport instead of depending on USB re-enumerating
+    # after the reboot (it often doesn't on this hardware). persist.adb.tcp.port
+    # is set too, so 5555 keeps listening across the (data-preserving) reboot.
+    $wifiDev = Enable-WifiAdb -UsbDev $dev
+    if ($wifiDev) { Ok "WiFi adb enabled at $wifiDev"; $dev = $wifiDev }
+    else          { Warn 'WiFi adb not established now; inter-phase will retry over USB/WiFi.' }
     Info "Rebooting into Loader."
     & $ADB -s $dev shell reboot loader 2>&1 | Out-Null
     for ($i = 0; $i -lt 30; $i++) {
@@ -156,6 +291,11 @@ else                    { $doWipe = $true;  $wipeWhy = 'auto: state undetermined
 Section 'Wipe policy'
 if ($doWipe) { Ok  "/data wipe: ON  ($wipeWhy)" }
 else         { Ok  "/data wipe: OFF ($wipeWhy)" }
+
+# --- Gate: PID 320A must be on WinUSB before any Loader write ---
+# 'ld' succeeds even when bound to rockusb.sys, but writes then fail with
+# "creating comm object failed". Auto-launch Zadig to rebind if needed.
+Confirm-LoaderWinUsb
 
 # --- Phase 2: Apply patches ---
 Section 'Applying liberation patches'
@@ -185,8 +325,23 @@ if ($doWipe) {
     if (-not (Test-Loader)) { Fail 'Loader not re-caught.'; exit 1 }
 
     Section "Wiping head of /data ($WipeMB MB)"
-    & (Join-Path $Root 'scripts/wipe-data-head.ps1') -SizeMB $WipeMB
-    if ($LASTEXITCODE -ne 0) { Fail '/data head wipe failed.'; exit 1 }
+    # The FIRST wl right after the inter-phase re-catch usually wedges at chunk 0
+    # because Loader isn't "warm" yet. A throwaway 'ld' + brief pause warms it,
+    # and re-running the wipe with Loader still caught succeeds (re-zeroing any
+    # already-written chunks is harmless). So warm up, then retry on failure
+    # instead of bailing -- this is what makes a top-to-bottom run reliable.
+    & $RK ld 2>&1 | Out-Null
+    Start-Sleep -Seconds 3
+    $wiped = $false
+    for ($attempt = 1; $attempt -le 4; $attempt++) {
+        & (Join-Path $Root 'scripts/wipe-data-head.ps1') -SizeMB $WipeMB
+        if ($LASTEXITCODE -eq 0) { $wiped = $true; break }
+        if (-not (Test-Loader)) { Fail "Loader dropped during wipe (attempt $attempt). Power-cycle into Loader and re-run."; exit 1 }
+        Warn "Wipe attempt $attempt wedged (cold Loader); warming and retrying..."
+        & $RK ld 2>&1 | Out-Null
+        Start-Sleep -Seconds 3
+    }
+    if (-not $wiped) { Fail '/data head wipe failed after 4 attempts.'; exit 1 }
     Ok '/data head zeroed; vold will reformat on boot.'
 }
 
@@ -201,26 +356,38 @@ if ($SkipApps) {
     exit 0
 }
 
-Section 'Waiting for WiFi adb'
+Section 'Provisioning transport (WiFi adb)'
 Info 'USB adb on this hardware times out too fast for installs/pulls --'
-Info "the provision phase runs over WiFi adb (${WifiIp}:5555)."
+Info 'the provision phase runs over WiFi adb on 5555.'
 if ($doWipe) {
-    Warn '/data was wiped: WiFi credentials are gone.'
-    Warn 'On the tablet touch UI, connect to WiFi. Then come back here.'
+    Warn '/data was wiped: WiFi credentials AND the persistent tcpip flag are gone.'
+    Warn 'On the tablet touch UI, connect to WiFi, then come back here.'
     Read-Host 'Press Enter once WiFi is associated on the tablet'
 }
-$dev = Find-AdbDevice -PreferIp $WifiIp -WifiOnly -TimeoutSec 180
-if (-not $dev) {
-    Warn "Could not reach WiFi adb at ${WifiIp}:5555."
-    Warn 'Make sure the tablet is on WiFi (static lease at that IP, or pass -WifiIp).'
-    Read-Host 'Press Enter to retry WiFi adb (Ctrl+C to abort)'
-    $dev = Find-AdbDevice -PreferIp $WifiIp -WifiOnly -TimeoutSec 180
-}
-if (-not $dev) {
-    Fail 'Timed out waiting for WiFi adb. Check the tablet WiFi / IP.'
+# Re-establish WiFi adb. The patched adbd does NOT auto-listen on 5555 on this
+# unit, so we switch it on over USB and discover the (possibly new) DHCP IP.
+# USB is used ONLY for this one switch-over; installs then run over WiFi.
+Info 'Acquiring adb after reset (USB to switch on WiFi, or WiFi if already up)...'
+$acq = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 180   # WiFi if already listening, else USB
+if (-not $acq) {
+    Fail 'No adb (USB or WiFi) after reset.'
+    Fail 'Re-seat the USB harness (or fix the tablet WiFi), then finish with:'
+    Fail '  .\scripts\flash-mabu.ps1 -RestoreMabu -NoWipe'
     exit 1
 }
-Ok "Connected over WiFi: $dev"
+if ($acq -match ':5555$') {
+    $dev = $acq                                   # WiFi adb already up (persist survived a no-wipe run)
+    Ok "WiFi adb already up: $dev"
+} else {
+    $dev = Enable-WifiAdb -UsbDev $acq            # switch adbd to TCP, discover IP, connect
+    if (-not $dev) {
+        Warn 'WiFi adb unavailable; falling back to USB adb for installs.'
+        Warn 'USB installs can wedge on this hardware -- if one fails, fix WiFi adb'
+        Warn 'and re-run:  .\scripts\flash-mabu.ps1 -RestoreMabu -NoWipe'
+        $dev = $acq
+    }
+}
+Ok "Provisioning over: $dev"
 
 # Quick audit
 Section 'Post-boot audit'

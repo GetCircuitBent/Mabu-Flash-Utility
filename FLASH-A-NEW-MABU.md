@@ -110,6 +110,10 @@ A direct USB 3 connection from the harness to the PC works — that's the
 validated setup. If Loader mode (VID 2207 **PID 320A**) won't show even though
 Android (0006) / recovery (0011) modes do, the usual culprits are wiring and
 timing, not the host port:
+- **First, force Loader by holding ADKEY (pin 4) to GND through power-on** — see
+  Section 3's "boot into Loader by holding ADKEY." This is what finally got this
+  PC to 320A after only ever seeing Android 0006; the unit was free-booting past
+  the Loader window, not failing to enumerate. Try this before chasing wiring.
 - Re-check **D+/D- polarity** on the harness (swap OTG_DM/OTG_DP) — a marginal
   data pair shows as "device descriptor request failed."
 - Reboot the PC to clear wedged USB stack state and remove stale `VID_2207`
@@ -141,6 +145,21 @@ so there's no Android to query — it defaults to wiping.**
 with a Settings/Dev-Options regression; smaller wipes don't reliably trigger the
 `/data` reformat.
 
+> ⚠️ **OPEN ISSUE — units that were Settings-level factory-reset may be
+> FDE-encrypted (2026-06-27, unresolved).** One unit that had been through an
+> Android *Settings → factory reset* came up with **full-disk encryption**
+> (`ro.crypto.type=block`, a populated `metadata` partition `mmcblk1p12`). On
+> these, the head-wipe corrupts the *encrypted* userdata but the crypto footer
+> survives, so vold gets stuck in `vold.decrypt=trigger_restart_min_framework`:
+> `/data` is only a tmpfs, `/sdcard` never mounts, and the full framework (hence
+> WiFi setup) never starts. Wiping the `metadata` partition made it **worse**
+> (no boot at all — likely metadata-encryption where `/metadata` is needed
+> early), and an AOSP-style `misc` BCB `--wipe_data` did **not** trigger a
+> recovery wipe (RK bootloader may not honor it). **Not yet solved — do not
+> follow those steps blind.** Likely correct path is a real recovery factory
+> reset via the on-device recovery menu. See memory note
+> `mabuflash-fde-factory-reset-unit` before touching an encrypted unit.
+
 ---
 
 ## 3. Catch the Loader
@@ -159,23 +178,67 @@ adb reboot loader      # drops straight into Rockchip Loader (PID 320A)
 On the validated unit this landed in Loader in **~1 second** — no power-on
 timing race. This is also how you re-enter Loader between phases.
 
-### Fallback: catch the power-on window
-If there is no adb at all:
+### Fallback: boot into Loader by holding ADKEY (validated on this PC)
+If there is no adb at all, **hold ADKEY through power-on to force Loader.** This
+is the reliable way in on a unit that otherwise free-boots straight to the
+auth-walled Esper Android (PID 0006) — confirmed 2026-06-27 on this flashing PC,
+which had never once reached Loader until this sequence:
+
 1. Connect the harness directly to the PC (USB 3 is fine). Tablet powered off.
-2. Power on the tablet. During early boot, u-boot exposes **PID 0x320A** for
-   ~10 seconds; `scripts\latch-loader.ps1` polls and latches it the instant it
-   appears (no human timing needed). If you miss it, u-boot continues to Android
-   (you'll see PID 0006) — just `adb reboot loader` from there, or power-cycle
-   and re-run the latch.
+2. **Short ADKEY (pin 4) to GND** (any of pins 1/2/6/13/14…) and **hold it**.
+3. While still holding ADKEY, power the unit on (hold PWRON ~2-3 s if it's a
+   buttonless board — a tap may leave it dark). Holding ADKEY diverts the boot
+   into the Rockchip **Loader (PID 0x320A)** instead of letting it free-boot to
+   Android 0006.
+4. Keep ADKEY held until USB enumerates as **Loader 320A** — verify with the
+   `rkdeveloptool ld` check below (or watch with `scripts\latch-loader.ps1`).
+   Then release. If you instead see PID 0006, the divert was missed: power off
+   and retry, holding ADKEY a beat earlier/longer.
+
+> If you let it boot normally, u-boot exposes **PID 0x320A** for only ~10 s
+> before continuing to Android; `scripts\latch-loader.ps1` polls and latches it
+> the instant it appears (no human timing needed). Holding ADKEY removes that
+> race — the unit comes up *in* Loader and stays there.
+
+**Don't dawdle once 320A is up** — a power-cycle or long idle can drop it back to
+Android. Run the flash promptly. And since a hand-caught Loader gives the script
+no booted Android to probe, it can't auto-detect State A vs B — pass
+`-WipeData` or `-NoWipe` explicitly (see Section 4).
 
 ### Driver binding (usually already done)
 `rkdeveloptool` needs **WinUSB** bound to PID 320A. On a PC that has flashed
 before, this **persists** — on the validated PC, 320A came up already
-`Service=WinUSB` and `rkdeveloptool ld` worked immediately, no Zadig step. Only
-the **first time** on a given PC do you need:
-- **RKDevTool v2.92** → *Read Flash Info* to latch Loader (`rockusb.sys`
-  auto-binds 320A; stays put 60 s+), then **Zadig** → replace 320A's driver with
-  **WinUSB**.
+`Service=WinUSB` and `rkdeveloptool ld` worked immediately, no Zadig step.
+
+**The trap (hit 2026-06-27 on this PC's first-ever Loader catch):** when 320A
+first appears it binds to Rockchip's **`rockusb.sys`** (`FriendlyName: Rockusb
+Device`, `Service=Rockusb`). `rkdeveloptool ld` still *lists* it, but the first
+write dies with **`WRITE FAILED: ... creating comm object failed!`** because the
+transfer channel needs WinUSB, not rockusb.sys. So `ld` succeeding is **not**
+proof you're ready to write.
+
+**`flash-mabu.ps1` now auto-handles this.** Before Phase 2 it checks the driver
+service on PID 320A (`Confirm-LoaderWinUsb`); if it's not WinUSB it **launches
+Zadig for you**, prints the steps below, pauses, then re-verifies the binding and
+that Loader is still visible before continuing. You only do the Zadig clicks:
+- **Zadig** → *Options → List All Devices* → pick **Rockusb Device (USB ID 2207
+  320A)** → target driver **WinUSB** → **Replace Driver**. Keep the unit powered
+  in Loader throughout — don't power-cycle.
+
+This is **one-time per PC *per USB port-path***; once WinUSB is bound it persists
+across re-enumerations on **that same port** (including the script's inter-phase
+Loader re-catch). Manual alternative if you prefer the GUI route: **RKDevTool
+v2.92** → *Read Flash Info* to latch Loader (`rockusb.sys` auto-binds 320A; stays
+put 60 s+), then Zadig as above.
+
+> **Gotcha — the WinUSB binding is per port-path, not per device (hit
+> 2026-06-27).** If you unplug and replug into a *different* physical USB
+> port/hub, 320A enumerates at a new instance path (`...&0&2` → `...&0&9`) and
+> Windows binds it back to `rockusb.sys` — so `wl`/`rl` fail again with "creating
+> comm object failed!" Fixes: replug into the **same port** you Zadig'd, or
+> re-run Zadig for the new port. `flash-mabu.ps1`'s `Confirm-LoaderWinUsb` gate
+> catches this automatically; raw `rkdeveloptool` use does not, so keep to one
+> port.
 
 Verify from the Mabu repo root:
 ```powershell
@@ -323,12 +386,40 @@ What it does, in order (`scripts/flash-mabu.ps1` → `scripts/liberate-mabu.ps1`
 After `/data` wipe, **WiFi credentials are gone**. The script pauses and asks
 you to join WiFi on the touch UI before app installs proceed.
 
-> **Gotcha — wipe "FAILED at chunk 0":** the very first `wl` immediately after
-> the inter-phase Loader re-catch can wedge (Loader needs a moment to be
-> "warm"). The patches are already written, so just **re-run the wipe** — it
-> succeeds once Loader is warm. Manual equivalent, with Loader caught:
-> `.\scripts\wipe-data-head.ps1 -SizeMB 96` (re-zeroing already-zeroed chunks is
-> harmless), then `rkdeveloptool rd` to reboot.
+> **Gotcha — script aborts at the inter-phase reset with `* daemon not running;
+> starting now at tcp:5037`:** that banner is adb starting its background server
+> on first use; it goes to **stderr**, and under the script's
+> `$ErrorActionPreference = 'Stop'` the `2>&1` capture turns it into a fatal
+> `NativeCommandError` that kills the run right after the patch phase (patches are
+> already written; nothing is harmed). **Fixed in `flash-mabu.ps1`** — it now
+> pre-starts the adb server up front (with errors non-fatal) so no later adb call
+> emits the banner. If you see this on an older copy of the script, just re-run
+> the same command: the patches are idempotent and the server is now running, so
+> the second pass sails through. (Same root cause to watch for in any PS script
+> that does `& adb ... 2>&1` under `Stop`.)
+
+> **Gotcha — wipe "FAILED at chunk 0" was a path-quoting bug, NOT a Loader wedge
+> (root-caused 2026-06-27).** The old `wipe-data-head.ps1` invoked rkdeveloptool
+> via `Start-Process -ArgumentList @('wl',$lba,$Zeros)`, which does **not** quote
+> arguments — so a repo path containing a space (`...\Claude Projects\...`)
+> reached rkdeveloptool as extra args → `Parameter of [WL] command is invalid` →
+> the script reported a "chunk 0 wedge" even though no write was attempted.
+> (`Start-Process -PassThru` *also* misreported `ExitCode` as nonzero on writes
+> that actually completed at 100%.) **Fixed:** the wipe now runs rkdeveloptool
+> through a `System.Diagnostics.Process` with a properly-quoted argument string,
+> a real exit code, and the WaitForExit timeout for genuine wedges. The patches
+> use the `&` call operator (which quotes), so they were never affected — only
+> the wipe. If you see this on an old copy: re-run, or keep the repo in a
+> space-free path. Manual equivalent, Loader caught:
+> `.\scripts\wipe-data-head.ps1 -SizeMB 96` then `rkdeveloptool rd`.
+
+> **Gotcha — `/data` base LBA vs the GPT.** `wipe-data-head.ps1` hardcodes the
+> userdata start as `0x692400` ("per parameter file"), but on the 2026-06-27 unit
+> the kernel GPT reported userdata (`mmcblk1p16`) starting at `0x694400` — 8192
+> sectors (4 MB) later. The 96 MB wipe still lands well inside userdata so it
+> works, but if a unit won't reformat after a wipe, re-derive the real start from
+> the device: `adb shell cat /sys/class/block/mmcblk1p16/start` (value is in
+> 512 B sectors), and pass/patch that base.
 
 > **Headless / non-interactive runs:** the WiFi pause above is a `Read-Host`,
 > which hangs an unattended shell. To stage it: run
@@ -366,11 +457,22 @@ adb -s <tablet-ip>:5555 shell "pm list packages | grep -iE 'esper|shoonya'"  # e
 > - **USB pushes (`adb install`, `adb push`)** can complete for small payloads but
 >   time out / wedge unpredictably under any real load — don't plan around them.
 >
-> The patched adbd **listens on TCP 5555 out of the box**, so once the tablet is
-> on WiFi, `adb connect <ip>:5555` just works (pulled 293 KB in 0.4 s where USB
-> wedged at 128 KB). **Caveat:** the `/data` wipe erases WiFi credentials, so
-> re-join WiFi on the touch UI first (the script pauses for exactly this). Set a
-> static DHCP lease so the IP is stable.
+> **WiFi adb must be switched on — it does NOT auto-listen on every unit
+> (corrected 2026-06-27).** On the original validated unit `adb connect <ip>:5555`
+> worked immediately, but on the 2026-06-27 unit adbd was **not** listening on
+> 5555, so the connect silently failed. The fix is the standard one: run
+> **`adb tcpip 5555`** over USB once to put adbd into TCP mode, then
+> `adb connect <ip>:5555`. `flash-mabu.ps1` now does this automatically
+> (`Enable-WifiAdb`): over USB it reads the device's real `wlan0` IP
+> (`ip addr show wlan0`), runs `tcpip 5555`, sets `persist.adb.tcp.port 5555`
+> (survives a reboot that keeps `/data`), and connects. **Don't trust a hardcoded
+> static-lease IP** — the `-WifiIp` param is only a hint; the script overwrites it
+> with the discovered address (the 2026-06-27 unit DHCP'd `.160`, not the
+> `.18` default). Once up, WiFi pulled 293 KB in 0.4 s where USB wedged at 128 KB.
+> **Caveat:** the `/data` wipe erases WiFi credentials *and* the persistent tcpip
+> flag, so re-join WiFi on the touch UI first (the script pauses for this) and the
+> script re-enables tcpip over USB afterward. A static DHCP lease keeps the IP
+> stable across runs.
 
 ---
 
@@ -623,7 +725,8 @@ Protocol reference (don't hand-compute checksums — use the code):
 
 ## 9. Quick checklist
 
-- [ ] Loader caught (PID 320A) — `adb reboot loader` if adb is up, else power-on window
+- [ ] Loader caught (PID 320A) — `adb reboot loader` if adb is up, else hold ADKEY (pin 4)→GND through power-on
+- [ ] **PID 320A bound to WinUSB** (not `rockusb.sys`) — `flash-mabu.ps1` auto-launches Zadig if not; one-time per PC, then persists. `ld` listing the Loader is *not* proof: a `rockusb.sys` binding writes-fail with "creating comm object failed"
 - [ ] `flash-mabu.ps1 -RestoreMabu` completes — confirm the "Detected State X" / "Wipe policy" line matches the unit (force with `-WipeData`/`-NoWipe` if needed; re-run wipe if it "FAILED at chunk 0")
 - [ ] Device Owner clear, no esper/shoonya packages
 - [ ] Re-joined WiFi, WiFi ADB on 5555, static lease set (the working transport for all on-device adb — USB only for the Loader flash + opening adb)
