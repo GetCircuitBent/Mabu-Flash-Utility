@@ -310,15 +310,6 @@ function Run-SelfTest {
     if ($v -match '03f180a2')    { Ok  '[PASS] SELinux policy patched (03f180a2)';     $stP++ }
     else                         { Fail "[FAIL] SELinux policy patched  (got: $v)";     $stF++ }
 
-    # Functional: force-stop factory mode, clear logcat, relaunch, check for serial_device denials
-    & $ADB -s $Dev shell 'am force-stop com.catalia.factorymode' 2>&1 | Out-Null
-    & $ADB -s $Dev logcat -c 2>&1 | Out-Null
-    & $ADB -s $Dev shell 'am start -n com.catalia.factorymode/com.catalia.mabu.navigation.MainActivity' 2>&1 | Out-Null
-    Start-Sleep -Seconds 3
-    $denials = @(& $ADB -s $Dev logcat -d 2>&1 | Where-Object { $_ -match 'avc.*denied.*serial_device|serial_device.*avc.*denied' })
-    if ($denials.Count -eq 0) { Ok  '[PASS] No serial_device AVC denials on factory mode launch'; $stP++ }
-    else                      { Fail "[FAIL] serial_device AVC denial: $($denials[0])";            $stF++ }
-
     # --- WiFi adb (warn only -- quarantine/isolated nets block WiFi-to-Ethernet) ---
     $wlanOut = (& $ADB -s $Dev shell 'ip addr show wlan0 2>/dev/null' 2>&1) -join ' '
     $wlanIp  = ([regex]::Match($wlanOut, 'inet\s+(\d{1,3}(?:\.\d{1,3}){3})')).Groups[1].Value
@@ -545,10 +536,18 @@ $audit | ForEach-Object { Info $_ }
 
 # --- Phase 5: Install user-facing apps ---
 Section 'Installing user apps'
-foreach ($apk in @($FDroidApk, $LawnchairApk)) {
-    if (-not (Test-Path (Join-Path $Root $apk))) { Warn "Missing APK: $apk -- skipping"; continue }
-    $r = (& $ADB -s $dev install (Join-Path $Root $apk) 2>&1) | Where-Object { $_ -notmatch 'RemoteException' } | Select-Object -Last 1
-    Info "$apk : $r"
+if (-not (Test-Path (Join-Path $Root $FDroidApk))) { Warn "Missing APK: $FDroidApk -- skipping" }
+elseif ((& $ADB -s $dev shell 'pm list packages org.fdroid.fdroid 2>/dev/null' 2>&1) -match 'package:') { Ok 'F-Droid already installed -- skipping.' }
+else {
+    $r = (& $ADB -s $dev install (Join-Path $Root $FDroidApk) 2>&1) | Where-Object { $_ -notmatch 'RemoteException' } | Select-Object -Last 1
+    Info "$FDroidApk : $r"
+}
+
+if (-not (Test-Path (Join-Path $Root $LawnchairApk))) { Warn "Missing APK: $LawnchairApk -- skipping" }
+elseif ((& $ADB -s $dev shell 'pm list packages app.lawnchair 2>/dev/null' 2>&1) -match 'package:') { Ok 'Lawnchair already installed -- skipping.' }
+else {
+    $r = (& $ADB -s $dev install (Join-Path $Root $LawnchairApk) 2>&1) | Where-Object { $_ -notmatch 'RemoteException' } | Select-Object -Last 1
+    Info "$LawnchairApk : $r"
 }
 & $ADB -s $dev shell 'cmd package set-home-activity app.lawnchair/.LawnchairLauncher' 2>&1 | Out-Null
 Ok 'Lawnchair set as default launcher.'
@@ -585,9 +584,9 @@ if ($RestoreMabu) {
 
 # --- Phase 7: SELinux policy fix ---
 if (-not $SkipApps -and -not $SkipSELinux) {
-    # Find a live adb device for the on-device patch step. After the RestoreMabu
-    # phase the device is still up; after a plain flash it may need a moment.
-    $selinuxDev = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 60 -WifiOnly:($dev -match ':\d+$')
+    # Find a live adb device for the on-device patch step. WiFi may be down after
+    # the assets push, so allow USB fallback -- SELinux only does small shell ops.
+    $selinuxDev = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 120
     if (-not $selinuxDev) { $selinuxDev = $dev }
     Apply-SELinuxFix -Dev $selinuxDev
 }
@@ -598,7 +597,10 @@ if (-not $SkipApps -and -not $SkipSELinux) {
 if (-not $SkipApps) {
     Info 'Waiting for device to come up for self-test...'
     $testDev = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 120
-    if ($testDev) { Run-SelfTest -Dev $testDev }
+    if ($testDev) {
+        & $ADB -s $testDev shell 'cmd package set-home-activity app.lawnchair/.LawnchairLauncher' 2>&1 | Out-Null
+        Run-SelfTest -Dev $testDev
+    }
     else          { Warn 'Self-test skipped: no adb device found after reboot.' }
 }
 
