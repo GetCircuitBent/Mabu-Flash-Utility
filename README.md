@@ -116,4 +116,4 @@ This driver step only happens once per PC.
 
 ## Full Documentation
 
-The detailed walkthrough — including background on what each phase does, the full pin-out of the 30-pin header, recovery procedures for unusual unit states, and the permanent SELinux fix — is in [FLASH-A-NEW-MABU.md](FLASH-A-NEW-MABU.md).
+The full-detailed, developer-focused walkthrough — including background on what each phase does, the full pin-out of the 30-pin header, recovery procedures for unusual unit states, and detail on the permanent SELinux fix — is in [FLASH-A-NEW-MABU.md](FLASH-A-NEW-MABU.md).
