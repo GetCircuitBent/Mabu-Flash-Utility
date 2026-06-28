@@ -62,23 +62,16 @@ After setup, every flash follows the same three steps.
 
 Plug the USB harness into the Mabu's internal header and into a USB port on your PC. Use the **same USB port every time** — the driver binding is per-port, and switching ports means running through the Zadig step again.
 
-### Step 2 — Get the Mabu into Loader mode
+### Step 2 — Boot the Mabu
 
-The Mabu needs to be in Loader mode before the script can talk to it. Two ways in:
+1. Short **ADKEY** (header pin 4) to **GND** (any of pins 1, 2, 6, 13, or 14) and hold it
+2. Power the unit on while still holding ADKEY
+3. Release ADKEY after a few seconds
 
-**If the Mabu is already on and reachable over ADB** (usual case after a previous flash):
-```powershell
-adb reboot loader
-```
-This is instant and reliable.
+Two things can happen:
 
-**If starting from a powered-off unit** (first flash, or no ADB access):
-1. Hold **ADKEY** (header pin 4) shorted to **GND** (any of pins 1, 2, 6, 13, or 14)
-2. While holding ADKEY, power the unit on
-3. Keep holding until Windows detects a new device (a few seconds)
-4. Release ADKEY
-
-Holding ADKEY forces the unit straight into Loader mode and keeps it there — you won't race a ten-second window.
+- **Blank screen** — the Mabu is in Loader mode and ready to flash. Go straight to Step 3.
+- **Android boots** — the Mabu came up normally. Join your WiFi network on the Mabu's screen, then go to Step 3. The script will enter Loader mode on its own.
 
 > **If you see "device descriptor request failed" in Device Manager:** the D+ and D− wires on your harness are swapped. Swap OTG_DP (pin 3) and OTG_DM (pin 5) and try again.
 
