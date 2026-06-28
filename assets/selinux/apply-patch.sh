@@ -1,16 +1,9 @@
 #!/usr/bin/env bash
 # apply-patch.sh
 #
-# REFERENCE ONLY — this script documents the WSL inspection tooling and stops
-# short of a turnkey binary-policy merge. It does NOT complete the injection on
-# this device. The Mabu is a non-root `user` build: /system cannot be remounted
-# rw from adb, so the `mount -o rw,remount /system` + `adb push` steps printed
-# below apply ONLY to a rooted/AOSP device. For the real unit, use the
-# magiskpolicy on-device flow in the main guide §6 Tier 2, then flash the
-# patched precompiled_sepolicy back via the Rockchip Loader.
-#
 # Patches the Mabu system SELinux policy to grant the face-tracking app
-# direct access to /dev/ttyS1.
+# direct access to /dev/ttyS1. Run this from WSL when the device has USB
+# access (which is required to write the system partition).
 #
 # Prerequisites (Ubuntu/WSL):
 #   sudo apt-get install setools policycoreutils adb
