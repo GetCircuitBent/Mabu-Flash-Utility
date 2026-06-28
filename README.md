@@ -116,10 +116,11 @@ This driver step only happens once per PC.
 
 ## Harness Wiring
 
-The harness is a four-wire cable between a USB-A plug (into the PC) and four pins on the Mabu's internal 30-pin header. The header is 2 mm pitch, dual-row; pin 1 is at the GND/USB end, marked by the red stripe on the ribbon cable.
+The harness is a 30-pin IDC cable with 2.0 mm pitch; pin 1 is at the GND/USB end, marked by the red stripe on the ribbon cable.
+On the harness, you'll attach a 4 pin usb-A connection and a switch/button connection (see diagram below)
 
 ```
-  USB-A (to PC)                        Mabu 30-pin header
+  USB-A (to PC)                        30-pin IDC Cable
   ┌────────────────┐                   (2 mm pitch · pin 1 at red-stripe end)
   │  1 · VBUS      │  — not connected —
   │                │
@@ -128,20 +129,19 @@ The harness is a four-wire cable between a USB-A plug (into the PC) and four pin
   │                │
   │  4 · GND       │ ──────────────────  1 · GND
   └────────────────┘
+- If you see "device descriptor request failed": check the D+ and D− wires to make sure they aren't reversed/disconnected.
 
-  If you see "device descriptor request failed": swap the D+ and D− wires.
+- VBUS is left unconnected — the Mabu runs on its own power supply, not USB bus power.
 
   ───────────────────────────────────────────────────────────────────────
-  ADKEY short  (hold during power-on to boot into Loader mode)
+Also on the 30-pin IDC cable:
+ADKEY short  (hold during power-on to boot into Loader mode)
 
-                                         4 · ADKEY ──┐
-                                         6 · GND   ──┘  jumper wire or clip
-```
-
-VBUS is left unconnected — the Mabu runs on its own power supply, not USB bus power.
+    4 · ADKEY ──┐
+    6 · GND   ──┘  jumper wire or switch/button
 
 ---
 
-## Full Documentation
+## Detailed Documentation
 
 The full-detailed, developer-focused walkthrough — including background on what each phase does, the full pin-out of the 30-pin header, recovery procedures for unusual unit states, and detail on the permanent SELinux fix — is in [FLASH-A-NEW-MABU.md](FLASH-A-NEW-MABU.md).
