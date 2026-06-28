@@ -40,7 +40,7 @@ Run this once on each new PC before your first flash. It automatically downloads
 1. Open **PowerShell as Administrator** (right-click the Start menu → *Windows PowerShell (Admin)*)
 2. Navigate to the repo folder:
    ```powershell
-   cd "C:\path\to\Mabu-Flash-Utility"
+   cd "path\to\Mabu-Flash-Utility"
    ```
 3. Allow the scripts to run (Windows blocks them by default):
    ```powershell
@@ -72,8 +72,6 @@ Two things can happen:
 
 - **Blank screen** — the Mabu is in Loader mode and ready to flash. Go straight to Step 3.
 - **Android boots** — the Mabu came up normally. Join your WiFi network on the Mabu's screen, then go to Step 3. The script will enter Loader mode on its own.
-
-> **If you see "device descriptor request failed" in Device Manager:** the D+ and D− wires on your harness are swapped. Swap OTG_DP (pin 3) and OTG_DM (pin 5) and try again.
 
 ### Step 3 — Run the flash script
 
