@@ -7,32 +7,32 @@ This repo contains the scripts and firmware patches needed to free a **Mabu** ro
 ## What You'll Need
 ### Hardware
 - A Mabu unit
-- The **USB programming harness** — a 30-pin IDC cable (2.0 mm pitch) that connects to the internal header inside the Mabu, with a USB-A connector and an ADKEY switch wired to it. This is the only way to communicate with the device; there is no external USB port on the Mabu itself
+- The **USB programming harness** (a 30-pin IDC cable, 2.0 mm pitch) that connects to the internal header inside the Mabu, with a USB-A connector and an ADKEY switch wired to it. This is the only way to communicate with the device; there is no external USB port on the Mabu itself
 
 ### PC
 - Windows 10 or 11
 - An internet connection (to download tools and install apps onto the Mabu)
-- A WiFi network the Mabu can join — the script installs apps over WiFi after the flash
+- A WiFi network the Mabu can join; the script installs apps over WiFi after the flash
 
 ---
 
 ## Download This Repo
-**Option A — Git** (if you have Git installed):
+**Option A: Git** (if you have Git installed):
 ```
 git clone https://github.com/GetCircuitBent/Mabu-Flash-Utility.git
 ```
 
-**Option B — ZIP** (no Git needed):
+**Option B: ZIP** (no Git needed):
 1. Click the green **Code** button at the top of this page
 2. Click **Download ZIP**
-3. Unzip it somewhere permanent — the scripts run from that folder
+3. Unzip it somewhere permanent. The scripts run from that folder.
 
 ---
 
 ## One-Time Setup
 Run this once on each new PC before your first flash. It automatically downloads the Rockchip flashing tool and installs the USB drivers the Mabu needs.
 
-1. Open **PowerShell as Administrator** (right-click the Start menu → *Windows PowerShell (Admin)*)
+1. Open **PowerShell as Administrator** (right-click the Start menu, then *Windows PowerShell (Admin)*)
 2. Navigate to the repo folder:
    ```powershell
    cd "path\to\Mabu-Flash-Utility"
@@ -52,19 +52,19 @@ Run this once on each new PC before your first flash. It automatically downloads
 ## Flash a Mabu
 After setup, every flash follows the same three steps.
 
-### Step 1 — Connect the Harness
-Plug the USB harness into the Mabu's internal header and into a USB port on your PC. Use the **same USB port every time** — the driver binding is per-port, and switching ports means running through the Zadig step again.
+### Step 1: Connect the Harness
+Plug the USB harness into the Mabu's internal header and into a USB port on your PC. Use the **same USB port every time**; the driver binding is per-port, and switching ports means running through the Zadig step again.
 
-### Step 2 — Boot the Mabu
+### Step 2: Boot the Mabu
 1. Hold the ADKEY switch on the harness
 2. Power the unit on while still holding ADKEY
 3. Release ADKEY after a few seconds
 
 Two things can happen:
-- **Blank screen** — the Mabu is in Loader mode and ready to flash. Go straight to Step 3.
-- **Android boots** — the Mabu came up normally. Join your WiFi network on the Mabu's screen, then go to Step 3. The script will enter Loader mode on its own.
+- **Blank screen.** The Mabu is in Loader mode and ready to flash. Go straight to Step 3.
+- **Android boots.** The Mabu came up normally. Join your WiFi network on the Mabu's screen, then go to Step 3. The script will enter Loader mode on its own.
 
-### Step 3 — Run the Flash Script
+### Step 3: Run the Flash Script
 From the repo root in your Administrator PowerShell window:
 
 ```powershell
@@ -81,7 +81,7 @@ The script handles everything from here:
 - Runs a self-test and prints a pass/fail summary
 
 **The first time it runs**, the script may launch **Zadig** to bind the correct USB driver. When Zadig opens:
-1. Go to **Options → List All Devices**
+1. Go to **Options > List All Devices**
 2. Select **Rockusb Device (USB ID 2207 320A)**
 3. Set the target driver to **WinUSB**
 4. Click **Replace Driver**
@@ -95,7 +95,7 @@ This driver step only happens once per PC.
 | Symptom | Fix |
 |---|---|
 | Script says `adb.exe not found` | Run `winget install Google.PlatformTools` and restart PowerShell |
-| Loader mode won't appear | Check D+/D− polarity on the USB wires; try holding ADKEY earlier during power-on |
+| Loader mode won't appear | Check D+/D- polarity on the USB wires; try holding ADKEY earlier during power-on |
 | Script stops at WiFi step | Touch the Mabu screen, join your WiFi network, then press Enter in PowerShell |
 | App installs fail | Make sure the Mabu and PC are on the same WiFi network |
 | `execution of scripts is disabled` error | Run `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser` and try again |
@@ -108,9 +108,9 @@ The harness uses a 30-pin IDC ribbon cable (2.0 mm pitch); pin 1 is at the GND/U
 ```
   USB-A (to PC)                        30-pin IDC cable
   ┌────────────────┐                   (2 mm pitch · pin 1 at red-stripe end)
-  │  1 · VBUS      │  — not connected —
+  │  1 · VBUS      │  (not connected)
   │                │
-  │  2 · D−        │ ──────────────────  5 · OTG_DM
+  │  2 · D-        │ ──────────────────  5 · OTG_DM
   │  3 · D+        │ ──────────────────  3 · OTG_DP
   │                │
   │  4 · GND       │ ──────────────────  1 · GND
@@ -122,10 +122,10 @@ The harness uses a 30-pin IDC ribbon cable (2.0 mm pitch); pin 1 is at the GND/U
                                          4 · ADKEY ──┤ switch ├──  6 · GND
 ```
 
-- VBUS is left unconnected — the Mabu runs on its own power supply, not USB bus power
-- If you see "device descriptor request failed": the D+ and D− wires are reversed — swap them
+- VBUS is left unconnected. The Mabu runs on its own power supply, not USB bus power.
+- If you see "device descriptor request failed": the D+ and D- wires are reversed; swap them.
 
 ---
 
 ## Detailed Documentation
-The detailed walkthrough — including background on what each phase does, the full pin-out of the 30-pin header, recovery procedures for unusual unit states, and the permanent SELinux fix — is in [FLASH-A-NEW-MABU.md](FLASH-A-NEW-MABU.md).
+The detailed walkthrough (background on what each phase does, the full pin-out of the 30-pin header, recovery procedures for unusual unit states, and the permanent SELinux fix) is in [FLASH-A-NEW-MABU.md](FLASH-A-NEW-MABU.md).
