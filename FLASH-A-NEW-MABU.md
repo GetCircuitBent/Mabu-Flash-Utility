@@ -1,4 +1,4 @@
-# Flashing a brand-new Mabu out of the box
+# Flashing a Brand-New Mabu out of the Box
 
 End-to-end procedure for taking a factory Mabu robot tablet (Catalia Health
 H7R, Rockchip RK3288, Android 8.1, locked by Esper MDM) and turning it into a
@@ -17,7 +17,7 @@ face-tracking app, which needs motor access that SELinux blocks by default.
 
 ---
 
-## 0. The one-paragraph version
+## 0. The One-Paragraph Version
 
 Catch the Rockchip Loader on power-on, run one PowerShell script that writes 8
 raw-eMMC patches (disable dm-verity, neutralize Esper, open ADB), optionally
@@ -51,7 +51,7 @@ One command handles the full unit.
 > Force with `-WipeData` or `-NoWipe`. If Loader was pre-caught (no Android to
 > probe), state is Unknown and the script wipes.
 
-### Script flags
+### Script Flags
 
 | Flag | Effect |
 |---|---|
@@ -62,7 +62,7 @@ One command handles the full unit.
 | `-SkipSELinux` | Skip the SELinux policy fix phase |
 | `-WifiIp <ip>` | WiFi hint for first adb connect attempt (auto-discovered at runtime) |
 
-### What the script does, in order
+### What the Script Does, in Order
 
 1. **Detect state** (A / B / Liberated / Unknown)
 2. **Enter Loader** and apply 8 liberation patches *(skipped for Liberated)*
@@ -75,7 +75,7 @@ One command handles the full unit.
 
 ---
 
-## 1. What you need
+## 1. What You Need
 
 ### Hardware
 - The Mabu unit, opened enough to reach the **30-pin internal header** (these
@@ -113,7 +113,7 @@ One command handles the full unit.
   one-shot-per-unit opportunity; plan the session). A direct USB 3 connection
   from the harness to the PC is sufficient — no hub needed.
 
-### PC / software
+### PC / Software
 The complete, categorized list of every software prerequisite — for flashing,
 building, deploying, **and** the permanent SELinux fix — with winget install
 commands and verify commands, is in **[Appendix A](#appendix-a--complete-prerequisites-flash--build--deploy--selinux)**.
@@ -127,7 +127,7 @@ At a glance:
 - For the permanent SELinux fix only: WSL/Ubuntu with `setools`,
   `policycoreutils`, and **magiskpolicy** (see Section 6, Tier 2).
 
-### If Loader (PID 320A) won't enumerate
+### If Loader (PID 320A) Won't Enumerate
 A direct USB 3 connection from the harness to the PC works — that's the
 validated setup. If Loader mode (VID 2207 **PID 320A**) won't show even though
 Android (0006) / recovery (0011) modes do, the usual culprits are wiring and
@@ -144,7 +144,7 @@ timing, not the host port:
 
 ---
 
-## 2. Understand the two starting states
+## 2. Understand the Two Starting States
 
 A factory unit is in one of two states; they need slightly different handling
 (both are covered by `flash-mabu.ps1`, which **auto-detects which one** — see
@@ -189,7 +189,7 @@ with a Settings/Dev-Options regression; smaller wipes don't reliably trigger the
 There are two ways in. **If you can get an adb shell, use the first — it's
 deterministic and instant.**
 
-### Optimal: `adb reboot loader` (when adb is reachable)
+### Optimal: `adb reboot loader` (When adb Is Reachable)
 Stock Esper units are *often* already adb-authorized — Esper does not always
 suppress the auth grant (on the validated unit `adb` showed `device`, not
 `unauthorized`). And post-liberation adb is always open. Whenever `adb devices`
@@ -200,7 +200,7 @@ adb reboot loader      # drops straight into Rockchip Loader (PID 320A)
 On the validated unit this landed in Loader in **~1 second** — no power-on
 timing race. This is also how you re-enter Loader between phases.
 
-### Fallback: boot into Loader by holding ADKEY (validated on this PC)
+### Fallback: Boot into Loader by Holding ADKEY (Validated on This PC)
 If there is no adb at all, **hold ADKEY through power-on to force Loader.** This
 is the reliable way in on a unit that otherwise free-boots straight to the
 auth-walled Esper Android (PID 0006) — confirmed 2026-06-27 on this flashing PC,
@@ -227,7 +227,7 @@ Android. Run the flash promptly. And since a hand-caught Loader gives the script
 no booted Android to probe, it can't auto-detect State A vs B — pass
 `-WipeData` or `-NoWipe` explicitly (see Section 4).
 
-### Driver binding (usually already done)
+### Driver Binding (Usually Already Done)
 `rkdeveloptool` needs **WinUSB** bound to PID 320A. On a PC that has flashed
 before, this **persists** — on the validated PC, 320A came up already
 `Service=WinUSB` and `rkdeveloptool ld` worked immediately, no Zadig step.
@@ -273,7 +273,7 @@ Verify from the Mabu repo root:
 
 ---
 
-## 3A. (Flash and capture only) Capture the original Mabu software — BEFORE any wipe
+## 3A. (Flash and Capture Only) Capture the Original Mabu Software: Before Any Wipe
 
 > **This section is ONLY for the "flash and capture" path.** For a plain **flash**
 > (the default), skip it entirely and go to Section 4.
@@ -292,7 +292,7 @@ The catch-22: a stock unit's ADB is unauthorized (Esper suppresses the
 approval dialog), so you can't capture until adbd is patched. So **liberate
 without wiping first**, capture, *then* wipe.
 
-**Step 1 — apply the patches only (NO wipe).** With Loader caught, from the
+**Step 1: apply the patches only (NO wipe).** With Loader caught, from the
 Mabu repo root:
 ```powershell
 .\scripts\flash-mabu.ps1 -SkipApps      # = the 8 patches + reset; no /data wipe, no app install
@@ -361,7 +361,7 @@ wipe.
 
 ---
 
-## 4. Flash: liberate + provision (one command)
+## 4. Flash: Liberate + Provision (One Command)
 
 > For a plain **flash** (the default), run this directly. Only detour through
 > Section 3A first if you explicitly want **flash and capture** on a unit that
@@ -498,7 +498,7 @@ adb -s <tablet-ip>:5555 shell "pm list packages | grep -iE 'esper|shoonya'"  # e
 
 ---
 
-## 5. Install our own apps / OS
+## 5. Install Our Own Apps / OS
 
 You now have a normal Android tablet. Three layers, pick what you need:
 
@@ -511,7 +511,7 @@ You now have a normal Android tablet. Three layers, pick what you need:
   modified `/system` image will mount. See `../Mabu/notes/HANDOFF.md`
   ("Assembly-line strategy") for that pipeline.
 
-### Installing the Facetrack app
+### Installing the Facetrack App
 
 ```powershell
 # build the APK (Android Studio / gradle) from ../Mabu/mabu-facetrack/, then:
@@ -527,9 +527,9 @@ that's the SELinux issue. Section 6.
 
 ---
 
-## 6. The SELinux issue — and the fix (READ THIS)
+## 6. The SELinux Issue and the Fix (Read This)
 
-### What actually goes wrong
+### What Actually Goes Wrong
 
 The motor board is on `/dev/ttyS1`, labeled `u:object_r:serial_device:s0`. An
 app installed normally runs as `u:r:untrusted_app:s0`, and stock AOSP policy has
@@ -558,7 +558,7 @@ is still connected.**
 
 ---
 
-### Tier 1 — TCP motor bridge (recommended for immediate bring-up)
+### Tier 1: TCP Motor Bridge (Recommended for Immediate Bring-Up)
 
 The `shell` domain (`u:r:shell:s0`) **is** allowed to open `serial_device` —
 that's why `adb shell printf ... > /dev/ttyS1` moves motors. So we run a tiny
@@ -592,7 +592,7 @@ Then launch the app — it connects to the bridge and the robot tracks faces.
 
 ---
 
-### Tier 2 — Permanent SELinux policy patch (VALIDATED; now automated)
+### Tier 2: Permanent SELinux Policy Patch (Validated; Now Automated)
 
 > **`flash-mabu.ps1` applies this automatically as Phase 7.** The manual steps
 > below are reference only — follow them if you need to re-apply the fix outside
@@ -724,7 +724,7 @@ is marked `// TEMP` in `MabuMotors.kt`):
 
 ---
 
-## 7. Motor calibration (per unit)
+## 7. Motor Calibration (per Unit)
 
 Motor mechanical zeros differ per unit and are wiped by the `/data` reformat.
 Two options:
@@ -741,7 +741,7 @@ Protocol reference (don't hand-compute checksums — use the code):
 
 ---
 
-## 8. Emergency / recovery
+## 8. Emergency / Recovery
 
 - **Bad patch bricks boot:** `..\Mabu\scripts\restore-boot.ps1` writes the
   original `boot.img` back and clears `misc`.
@@ -754,7 +754,7 @@ Protocol reference (don't hand-compute checksums — use the code):
 
 ---
 
-## 9. Quick checklist
+## 9. Quick Checklist
 
 - [ ] Loader caught (PID 320A) — `adb reboot loader` if adb is up, else hold ADKEY (pin 4)→GND through power-on
 - [ ] **PID 320A bound to WinUSB** (not `rockusb.sys`) — `flash-mabu.ps1` auto-launches Zadig if not; one-time per PC, then persists. `ld` listing the Loader is *not* proof: a `rockusb.sys` binding writes-fail with "creating comm object failed"
@@ -769,7 +769,7 @@ Protocol reference (don't hand-compute checksums — use the code):
 
 ---
 
-## Appendix A — Complete prerequisites (flash + build + deploy + SELinux)
+## Appendix A: Complete Prerequisites (Flash + Build + Deploy + SELinux)
 
 Everything needed end-to-end, grouped by what it's for. Items marked **bundled**
 ship inside the `../Mabu/` repo (no install). Items marked **winget** install
@@ -782,7 +782,7 @@ from an elevated PowerShell. Hardware can't be installed — verify physically.
 | Internal USB programming harness | Only USB path to the board | One-shot per unit; we have one. Direct USB 3 to the PC works — no hub needed |
 | Stable DC power to the tablet | Avoid mid-flash power loss | — |
 
-### A.2 Flashing toolchain (Loader-side)
+### A.2 Flashing Toolchain (Loader-Side)
 | Tool | Source | Verify |
 |---|---|---|
 | `rkdeveloptool.exe` (+ libusb DLLs) | **bundled** `../Mabu/tools/rkdeveloptool/` | `rkdeveloptool ld` |
@@ -794,7 +794,7 @@ from an elevated PowerShell. Hardware can't be installed — verify physically.
 > The Rockchip `android_winusb.inf` (adb driver for PID 0006/0011) is staged in
 > the driver store alongside `rockusb.sys`. Verify: `pnputil /enum-drivers | findstr android_winusb`.
 
-### A.3 Android build + deploy toolchain
+### A.3 Android Build + Deploy Toolchain
 | Tool | Source | Verify | Notes |
 |---|---|---|---|
 | **Android Studio** | **winget** `Google.AndroidStudio` | launches | Bundles a JDK (JBR) + SDK Manager + Gradle. **First launch downloads the SDK** (platform-tools, `platforms;android-34`, `build-tools`). |
@@ -812,7 +812,7 @@ adb -s <tablet-ip>:5555 install -r app\build\outputs\apk\debug\app-debug.apk
 (Node.js is **not** required — the app is Kotlin/Gradle. Node was installed for
 unrelated tooling.)
 
-### A.4 Permanent SELinux fix toolchain (Tier 2 — optional)
+### A.4 Permanent SELinux Fix Toolchain (Tier 2, Optional)
 Only needed to apply the permanent `allow untrusted_app serial_device` policy
 rule. The Tier-1 TCP bridge needs none of this (just adb). The validated Tier-2
 path is **adb (WiFi) + on-device ARM magiskpolicy + `find-vendor-file.py` +
@@ -832,7 +832,7 @@ path is **adb (WiFi) + on-device ARM magiskpolicy + `find-vendor-file.py` +
 > (interpreter `/system/bin/linker64`), so it will **not** run in WSL to patch
 > the policy host-side. Patch on the Mabu with the ARM build instead.
 
-### A.5 One-shot winget install (build + deploy + Git)
+### A.5 One-Shot winget Install (Build + Deploy + Git)
 Run in an **elevated** PowerShell:
 ```powershell
 winget install -e --id Google.AndroidStudio  --accept-package-agreements --accept-source-agreements
@@ -848,7 +848,7 @@ winget install -e --id Microsoft.WSL         --accept-package-agreements --accep
 After Android Studio installs, **launch it once** and let the Setup Wizard
 download the SDK, or install components headlessly with `sdkmanager`.
 
-### A.6 Status on the current flashing PC (updated 2026-06-14)
+### A.6 Status on the Current Flashing PC (Updated 2026-06-14)
 | Capability | Ready? |
 |---|---|
 | Flash a new Mabu (A.2) | ✅ **validated end-to-end** on unit `2022010501038` over direct USB 3 (no hub) |
