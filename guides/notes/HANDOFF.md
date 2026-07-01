@@ -1,7 +1,7 @@
-# Mabu/Esper tablet unlock — agent handoff
+# Mabu/Esper tablet unlock: agent handoff
 
 > **For current procedure: see [../README.md](../README.md).**
-> This file is the chronological session log — what was tried, in what
+> This file is the chronological session log: what was tried, in what
 > order, what failed and why. Useful when something doesn't match
 > expected behavior and you need to know *why* the procedure looks the
 > way it does. Sessions are listed newest-first.
@@ -11,7 +11,7 @@ RK3288 Android 8.1 tablet** so the user can repurpose it.
 
 ## Session 2026-05-28: assembly-line refinements + unit 1 mystery
 
-**Built `scripts/restore-adb-auth.ps1`** — reverts the two adbd auth
+**Built `scripts/restore-adb-auth.ps1`**: reverts the two adbd auth
 patches (writes back `firmware/originals/adbd-authreq-orig.bin` and
 `firmware/originals/adbd-authinit-orig.bin` to LBAs 1696240 and 1694778). Use this
 when finalizing a unit for deployment on an untrusted network: tablet
@@ -24,7 +24,7 @@ ADB sit at `unauthorized` until the dialog is tapped on the touch UI.
 **flash-mabu.ps1 fixed for the inter-phase Loader wedge.** Bug
 discovered on unit 4: doing 8 small patch writes followed by a 16 MB
 wipe write in the same Loader session causes the first wipe chunk to
-fail with "Read LBA failed" — Loader wedges after the patches. Fix:
+fail with "Read LBA failed"; Loader wedges after the patches. Fix:
 between patch and wipe phases, do `rd` + wait for adb + `adb shell
 reboot loader` to re-enter Loader fresh. Adds ~30s to the flow but
 makes it reliable.
@@ -70,7 +70,7 @@ modem is present, SIM is in (CPIN: READY), and 4 LTE operators are
 visible (AT&T x2, Verizon, FirstNet). One of the two antennas in the
 body is WiFi-tuned, the other is LTE-tuned. Swap test showed
 **6.7 dB WiFi RSSI drop** when antennas are in the "wrong" ports
-(−67 dBm → −74 dBm) — definitive evidence they're differently tuned.
+(−67 dBm → −74 dBm): definitive evidence they're differently tuned.
 However a third attempt at the "correct" config gave −77 dBm, suggesting
 either a flaky IPEX/MHF connector or position-inside-body matters. User
 verified both connectors are firmly clicked; cause of variance unresolved.
@@ -90,7 +90,7 @@ applying only the 8 sector patches. Result: kiosk Dashboard still came up.
 Reason: `io.shoonya.shoonyadpc` (the actual DPC binary) is installed by Esper
 provisioning to `/data/app/`, NOT to `/system/`. Our /system EOCD nukes only
 neutralize the three /system Esper APKs (esperdpc / esperhelper /
-espersupervisor) — they cannot touch /data/app/io.shoonya.shoonyadpc-*/. And
+espersupervisor); they cannot touch /data/app/io.shoonya.shoonyadpc-*/. And
 soft uninstall is blocked by DPM (`SecurityException: Attempt to remove
 non-test admin`). **Therefore: always pair the patches with a 96 MB /data
 head wipe on active-Esper units.** Patches-only suffices ONLY on units that
@@ -100,7 +100,7 @@ are already factory-reset (Esper DO ref but no kiosk policies in /data).
 factory reset + full patches. Symptom: device enumerates, but adb handshake
 never completes (`device offline`). Cause unknown; not related to /data
 state. Use WiFi ADB instead. Also confirmed that Dev Options crash is NOT
-fixed by factory reset, so it's not a /data-state issue — it's deeper, in
+fixed by factory reset, so it's not a /data-state issue: it's deeper, in
 `Settings.apk` dex or the precompiled SELinux policy.
 
 **Procedure validated:**
@@ -108,7 +108,7 @@ fixed by factory reset, so it's not a /data-state issue — it's deeper, in
 - Unit 2: scrubbed in earlier session; assembly-line template.
 - Unit 3: active Esper Mabu, wipe + 8 patches + reinstall apps.
 
-Added `scripts/flash-mabu.ps1` — single command for fresh-Esper units:
+Added `scripts/flash-mabu.ps1`: single command for fresh-Esper units:
   `.\scripts\flash-mabu.ps1 -WipeData -RestoreMabu`
 
 ## Earlier in this session (2026-05-27)
@@ -117,17 +117,17 @@ Added `scripts/flash-mabu.ps1` — single command for fresh-Esper units:
 strategy locked: byte-patch only, no /system dump-and-flash needed.
 
 What was done this session:
-1. Audited unit 2's DPM state via WiFi ADB (10.0.0.147:5555) — confirmed:
+1. Audited unit 2's DPM state via WiFi ADB (10.0.0.147:5555), confirmed:
    `Device managed: false`, no device admins, no user restrictions, no
    esper/shoonya/catalia packages installed.
-2. Recovery partition checked — zero esper/shoonya/catalia strings. Factory
+2. Recovery partition checked: zero esper/shoonya/catalia strings. Factory
    reset does NOT redeploy Esper from recovery; the bait was all in /system.
 3. Found two remaining /system Esper init artifacts via ext4 inode walk
    (`scripts/find-esper-files.py`):
    - `/system/etc/init/init.esper.rc` (inode 656, data block at abs LBA
-     2,076,672) — defined `set-device-owner` service.
+     2,076,672): defined `set-device-owner` service.
    - `/system/bin/set-device-owner.sh` (inode 155, data block at abs LBA
-     1,691,408) — ran `dpm set-device-owner io.shoonya.shoonyadpc/...`
+     1,691,408): ran `dpm set-device-owner io.shoonya.shoonyadpc/...`
      after every boot.
 4. Extended `scripts/liberate-mabu.ps1` to write 4 KB of zeros at each
    location, plus the existing EOCD nukes. 8 patch writes total, all
@@ -152,7 +152,7 @@ What was done this session:
 
 1. Connect via internal USB harness.
 2. Catch Rockchip Loader (PID 0x320A) on power-on.
-3. `.\scripts\liberate-mabu.ps1 -Reset` — applies all 8 patches
+3. `.\scripts\liberate-mabu.ps1 -Reset`: applies all 8 patches
    (parameter, two adbd, three Esper APK EOCDs, init.esper.rc,
    set-device-owner.sh) and resets the device.
 4. If the unit was Esper-active (kiosk visible pre-flash), also run
@@ -175,7 +175,7 @@ What was done this session:
    adb push mabu-archive/unit-2022010501476/sdcard/sdcard/nuance /sdcard/
    adb push mabu-archive/unit-2022010501476/sdcard/sdcard/sound.raw /sdcard/
    ```
-   (Use PowerShell, not git-bash — git-bash mangles `/sdcard/` to a
+   (Use PowerShell, not git-bash; git-bash mangles `/sdcard/` to a
    Windows path. ADB push from bash needs `MSYS_NO_PATHCONV=1`.)
 8. Motor calibration: launch Factory Mode → Trouble Shooting/Motor Debug,
    run the calibration wizard. Per-unit, can't be cloned.
@@ -186,7 +186,7 @@ H7R 8.1.0 build dated Mar 2022). If a unit ever ships with a different
 build, the cycled dumper falls back to dump-and-flash.
 
 **Unit 2 final state (template reference):**
-- IP: 10.0.0.147 (DHCP — set a static lease for stability)
+- IP: 10.0.0.147 (DHCP; set a static lease for stability)
 - WiFi ADB: stable, no auth dialog, port 5555
 - DPM: clean (no owner, no admins, no restrictions)
 - /system Esper APKs: corrupted EOCDs (PackageManager skips)
@@ -204,12 +204,12 @@ build, the cycled dumper falls back to dump-and-flash.
   speechRec (Mandarin acoustic model + ZeroTen grammar), sound.raw
 
 **About "Lightning" preinstalled:** /system/app/Lightning is
-`acr.browser.barebones` — a minimal web browser preinstalled by
+`acr.browser.barebones`: a minimal web browser preinstalled by
 Catalia/Rockchip in the stock Mabu firmware. Not a launcher. Left
 in place (user choice).
 
 **Consumer Mabu app caveat:** the unit-3 archive only contains
-`com.catalia.factorymode` (the factory-test app — its activity class
+`com.catalia.factorymode` (the factory-test app; its activity class
 is `com.catalia.mabu.navigation.MainActivity`, which misleadingly
 suggests it's the consumer app). The patient-facing Mabu conversational
 software is NOT in the archive. It was likely Esper-provisioned post
@@ -229,14 +229,14 @@ screen (no Esper UI, no kiosk lock). What worked:
    each APK's zip via single-sector writes (4 bytes each, see
    `scripts/find-eocd.py` / dumps/*-apk-eocd-patched.bin). PackageManager
    skips these on next scan.
-4. Wiped userdata partition head (first 256 MB) via Loader — forced vold
+4. Wiped userdata partition head (first 256 MB) via Loader; forced vold
    to reformat /data. Original 16 MB snapshot preserved at
    dumps/userdata-original-head.bin in case revert needed.
 5. After reset, USB enumerated as PID 0x0011 (standard Rockchip MTP+ADB,
    was 0x0006 under Esper). Home screen visible, no kiosk.
 
 **Resolved:** ADB shell now works unconditionally. Root cause was NOT
-ro.adb.secure — adbd on this Rockchip 8.1 build has the `auth_required`
+ro.adb.secure: adbd on this Rockchip 8.1 build has the `auth_required`
 global hardcoded to `1` in its .data section (Rockchip's adbd seems to
 ignore `ro.adb.secure`). One-byte patch at file_off 0xD311C of
 /system/bin/adbd flips it to `0`. We also patched adbd_auth_init to
@@ -245,7 +245,7 @@ return immediately (defense in depth). Loader-side sectors written:
   abs LBA 1,696,240 (one byte at offset 284 in sector: 0x01 -> 0x00)
   abs LBA 1,694,778 (two bytes at offset 56-57: F0 B5 -> 70 47 / BX LR)
 
-`adb devices` returns `device` immediately on next boot — no dialog,
+`adb devices` returns `device` immediately on next boot: no dialog,
 no host-key approval needed.
 
 **Settings.apk crash explained:** narrowed to Developer Options sub-page
@@ -260,7 +260,7 @@ no effect because **Android 8.1 uses the precompiled binary policy at
 file. The text file is just one of several inputs compiled into the
 binary at build time. Patches reverted; left as a finding for future
 attempts. To actually fix this you'd need to either:
-  - Patch the precompiled binary (CIL/SEPolicy blob — fragile)
+  - Patch the precompiled binary (CIL/SEPolicy blob, fragile)
   - Patch Settings.apk's classes.dex to skip setLogpersistOff
   - Install a third-party Activity Launcher app to bypass the crashing
     sub-page
@@ -272,7 +272,7 @@ scale, USB tethering, etc.).
 **WiFi ADB is on.** `service.adb.tcp.port=5555` is in /vendor/build.prop
 and adbd's auth_required is 0 (our patch), so on every boot you can
 `adb connect <tablet-ip>:5555` from any host on the LAN without USB
-and without an approval dialog. The tablet IP is DHCP — set a static
+and without an approval dialog. The tablet IP is DHCP; set a static
 lease for it on your router if you want a stable address.
 
 ## Two distinct Mabu-unit states we've seen
@@ -292,7 +292,7 @@ different treatment:
   - /data is clean: kiosk policies wiped by factory reset
   - The Device Owner reference persists across factory reset (FRP-like)
     but with no policies attached, it doesn't enforce anything
-  - Esper APK corruption + adbd patches alone is enough — NO /data wipe
+  - Esper APK corruption + adbd patches alone is enough: NO /data wipe
   - Dev Options works on-device UI (because /data is in pristine
     factory-reset state)
   - USB ADB still wedges (Esper's stale DPM service keeps trying to
@@ -452,7 +452,7 @@ OpenGApps; sufficient for repurposed-tablet use cases.
 
 ## Operational reality
 
-Deployed Mabu tablets have **NO external USB port and NO buttons** —
+Deployed Mabu tablets have **NO external USB port and NO buttons**:
 they're embedded in the robot body. USB access requires a special
 internal-header harness that:
   - We have only ONE of
@@ -573,13 +573,13 @@ future units:
    - Reset; device boots to vanilla Android with no kiosk.
 
 **Useful infrastructure built this session:**
-- `scripts/dump-range.ps1` — range-aware partition dump with per-chunk
+- `scripts/dump-range.ps1`: range-aware partition dump with per-chunk
   timeout (kills wedged Loader sessions in 45s instead of hanging)
-- `scripts/find-prop-default.py` — walks ext4 using inode tables
+- `scripts/find-prop-default.py`: walks ext4 using inode tables
   (flex_bg packs all 16 inode tables in first ~34 MB of /system; we have
   them all in system.img) to locate any /system/etc/* file
-- `scripts/find-esper.py` — lists /system/app and /system/priv-app
-- `scripts/patch-prop-sector.py` — built ro.adb.secure=0 sector write
+- `scripts/find-esper.py`: lists /system/app and /system/priv-app
+- `scripts/patch-prop-sector.py`: built ro.adb.secure=0 sector write
   (took effect on disk; doesn't help at runtime because adbd reads
   ro.adb.secure once at startup and the prop is being set to 1 earlier
   by some other source)
@@ -612,14 +612,14 @@ We've made significant progress; one final step is blocked.
 
 ### Software tooling, in place at `tools/`
 
-- `tools/rkdeveloptool/rkdeveloptool.exe` — cpebit's Windows build
+- `tools/rkdeveloptool/rkdeveloptool.exe`: cpebit's Windows build
   (libusb-based; works only when device is bound to WinUSB)
-- `tools/rockchip-stock/DriverAssitant_v5.0/` — official Rockchip
+- `tools/rockchip-stock/DriverAssitant_v5.0/`: official Rockchip
   USB driver bundle (installs `rockusb.sys`)
-- `tools/rockchip-stock/RKDevTool_Release_v2.92/` — Rockchip GUI
+- `tools/rockchip-stock/RKDevTool_Release_v2.92/`: Rockchip GUI
   (works with rockusb.sys binding, doesn't with WinUSB)
-- `tools/google-usb-driver/` — patched Google ADB driver for VID 2207
-- `tools/testkey/` — AOSP testkey.x509.pem + testkey.pk8 (not used in
+- `tools/google-usb-driver/`: patched Google ADB driver for VID 2207
+- `tools/testkey/`: AOSP testkey.x509.pem + testkey.pk8 (not used in
   the current path; was for failed sideload sig attempt)
 - Python 3.13 with `cryptography`, `pyusb`, `libusb-package`, `zeroconf`
 - adb / fastboot in `%LOCALAPPDATA%\Microsoft\WinGet\Packages\Google.PlatformTools_*`
@@ -672,7 +672,7 @@ We Zadig-bound WinUSB to PID 320A; that path is current.
 parameter file at sector 0 to add `androidboot.veritymode=disabled`
 and `androidboot.selinux=permissive`, recomputed the **Rockchip
 custom CRC32** (polynomial **`0x04C10DB7`**, init=0, no reflection,
-no final xor — one bit different from IEEE 802.3), wrote back via
+no final xor, one bit different from IEEE 802.3), wrote back via
 `rkdeveloptool wl 0 parameter-patched.img`, sent reset, and the tablet
 **booted normally to main Android** with both flags active.
   - Patched parameter file is at `dumps/parameter-patched.img`
@@ -697,7 +697,7 @@ works because verity is off.
 - ~32 MB single-shot reads → fail at 2%
 - 4 MB chunked reads with `catch-loader-and-dump.ps1` → worked for
   boot (32 MB), recovery (64 MB), misc (4 MB)
-- But the system dump (2 GB) hung at **35,717,120 bytes (1.7%)** —
+- But the system dump (2 GB) hung at **35,717,120 bytes (1.7%)**:
   somewhere between chunks 8 and 9. rkdeveloptool process stuck
   holding the USB device.
 
@@ -710,28 +710,28 @@ on) and re-catch the Loader window.
 
 ## Files / scripts on disk
 
-- `scripts/patch-bootimg.py` — boot.img unpack/repack (currently
+- `scripts/patch-bootimg.py`: boot.img unpack/repack (currently
   blocked, see above; supports `--keep-id`)
-- `scripts/patch-parameter.py` — parameter file unpack/repack with
+- `scripts/patch-parameter.py`: parameter file unpack/repack with
   correct Rockchip CRC32 (**works**)
-- `scripts/patch-system-props.py` — binary search-and-replace for
+- `scripts/patch-system-props.py`: binary search-and-replace for
   prop values in a system.img dump (ready to use once we have a
   full dump)
-- `scripts/catch-loader-and-dump.ps1` — polls for Loader, locks in,
+- `scripts/catch-loader-and-dump.ps1`: polls for Loader, locks in,
   does chunked partition dumps
-- `scripts/write-patched-boot.ps1` — abandoned (boot.img path dead)
-- `scripts/restore-boot.ps1` — emergency restore if a patch bricks
+- `scripts/write-patched-boot.ps1`: abandoned (boot.img path dead)
+- `scripts/restore-boot.ps1`: emergency restore if a patch bricks
   boot (writes back original boot.img + clears misc)
-- `scripts/roundtrip-test.py` — diagnostic for cpio/boot.img
+- `scripts/roundtrip-test.py`: diagnostic for cpio/boot.img
   round-trip (revealed the SHA-1 mismatch)
-- `scripts/find-hash-formula.py` — checked 14 SHA-1 variants against
+- `scripts/find-hash-formula.py`: checked 14 SHA-1 variants against
   boot.img id field, none matched
-- `scripts/rockusb.py` / `scripts/rockusb_winusb.py` — pure-Python
+- `scripts/rockusb.py` / `scripts/rockusb_winusb.py`: pure-Python
   rockusb clients (mostly dead-end work; recovery's MI_01 is not
   rockusb)
-- `dumps/` — current working dumps (boot.img, recovery.img, misc.img,
+- `dumps/`: current working dumps (boot.img, recovery.img, misc.img,
   parameter.img, parameter-patched.img, partial system.img at 35 MB)
-- `dumps-tablet-reset/` — backup dumps from the OTHER reset tablet
+- `dumps-tablet-reset/`: backup dumps from the OTHER reset tablet
   (identical boot.img, kept just in case)
 
 ---
@@ -740,10 +740,10 @@ on) and re-catch the Loader window.
 
 In rough order of effort:
 
-### Option A (smartest) — only dump what we need, not all 2 GB
+### Option A (smartest): only dump what we need, not all 2 GB
 
 The text we need to modify is in `/system/build.prop` and
-`/system/etc/prop.default` — total a few KB. Rather than dumping the
+`/system/etc/prop.default`: total a few KB. Rather than dumping the
 whole 2 GB partition:
 
 1. Dump the first ~256 MB of system in 4 MB chunks. Build.prop and
@@ -758,7 +758,7 @@ whole 2 GB partition:
 
 This avoids the 2 GB dump problem entirely. **Strongly recommended.**
 
-### Option B — chunk dump but stop and restart Loader sessions
+### Option B: chunk dump but stop and restart Loader sessions
 
 Modify `catch-loader-and-dump.ps1` to:
 - Dump 5–10 chunks (20–40 MB)
@@ -769,14 +769,14 @@ Modify `catch-loader-and-dump.ps1` to:
 Tedious but each session stays under the wedge threshold. The user
 would have to power-cycle between sessions.
 
-### Option C — investigate kernel partition
+### Option C: investigate kernel partition
 
 There's a `kernel` partition at sector 0x10000, 32 MB, that we never
 dumped. Possibility: u-boot loads the actual booting kernel/ramdisk
 from there, not from `boot`. That would explain why our boot.img
 patches had no effect. **Worth a 32 MB dump just to know.**
 
-### Option D — userdata adbkey injection
+### Option D: userdata adbkey injection
 
 With dm-verity disabled, we can modify /system. But ANOTHER avenue:
 add the host's `~/.android/adbkey.pub` to `/data/misc/adb/adb_keys`.
@@ -815,9 +815,9 @@ trusted". Requires:
 
 ## Things known to be broken
 
-- ❌ Boot.img repacking — bootloader rejects our images even with
+- ❌ Boot.img repacking: bootloader rejects our images even with
   original id preserved
-- ❌ Long single rockusb sessions (>30s or >100 MB ish) — Loader
+- ❌ Long single rockusb sessions (>30s or >100 MB ish): Loader
   wedges, requires power-cycle
 
 ## User preferences captured
@@ -827,6 +827,6 @@ trusted". Requires:
 - ASCII-only in `.ps1` files (Windows PowerShell 5.1 reads BOM-less
   UTF-8 as Windows-1252 and chokes on em-dashes etc. We have a saved
   memory at `~/.claude/projects/.../feedback_powershell_ascii.md`).
-- Stop suggesting password guesses on lockout-protected systems —
+- Stop suggesting password guesses on lockout-protected systems:
   we have a saved memory on this from the Esper admin password
   incident.

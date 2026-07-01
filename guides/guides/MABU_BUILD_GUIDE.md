@@ -9,16 +9,16 @@
 ## 1. Environment
 
 ### Device facts
-- **Android 8.1.0 (API 27)** — many newer Android APIs are unavailable
-- **Build type:** `user` (not `userdebug`) — `adb root` fails
-- **ADB connection:** WiFi only at `192.168.0.180:5555` — no USB, no physical buttons
+- **Android 8.1.0 (API 27)**: many newer Android APIs are unavailable
+- **Build type:** `user` (not `userdebug`); `adb root` fails
+- **ADB connection:** WiFi only at `192.168.0.180:5555`; no USB, no physical buttons
 - **ADB path (PC):** `X:\Claude\android platform-tools\adb.exe`
 
 ### Build environment (PC)
 - **Java:** `C:\Program Files\Android\Android Studio\jbr`
 - **Gradle wrapper:** `./gradlew` in project root
 - **Active project:** `X:\Claude\Mabu\facetrackadb\` (package `com.mabu.facetrackadb`)
-- **Legacy project:** `X:\Claude\Mabu\MabuFaceTrack\` (package `com.mabu.facetrack`, TCP-bridge era — kept for reference)
+- **Legacy project:** `X:\Claude\Mabu\MabuFaceTrack\` (package `com.mabu.facetrack`, TCP-bridge era, kept for reference)
 
 ### Setting JAVA_HOME for Gradle
 The system `JAVA_HOME` is not set. Always prefix Gradle calls with the JBR path:
@@ -55,7 +55,7 @@ $adb = "X:\Claude\android platform-tools\adb.exe"
 & $adb install -r "X:\Claude\Mabu\facetrackadb\app\build\outputs\apk\debug\app-debug.apk"
 ```
 
-`-r` = reinstall over existing app. **No bridge setup required** — `facetrackadb` opens
+`-r` = reinstall over existing app. **No bridge setup required**: `facetrackadb` opens
 `/dev/ttyS1` directly via JNI and self-initializes motors on startup.
 
 ### After install: restart the app
@@ -88,7 +88,7 @@ Start-Sleep -Seconds 1
 ## 4. App Lifecycle Quirks
 
 ### The home launcher
-`com.mabu.facetrackadb` **is** the Android HOME launcher — it auto-starts on every boot
+`com.mabu.facetrackadb` **is** the Android HOME launcher; it auto-starts on every boot
 and relaunches after force-stop. After `am force-stop`, wait ~2s for the launcher to
 restart before sending further commands.
 
@@ -169,7 +169,7 @@ Mabu's camera HAL is a Camera1 shim. CameraX fails on this hardware. Use `Camera
 ### SELinux and serial port access
 SELinux denies `getattr` for `untrusted_app → serial_device`, but allows `open/read/write`.
 Java `FileOutputStream` calls `stat()` first (needs `getattr`) and fails. Native C `open()`
-bypasses `stat()` and succeeds. **Use JNI (`serial.c`) — never Java I/O for `/dev/ttyS1`.**
+bypasses `stat()` and succeeds. **Use JNI (`serial.c`); never Java I/O for `/dev/ttyS1`.**
 The TCP motor bridge workaround is no longer needed. See `MABU_MOTOR_GUIDE.md` Section 9.
 
 ---
@@ -239,7 +239,7 @@ $lines = Get-Content $out
 ```
 
 Key log lines to watch:
-- `IoU match: ID X -> Y (IoU=0.xx, no hysteresis)` — same face, ML Kit changed ID, no motor freeze
-- `new face ID N confirmed (IoU=0.00, slew 10f)` — genuine new face, slew window fired
-- `perf n=50 inference avg=...` — HAL and inference timing (every ~5s)
-- `hal n=50 arrival avg=...` — camera HAL cadence (should be ~100ms / 10fps)
+- `IoU match: ID X -> Y (IoU=0.xx, no hysteresis)`: same face, ML Kit changed ID, no motor freeze
+- `new face ID N confirmed (IoU=0.00, slew 10f)`: genuine new face, slew window fired
+- `perf n=50 inference avg=...`: HAL and inference timing (every ~5s)
+- `hal n=50 arrival avg=...`: camera HAL cadence (should be ~100ms / 10fps)

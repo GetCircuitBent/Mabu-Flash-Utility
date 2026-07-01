@@ -1,4 +1,4 @@
-# SELinux — Serial Port Access for the Mabu App
+# SELinux: Serial Port Access for the Mabu App
 ## The Problem
 `/dev/ttyS1` (the motor board serial port) is labeled `u:object_r:serial_device:s0`.
 The Mabu face-tracking app runs as `u:r:untrusted_app:s0`. Stock AOSP policy
@@ -33,18 +33,18 @@ Add the rule in `mabu_serial_access.te` to the device SELinux policy:
 allow untrusted_app serial_device:chr_file { open read write getattr ioctl };
 ```
 
-### Option A — AOSP Build (Cleanest)
+### Option A: AOSP Build (Cleanest)
 1. Copy `mabu_serial_access.te` into `system/sepolicy/private/` (or your
    device-specific sepolicy dir)
 2. `m sepolicy`
 3. Flash `out/.../precompiled_sepolicy` to `/system/etc/selinux/`
 
-### Option B — Patch Running Policy (WSL, USB Required)
-Run `apply-patch.sh` — see comments inside for full procedure.
+### Option B: Patch Running Policy (WSL, USB Required)
+Run `apply-patch.sh`; see comments inside for full procedure.
 
 ### After Applying the Permanent Fix
 Remove the `AdbShellBridge` fallback from `MabuMotors.open()` (or leave it
-in as a belt-and-suspenders fallback — it won't be reached if native serial
+in as a belt-and-suspenders fallback; it won't be reached if native serial
 opens successfully).
 
 ## Files
