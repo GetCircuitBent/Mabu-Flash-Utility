@@ -1,4 +1,4 @@
-# Mabu animation calibration
+# Mabu Animation Calibration
 
 How we systematically verify and tune the whole **face → motor** pipeline, so
 the robot's eyes/head track you correctly and feel alive, not by guessing the
@@ -9,7 +9,7 @@ at the bottom get updated whenever a robot is (re)calibrated.
 
 ---
 
-## Guiding principles
+## Guiding Principles
 
 1. **Calibrate bottom-up.** Each stage assumes the one below it is correct.
    Tuning the *feel* (smoothing/jitter) on top of a wrong *mapping* is building
@@ -32,7 +32,7 @@ at the bottom get updated whenever a robot is (re)calibrated.
 
 ---
 
-## The pipeline: 4 stages, each with its own transfer function
+## The Pipeline: 4 Stages, Each with Its Own Transfer Function
 
 ```
 camera ─► ML Kit ──[1 SENSE]──► yaw/pitch/roll°, pupilΔxy, eyeOpenL/R, faceBox(screen xy)
@@ -45,7 +45,7 @@ Calibrate in the order **ACTUATE → SENSE → MAP → DYNAMICS** (4→1→2→3
 hardware first (what does a value physically do), then the sensor (what does the
 camera report), then the mapping that joins them, then the feel.
 
-### Where every magic number lives
+### Where Every Magic Number Lives
 
 | Stage | Numbers | Home |
 |---|---|---|
@@ -56,7 +56,7 @@ camera report), then the mapping that joins them, then the feel.
 
 ---
 
-## Stage 4: ACTUATE (motor hardware)
+## Stage 4: ACTUATE (Motor Hardware)
 
 **Goal:** know, per motor, the value that is *visually neutral*, the values that
 hit the *clean hard-stops* (no grinding), and the *direction* (does a higher
@@ -87,7 +87,7 @@ Current unit-4 truth (from the motor guide; verify on exercise):
 
 ---
 
-## Stage 1: SENSE (what ML Kit reports)
+## Stage 1: SENSE (What ML Kit Reports)
 
 **Goal:** for each signal, learn its **sign**, **resting bias** (what it reads
 when you're neutral; this is where a stray "47" hides), and **usable range**
@@ -115,7 +115,7 @@ needs. The resting-bias column is what surfaces the mystery "47".
 
 ---
 
-## Stage 2: MAP (sensor → motor target)
+## Stage 2: MAP (Sensor → Motor Target)
 
 **Goal:** turn a sensed value into a motor target that **mirrors** you and
 **fills Mabu's range with exaggeration**.
@@ -156,7 +156,7 @@ is "right". Document the chosen origin/axis/mirror so the two paths can't drift.
 
 ---
 
-## Stage 3: DYNAMICS (the feel)
+## Stage 3: DYNAMICS (the Feel)
 
 Only meaningful once 4/1/2 are right. Tuned with `pc-brain/mabu_tune.py` against
 the telemetry. Params + what we've learned:
@@ -179,7 +179,7 @@ turned, freeze eyes toward center instead of chasing the unreliable pupil).
 
 ---
 
-## Open issues to resolve during calibration
+## Open Issues to Resolve during Calibration
 
 - **The "47" offset**: a resting reading of ~47 where ~50/neutral is expected.
   Identify which signal (motor pos? target? a head angle?) and trace it; the
@@ -194,7 +194,7 @@ turned, freeze eyes toward center instead of chasing the unreliable pupil).
 
 ---
 
-## Tooling roadmap (build against this doc)
+## Tooling Roadmap (Build against This Doc)
 
 1. **Motor exerciser** (calibration mode): step one motor through known values on
    command, for Stage 4.
@@ -209,7 +209,7 @@ turned, freeze eyes toward center instead of chasing the unreliable pupil).
 
 ---
 
-## Validation suite (run after any calibration change)
+## Validation Suite (Run after Any Calibration Change)
 
 - [ ] Each motor: neutral centered, both extremes clean, direction correct.
 - [ ] Mirror check (the cheat-sheet table) passes for all 4 head/eye moves.
@@ -221,7 +221,7 @@ turned, freeze eyes toward center instead of chasing the unreliable pupil).
 
 ---
 
-## Per-unit calibration record
+## Per-Unit Calibration Record
 
 ### Unit 4 (10.0.0.69)
 
@@ -241,7 +241,7 @@ _Mapping params (`TuningSettings`), current; update as calibrated:_
 
 _Motor truth: see the Stage-4 table above; reconcile EYELID_NEUTRAL._
 
-#### Stage-1 SENSE capture (first run)
+#### Stage-1 SENSE Capture (First Run)
 
 | signal | resting bias | sign | usable span | notes |
 |---|---|---|---|---|

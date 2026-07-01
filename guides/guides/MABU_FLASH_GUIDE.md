@@ -1,4 +1,4 @@
-# MABU FLASH GUIDE: Permanent direct serial access (delete the motor bridge)
+# Mabu Flash Guide: Permanent Direct Serial Access (Delete the Motor Bridge)
 
 > **Goal of this guide:** make the Mabu app able to open `/dev/ttyS1` (the motor
 > board) **directly**, by adding one rule to the device's SELinux policy via a
@@ -17,7 +17,7 @@
 
 ---
 
-## 0. Plain-language summary (read this first)
+## 0. Plain-Language Summary (Read This First)
 
 Think of the motor wire `/dev/ttyS1` as a **door**. The normal lock is wide open,
 but there's a **security guard called SELinux** who checks ID badges:
@@ -49,7 +49,7 @@ original bytes so it can be reverted in one command (§7).
 
 ---
 
-## 1. The exact problem, technically
+## 1. The Exact Problem, Technically
 
 - Device: **Rockchip RK3288**, board `HRA7_RK3288W_V1.2_2021.10.15`, Android
   **8.1.0** (`user` build, `release-keys`), security patch 2018-09-05.
@@ -84,7 +84,7 @@ device still boots normally. It is not a brick path. See §8.)
 
 ---
 
-## 2. Constants and facts you'll need
+## 2. Constants and Facts You'll Need
 
 | Thing | Value |
 |---|---|
@@ -104,7 +104,7 @@ recovery: proven twice (`notes/HANDOFF.md` finding #4). This guide never touches
 
 ---
 
-## 3. Prerequisites / setup (one-time, on the PC)
+## 3. Prerequisites / Setup (One-Time, on the PC)
 
 **Two commands, one manual step; then every Mabu is a single command forever.**
 Clone the repo and run from its root:
@@ -156,12 +156,12 @@ After both scripts succeed:
 
 ---
 
-## 4. Phase A: Offline prep (NO device attached; do this first)
+## 4. Phase A: Offline Prep (NO Device Attached; Do This First)
 
 This is the safe part. We produce and verify the patched policy on the PC before
 the harness ever touches the robot.
 
-### Phase A status: already verified (2026-06-01)
+### Phase A Status: Already Verified (2026-06-01)
 
 - `selinux/sepolicy.bin` (a copy of the device's policy, 299,979 bytes) is a valid
   **version-30 kernel policydb** (header magic `8c ff 7c f9`, vers `1e`).
@@ -173,7 +173,7 @@ the harness ever touches the robot.
 > real write, **re-pull the live policy** during the session and diff it (§B1),
 > in case firmware drifted. The patch procedure is identical either way.
 
-### A1. Install the policy tools in WSL
+### A1. Install the Policy Tools in WSL
 
 **`install-tools.ps1` handles this automatically**: it installs `libsepol-dev`,
 `build-essential`, `setools` in WSL and compiles `tools/sepolicy-inject.c` into
@@ -189,7 +189,7 @@ wsl -d Ubuntu -u root -- gcc -o /usr/local/bin/sepolicy-inject `
 Note: libsepol 3.x (Ubuntu 22.04+) no longer exports internal policydb symbols
 from the shared library. The compile command links against `libsepol.a` directly.
 
-### A2. Inject the rule
+### A2. Inject the Rule
 
 ```bash
 # Work in a copy; never edit sepolicy.bin in place.
@@ -201,7 +201,7 @@ sepolicy-inject /tmp/sepolicy.orig.bin /tmp/sepolicy.patched.bin
 # (If the rule already exists it prints "Rule already exists; ORing in new perms.", also fine.)
 ```
 
-### A3. Verify the patch (must pass before you go near the device)
+### A3. Verify the Patch (Must Pass Before You Go near the Device)
 
 ```bash
 # 1) The rule is now present:
@@ -218,7 +218,7 @@ stat -c '%s' /tmp/sepolicy.patched.bin  # e.g. ~300,0xx bytes (a few bytes large
 Record the **patched size**. Adding one rule typically grows the file by tens of
 bytes, well within one 4 KB block of slack; this matters for Route 1.
 
-### A4. Stage the locator script
+### A4. Stage the Locator Script
 
 Save the script in [§9 Appendix A](#appendix-a--locate_vendor_policypy) as
 `scripts/locate_vendor_policy.py`. You will run it during the session on a dump of
@@ -227,11 +227,11 @@ image you have to confirm it executes.)
 
 ---
 
-## 5. Phase B: Harness session (the actual write)
+## 5. Phase B: Harness Session (the Actual Write)
 
 > Connect the harness, catch the Loader (§3). Then:
 
-### B1. Re-pull the live policy + confirm partition basics
+### B1. Re-Pull the Live Policy + Confirm Partition Basics
 
 Dump a chunk of `/vendor` big enough to contain its ext4 metadata and the
 `etc/selinux` directory + the policy file. The auto-cycled dumper handles the
@@ -262,7 +262,7 @@ sudo umount /mnt/vendor
 If it does **not** match the reference, re-run Phase A (A2/A3) using the
 freshly-pulled file as input instead of `selinux/sepolicy.bin`.
 
-### B2. Locate the file + capture originals
+### B2. Locate the File + Capture Originals
 
 ```powershell
 python scripts\locate_vendor_policy.py firmware\scratch\vendor-full.img
@@ -282,14 +282,14 @@ It prints, for `/vendor/etc/selinux/precompiled_sepolicy`:
 .\tools\rkdeveloptool\rkdeveloptool.exe rl <INODE_LBA> 1   firmware\scratch\inode.orig.sector
 ```
 
-### Choose your route
+### Choose Your Route
 
 - **`metadata_csum` = OFF** → **Route 1 (surgical)** is safe and fast (small write).
 - **`metadata_csum` = ON**, or you want zero ext4 hand-editing → **Route 2 (reflash)**.
 
 ---
 
-### Route 1: Surgical in-place write (recommended when metadata_csum is OFF)
+### Route 1: Surgical In-Place Write (Recommended When metadata_csum Is OFF)
 
 Only the policy file's data blocks + one 4-byte size field change. The block
 **count** is unchanged (a few extra bytes fit in the file's last 4 KB block), so
@@ -345,7 +345,7 @@ Proceed to **B3**.
 
 ---
 
-### Route 2: Whole `/vendor` reflash (foolproof; no ext4 hand-editing)
+### Route 2: Whole `/vendor` Reflash (Foolproof; No ext4 Hand-Editing)
 
 You already dumped `firmware\scratch\vendor-full.img` in B1. Just swap the file
 inside it (mount handles all metadata + checksums) and flash it back.
@@ -386,7 +386,7 @@ Wait ~30–60 s for Android, then reconnect WiFi ADB:
 
 ---
 
-## 6. Phase C: Verify on the device
+## 6. Phase C: Verify on the Device
 
 ```powershell
 $adb = "X:\Claude\android platform-tools\adb.exe"
@@ -416,7 +416,7 @@ write actually changed the on-disk bytes (mount the partition again and
 ---
 
 
-### C2. Enable persistent ADB-over-TCP (while USB is still connected)
+### C2. Enable Persistent ADB-over-TCP (While USB Is Still Connected)
 
 While you have USB ADB active, lock in wireless ADB so the device never needs a
 USB cable again:
@@ -433,7 +433,7 @@ adb -s <device-ip>:5555 shell echo "wireless ADB OK"
 this survives reboots, so wireless ADB comes up on every boot automatically.
 **Run this before disconnecting the USB harness for the last time.**
 
-## 7. Restore / abort (one command back to original)
+## 7. Restore / Abort (One Command Back to Original)
 
 You captured the originals in B2. To revert:
 
@@ -453,7 +453,7 @@ clears `misc` if anything ever affects boot (it should not; we never touch boot)
 
 ---
 
-## 8. Failure modes & why this isn't a brick path
+## 8. Failure Modes & Why This Isn't a Brick Path
 
 | Symptom | Cause | What it means / fix |
 |---|---|---|
@@ -468,7 +468,7 @@ to recovery. Everything here is confined to one `/vendor` file with originals sa
 
 ---
 
-## 9. Phase D: App revert (do AFTER Phase C verifies; separate work)
+## 9. Phase D: App Revert (Do AFTER Phase C Verifies; Separate Work)
 
 Once the app can open `/dev/ttyS1` directly, delete the bridge. These are the
 edits to make in the **app project** (`X:\Claude\Mabu\MabuFaceTrack`, the working
@@ -606,7 +606,7 @@ print("\nRoute decision:", "Route 1 OK (metadata_csum OFF)" if not META_CSUM
 
 ---
 
-## Appendix B: Quick reference: what `rkdeveloptool` calls do
+## Appendix B: Quick Reference: What `rkdeveloptool` Calls Do
 
 | Command | Meaning |
 |---|---|

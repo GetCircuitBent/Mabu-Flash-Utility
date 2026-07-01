@@ -1,4 +1,4 @@
-# Mabu/Esper tablet unlock: agent handoff
+# Mabu/Esper Tablet Unlock: Agent Handoff
 
 > **For current procedure: see [../README.md](../README.md).**
 > This file is the chronological session log: what was tried, in what
@@ -9,7 +9,7 @@
 Long-running project. Goal: **remove Esper Device Owner kiosk from an
 RK3288 Android 8.1 tablet** so the user can repurpose it.
 
-## Session 2026-05-28: assembly-line refinements + unit 1 mystery
+## Session 2026-05-28: Assembly-Line Refinements + Unit 1 Mystery
 
 **Built `scripts/restore-adb-auth.ps1`**: reverts the two adbd auth
 patches (writes back `firmware/originals/adbd-authreq-orig.bin` and
@@ -25,7 +25,7 @@ ADB sit at `unauthorized` until the dialog is tapped on the touch UI.
 discovered on unit 4: doing 8 small patch writes followed by a 16 MB
 wipe write in the same Loader session causes the first wipe chunk to
 fail with "Read LBA failed"; Loader wedges after the patches. Fix:
-between patch and wipe phases, do `rd` + wait for adb + `adb shell
+between patch and wipe phases, do `rd` + wait for ADB + `adb shell
 reboot loader` to re-enter Loader fresh. Adds ~30s to the flow but
 makes it reliable.
 
@@ -79,7 +79,7 @@ Label them once and don't swap.** AT command interface via
 /dev/ttyUSB2 was discovered as the way to talk to the Quectel modem;
 useful for any future modem-side diagnostics.
 
-## Latest status (2026-05-27 session, continued)
+## Latest Status (2026-05-27 Session, Continued)
 
 **All three units now on the same template.** Validated the procedure end-to-end
 on units 1 and 3 after first proving it on unit 2.
@@ -97,7 +97,7 @@ head wipe on active-Esper units.** Patches-only suffices ONLY on units that
 are already factory-reset (Esper DO ref but no kiosk policies in /data).
 
 **Unit 1 specifics:** USB ADB is permanently wedged on this unit even after
-factory reset + full patches. Symptom: device enumerates, but adb handshake
+factory reset + full patches. Symptom: device enumerates, but ADB handshake
 never completes (`device offline`). Cause unknown; not related to /data
 state. Use WiFi ADB instead. Also confirmed that Dev Options crash is NOT
 fixed by factory reset, so it's not a /data-state issue: it's deeper, in
@@ -111,7 +111,7 @@ fixed by factory reset, so it's not a /data-state issue: it's deeper, in
 Added `scripts/flash-mabu.ps1`: single command for fresh-Esper units:
   `.\scripts\flash-mabu.ps1 -WipeData -RestoreMabu`
 
-## Earlier in this session (2026-05-27)
+## Earlier in This Session (2026-05-27)
 
 **Unit 2 is fully scrubbed and is now the validated "template state".** Path A
 strategy locked: byte-patch only, no /system dump-and-flash needed.
@@ -217,7 +217,7 @@ factory-reset on production units and never captured. So a "cloned" Mabu
 from this template will have motor/sensor diagnostics and animations
 but no consumer conversation flow.
 
-## Previous status (2026-05-25 session 2)
+## Previous Status (2026-05-25 Session 2)
 
 **Esper kiosk neutralized.** Device now boots to normal Android home
 screen (no Esper UI, no kiosk lock). What worked:
@@ -275,7 +275,7 @@ and adbd's auth_required is 0 (our patch), so on every boot you can
 and without an approval dialog. The tablet IP is DHCP; set a static
 lease for it on your router if you want a stable address.
 
-## Two distinct Mabu-unit states we've seen
+## Two Distinct Mabu-Unit States We've Seen
 
 There are two starting states for a Mabu unit, and they need slightly
 different treatment:
@@ -304,7 +304,7 @@ TCP isn't subject to whatever USB-layer game the lingering Esper code
 plays. State (B) is essentially done once liberate-mabu has run plus
 Esper APK EOCDs are nuked.
 
-## Open problem: full-device backup procedure
+## Open Problem: Full-Device Backup Procedure
 
 The session 3 priority became "back up every Mabu before doing anything
 destructive." We did NOT solve this. State of the question:
@@ -373,7 +373,7 @@ rockusb.py is updated to accept PID 0x320A and any vendor-class
 interface (FF/06/05 OR FF/FF/00). Power cycle the tablet to a fresh
 Loader before each attempt.
 
-## Assembly-line strategy (next phase)
+## Assembly-Line Strategy (Next Phase)
 
 The byte-patching v3 procedure works but is per-unit and unreliable
 (broke Dev Options on unit 1, narrowly succeeded on units 2 and the
@@ -450,7 +450,7 @@ template-donor (unit 2) before dumping. Aurora provides Play-Store-
 catalog access without needing Google Play Services. Lighter than
 OpenGApps; sufficient for repurposed-tablet use cases.
 
-## Operational reality
+## Operational Reality
 
 Deployed Mabu tablets have **NO external USB port and NO buttons**:
 they're embedded in the robot body. USB access requires a special
@@ -468,7 +468,7 @@ harness again on that unit.
 The 1-step-patcher we want to build is: harness-on, run one command,
 harness-off, done. See tasks #9-#12.
 
-## V3 Liberation procedure (current best-practice, validated)
+## V3 Liberation Procedure (Current Best-Practice, Validated)
 
 Wipe size matters. Two passes on first unit (256 + 320 MB) left Dev
 Options crashing. The second unit (96 MB before Loader wedged) ended up
@@ -552,7 +552,7 @@ Full procedure for a NEXT Mabu unit (do these steps in order):
    From the tablet UI you can now install anything else (browser, etc)
    via F-Droid.
 
-## Original V2 procedure (for reference)
+## Original V2 Procedure (for Reference)
 
 Critical insight: **don't wipe /data, don't corrupt Esper APKs until
 AFTER you have the Mabu software backed up.** The original procedure
@@ -586,13 +586,13 @@ future units:
 
 ---
 
-## Original session notes follow
+## Original Session Notes Follow
 
 We've made significant progress; one final step is blocked.
 
 ---
 
-## What we've established (don't re-discover)
+## What We've Established (Don't Re-Discover)
 
 ### Hardware
 
@@ -610,7 +610,7 @@ We've made significant progress; one final step is blocked.
   D+/D- polarity was the wiring gotcha to remember (swap fixes
   "device descriptor request failed").
 
-### Software tooling, in place at `tools/`
+### Software Tooling, in Place at `tools/`
 
 - `tools/rkdeveloptool/rkdeveloptool.exe`: cpebit's Windows build
   (libusb-based; works only when device is bound to WinUSB)
@@ -625,7 +625,7 @@ We've made significant progress; one final step is blocked.
 - adb / fastboot in `%LOCALAPPDATA%\Microsoft\WinGet\Packages\Google.PlatformTools_*`
 - Zadig (winget id `akeo.ie.Zadig`)
 
-### Critical technical findings
+### Critical Technical Findings
 
 **1. Rockchip Loader window:** during normal boot, u-boot exposes
 PID 0x320A on USB for ~10 seconds. Any rockusb command latches it
@@ -681,13 +681,13 @@ no final xor, one bit different from IEEE 802.3), wrote back via
     `/system` content and the kernel will not refuse to mount it.
 
 **6. ADB current state** (post-parameter-patch): tablet boots to main
-Android, enumerates as `VID 2207 PID 0006 H7R 2022010502079`. adb
+Android, enumerates as `VID 2207 PID 0006 H7R 2022010502079`. ADB
 shows the device as `offline` (wedged handshake we've seen
 throughout). The Esper kiosk still suppresses the auth dialog.
 
 ---
 
-## Current blocker: dumping /system is unreliable
+## Current Blocker: Dumping /system Is Unreliable
 
 Plan was: dump system.img (2 GB at sector 0x18A000) → byte-replace
 `ro.adb.secure=1` → `0` and similar → write back → reboot → unauth ADB
@@ -708,7 +708,7 @@ on) and re-catch the Loader window.
 
 ---
 
-## Files / scripts on disk
+## Files / Scripts on Disk
 
 - `scripts/patch-bootimg.py`: boot.img unpack/repack (currently
   blocked, see above; supports `--keep-id`)
@@ -736,11 +736,11 @@ on) and re-catch the Loader window.
 
 ---
 
-## Strategic options for next agent
+## Strategic Options for Next Agent
 
 In rough order of effort:
 
-### Option A (smartest): only dump what we need, not all 2 GB
+### Option A (Smartest): Only Dump What We Need, Not All 2 GB
 
 The text we need to modify is in `/system/build.prop` and
 `/system/etc/prop.default`: total a few KB. Rather than dumping the
@@ -758,7 +758,7 @@ whole 2 GB partition:
 
 This avoids the 2 GB dump problem entirely. **Strongly recommended.**
 
-### Option B: chunk dump but stop and restart Loader sessions
+### Option B: Chunk Dump but Stop and Restart Loader Sessions
 
 Modify `catch-loader-and-dump.ps1` to:
 - Dump 5–10 chunks (20–40 MB)
@@ -769,14 +769,14 @@ Modify `catch-loader-and-dump.ps1` to:
 Tedious but each session stays under the wedge threshold. The user
 would have to power-cycle between sessions.
 
-### Option C: investigate kernel partition
+### Option C: Investigate Kernel Partition
 
 There's a `kernel` partition at sector 0x10000, 32 MB, that we never
 dumped. Possibility: u-boot loads the actual booting kernel/ramdisk
 from there, not from `boot`. That would explain why our boot.img
 patches had no effect. **Worth a 32 MB dump just to know.**
 
-### Option D: userdata adbkey injection
+### Option D: userdata adbkey Injection
 
 With dm-verity disabled, we can modify /system. But ANOTHER avenue:
 add the host's `~/.android/adbkey.pub` to `/data/misc/adb/adb_keys`.
@@ -793,7 +793,7 @@ trusted". Requires:
 
 ---
 
-## Steps to resume
+## Steps to Resume
 
 1. **Kill any lingering rkdeveloptool/powershell processes** holding
    the USB device.
@@ -806,21 +806,21 @@ trusted". Requires:
 
 ---
 
-## Things known to be working
+## Things Known to Be Working
 
 - ✅ rkdeveloptool CLI talks to Loader (PID 320A) via WinUSB binding
 - ✅ Parameter file patching with custom Rockchip CRC32
 - ✅ Reads of up to ~64 MB partitions complete reliably
 - ✅ dm-verity is disabled on the live device (parameter patch took)
 
-## Things known to be broken
+## Things Known to Be Broken
 
 - ❌ Boot.img repacking: bootloader rejects our images even with
   original id preserved
 - ❌ Long single rockusb sessions (>30s or >100 MB ish): Loader
   wedges, requires power-cycle
 
-## User preferences captured
+## User Preferences Captured
 
 - Wants visible terminal windows for heavy ops (so they can see what's
   happening). For state checks, the PowerShell tool's output is fine.
