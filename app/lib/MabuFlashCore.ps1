@@ -33,6 +33,22 @@ function Fail($msg)    { & $script:Ui.Log 'fail' $msg }
 # top-level catch, which reports Done $false. Replaces the original `exit 1`.
 function Abort($msg)   { if (-not $msg) { $msg = 'aborted' }; throw [System.OperationCanceledException]::new($msg) }
 
+function Invoke-Child {
+    # Run a child .ps1 (which uses Write-Host) and forward each output line to the
+    # UI log, so GUI runs surface child-script progress instead of losing it to
+    # the host. Preserves $LASTEXITCODE for the caller's success check.
+    param([string] $RelPath, [hashtable] $Named = @{})
+    $p = Join-Path $script:Root $RelPath
+    & $p @Named *>&1 | ForEach-Object {
+        $txt = if ($_ -is [System.Management.Automation.InformationRecord]) {
+                   $md = $_.MessageData
+                   if ($md -and $md.PSObject.Properties['Message']) { $md.Message } else { "$md" }
+               } elseif ($_ -is [System.Management.Automation.ErrorRecord]) { $_.ToString() }
+               else { "$_" }
+        if ($txt -and $txt.Trim().Length) { Info $txt }
+    }
+}
+
 function Test-Loader { (& $script:RK ld 2>&1) -match 'Vid=0x2207,Pid=0x320a.*Loader' }
 
 function Get-LoaderDriverService {
@@ -382,7 +398,7 @@ function Invoke-MabuFlash {
 
             # --- Phase 2: Apply patches ---
             Section 'Applying liberation patches'
-            & (Join-Path $script:Root 'scripts/liberate-mabu.ps1')
+            Invoke-Child 'scripts/liberate-mabu.ps1'
             if ($LASTEXITCODE -ne 0) { Fail 'liberate-mabu.ps1 failed.'; Abort 'liberate-mabu.ps1 failed.' }
             Ok 'All 8 patches written.'
             & $Ui.Flash 32 'Patches written'
@@ -410,7 +426,7 @@ function Invoke-MabuFlash {
                 Start-Sleep -Seconds 3
                 $wiped = $false
                 for ($attempt = 1; $attempt -le 4; $attempt++) {
-                    & (Join-Path $script:Root 'scripts/wipe-data-head.ps1') -SizeMB $WipeMB
+                    Invoke-Child 'scripts/wipe-data-head.ps1' -Named @{ SizeMB = $WipeMB }
                     if ($LASTEXITCODE -eq 0) { $wiped = $true; break }
                     if (-not (Test-Loader)) { Fail "Loader dropped during wipe (attempt $attempt). Power-cycle into Loader and re-run."; Abort 'Loader dropped during wipe.' }
                     Warn "Wipe attempt $attempt wedged (cold Loader); warming and retrying..."

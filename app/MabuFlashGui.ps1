@@ -35,6 +35,11 @@ $sync = [hashtable]::Synchronized(@{})
 $sync.Simulate = [bool]$Simulate
 $sync.Options  = @{ RestoreMabu = [bool]$RestoreMabu; WipeData = [bool]$WipeData; NoWipe = [bool]$NoWipe }
 $sync.Queue    = [System.Collections.Queue]::Synchronized([System.Collections.Queue]::new())
+# Where app/lib/* lives, so the worker runspace can dot-source the core.
+# Robust across -File, dot-sourcing, and ps2exe (where $PSScriptRoot may be empty).
+$sync.AppDir   = if ($PSScriptRoot) { $PSScriptRoot }
+                 elseif ($MyInvocation.MyCommand.Path) { Split-Path -Parent $MyInvocation.MyCommand.Path }
+                 else { (Get-Location).Path }
 
 # --------------------------------- XAML ---------------------------------------
 # GCB brand: green-forward dark. bg #1A242D, surface #283845, module #384E60,
@@ -298,10 +303,22 @@ $SimulateFlow = {
 }.ToString()
 
 $RealFlow = {
+    # Real flash: dot-source the UI-agnostic core and run it against the queue
+    # provider. The repo root (parent of app/) is passed as -Root so the core's
+    # relative paths (apks/, scripts/, tools/) resolve. Invoke-MabuFlash owns its
+    # own try/catch and calls Done, so we only guard the load here.
     $ui = $sync.Ui
-    & $ui.Log 'warn' 'Real flash core is not wired up yet on this branch.'
-    & $ui.Log 'info' 'Run with -Simulate to preview the UX, or use scripts\flash-mabu.ps1.'
-    & $ui.Done $false 'Core not yet connected -- see app/EXECUTABLE.md build order.'
+    try {
+        . (Join-Path $sync.AppDir 'lib\MabuFlashCore.ps1')
+    } catch {
+        & $ui.Log 'fail' "Could not load MabuFlashCore.ps1: $_"
+        & $ui.Done $false 'Flash core failed to load.'
+        return
+    }
+    $repoRoot = Split-Path $sync.AppDir -Parent
+    $opt = $sync.Options
+    Invoke-MabuFlash -Ui $ui -Root $repoRoot `
+        -RestoreMabu:$opt.RestoreMabu -WipeData:$opt.WipeData -NoWipe:$opt.NoWipe
 }.ToString()
 
 # --------------------- Start the worker in a background runspace ---------------
@@ -339,7 +356,9 @@ if ($Simulate) {
     $sync.ConnectStatus.Foreground = $brush.ConvertFromString('#61CE70')
     $sync.StartBtn.IsEnabled = $true
 } else {
-    $sync.ConnectStatus.Text = 'Device polling not wired up on this branch yet. Use -Simulate.'
+    $sync.ConnectStatus.Text = 'Plug in the tablet (hold ADKEY through power-on for a first flash, or join Wi-Fi if it boots to Android), then click Start flashing.'
+    $sync.ConnectStatus.Foreground = $brush.ConvertFromString('#FFB020')
+    $sync.StartBtn.IsEnabled = $true
 }
 
 $Window.Add_Closed({

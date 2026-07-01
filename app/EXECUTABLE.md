@@ -48,13 +48,13 @@ The device flow can't be fully hands-off. These become prompt cards:
 ## Files
 Project layout:
 
-| Path                        | Status      | Purpose                                     |
-|-----------------------------|-------------|---------------------------------------------|
-| `app/MabuFlashGui.ps1`      | in progress | WPF front-end; `-Simulate` runs a fake flow |
-| `app/lib/MabuFlashCore.ps1` | TODO        | UI-agnostic flash logic (from flash-mabu)   |
-| `app/lib/ConsoleUi.ps1`     | TODO        | Console provider (known-good behaviour)     |
-| `app/build/build-exe.ps1`   | TODO        | ps2exe packaging + tool bundling            |
-| `scripts/flash-mabu.ps1`    | source      | the console tool the core is extracted from |
+| Path                        | Status | Purpose                                              |
+|-----------------------------|--------|------------------------------------------------------|
+| `app/MabuFlashGui.ps1`      | done   | WPF front-end; `-Simulate` fakes it, else real flash |
+| `app/lib/MabuUi.ps1`        | done   | UI contract + console provider (`New-ConsoleUi`)     |
+| `app/lib/MabuFlashCore.ps1` | done   | UI-agnostic flash logic (`Invoke-MabuFlash`)         |
+| `app/build/build-exe.ps1`   | TODO   | ps2exe packaging + tool bundling                     |
+| `scripts/flash-mabu.ps1`    | frozen | the console tool the core was forked from            |
 
 ## Threading Model (GUI)
 WPF runs its message pump on the main thread (`ShowDialog`). The flash logic is long-running and blocking (ADB, sleeps), so it runs in a **background runspace**. The worker only enqueues plain-data messages onto a synchronized queue; a `DispatcherTimer` on the UI thread drains the queue and does every UI mutation, so there is no cross-runspace scriptblock hazard. Prompts block the worker on a `ManualResetEventSlim` that the button click (UI thread) signals. A `[hashtable]::Synchronized` bag (`$sync`) is shared by reference between threads.
@@ -62,11 +62,11 @@ WPF runs its message pump on the main thread (`ShowDialog`). The flash logic is 
 ## Build Order
 The plan:
 
-1. **[done]** GUI shell + simulated flow: see the UX before wiring logic.
-2. **[next]** Extract `MabuFlashCore.ps1` from `flash-mabu.ps1` behind the UI contract.
-3. `ConsoleUi.ps1` provider; verify the console run matches known-good on real hardware.
-4. Wire the GUI provider to the real core; test on a unit.
-5. `build-exe.ps1`: bundle rkdeveloptool/adb/magiskpolicy/APKs, UAC manifest, sign.
+1. **[done]** GUI shell + simulated flow.
+2. **[done]** Extract `MabuFlashCore.ps1` from `flash-mabu.ps1` behind the UI contract.
+3. **[done]** Console provider (`New-ConsoleUi`); the core defaults to it. Verify a console `Invoke-MabuFlash` run matches known-good on real hardware.
+4. **[done]** Wire the GUI to the real core (drop `-Simulate` to flash for real). Child-script output now routes to the log via `Invoke-Child`. Needs an on-hardware run to confirm.
+5. **[next]** `build-exe.ps1`: bundle rkdeveloptool/adb/magiskpolicy/APKs, UAC manifest, sign.
 
 ## Running the Shell (Today)
 Simulated flow, no hardware or tools needed:
