@@ -1,7 +1,7 @@
 # Mabu animation calibration
 
 How we systematically verify and tune the whole **face → motor** pipeline, so
-the robot's eyes/head track you correctly and feel alive — not by guessing the
+the robot's eyes/head track you correctly and feel alive, not by guessing the
 "magic numbers" but by deriving them from data, bottom-up.
 
 This is a living document: the **procedure** is fixed, the **per-unit values**
@@ -13,14 +13,14 @@ at the bottom get updated whenever a robot is (re)calibrated.
 
 1. **Calibrate bottom-up.** Each stage assumes the one below it is correct.
    Tuning the *feel* (smoothing/jitter) on top of a wrong *mapping* is building
-   on sand — that's how "head tilt doesn't match" survives a dozen jitter tweaks.
+   on sand: that's how "head tilt doesn't match" survives a dozen jitter tweaks.
 2. **Mirror, not copy.** Mabu is face-to-face with you, so it moves like your
    reflection: you turn your head to *your* right → Mabu turns to *its* left.
    Signs are chosen to achieve this.
 3. **Fill the range; exaggerate for life.** We are NOT matching physical angles
    degree-for-degree. A motor's `0`/`100` are just hard-stops at whatever physical
    extent that unit has (not 180°, not symmetric). The goal: map your *comfortable*
-   input range onto Mabu's *full* motor range — slightly exaggerated — so normal
+   input range onto Mabu's *full* motor range, slightly exaggerated, so normal
    movement uses Mabu's whole range and it never looks static. "Gain/range" really
    means *"what input saturates the motor"*; smaller input-range = more animated.
 4. **Eyeball ground truth is fine.** We want it to *look* matched/lively, not to
@@ -56,7 +56,7 @@ camera report), then the mapping that joins them, then the feel.
 
 ---
 
-## Stage 4 — ACTUATE (motor hardware)
+## Stage 4: ACTUATE (motor hardware)
 
 **Goal:** know, per motor, the value that is *visually neutral*, the values that
 hit the *clean hard-stops* (no grinding), and the *direction* (does a higher
@@ -64,7 +64,7 @@ value move the part which way).
 
 **Ground truth:** physical observation (eyeball).
 
-**Procedure (motor exerciser — tooling TODO):** drive ONE motor at a time through
+**Procedure (motor exerciser, tooling TODO):** drive ONE motor at a time through
 `neutral → low extreme → neutral → high extreme → neutral`, pausing at each, and
 confirm:
 - neutral looks centered/relaxed,
@@ -78,7 +78,7 @@ Current unit-4 truth (from the motor guide; verify on exercise):
 
 | Motor | Neutral | 0 = | 100 = | Notes |
 |---|---|---|---|---|
-| LDL/LDR (eyelids) | ~20–25 † | max open (hard stop) | fully closed | †code const vs guide mismatch — see open issues |
+| LDL/LDR (eyelids) | ~20–25 † | max open (hard stop) | fully closed | †code const vs guide mismatch; see open issues |
 | ELR (eyes L/R) | 50 | max LEFT | max RIGHT | |
 | EUD (eyes U/D) | 50 | max UP | max DOWN | **inverted**; EUD=0 oscillation bug (≥2 s settle) |
 | NE (neck elev) | 50 | max DOWN | max UP | higher = look up |
@@ -87,21 +87,21 @@ Current unit-4 truth (from the motor guide; verify on exercise):
 
 ---
 
-## Stage 1 — SENSE (what ML Kit reports)
+## Stage 1: SENSE (what ML Kit reports)
 
 **Goal:** for each signal, learn its **sign**, **resting bias** (what it reads
-when you're neutral — this is where a stray "47" hides), and **usable range**
-(how far it swings in normal use). Do NOT assume ML Kit's sign conventions —
+when you're neutral; this is where a stray "47" hides), and **usable range**
+(how far it swings in normal use). Do NOT assume ML Kit's sign conventions:
 measure them.
 
 **Ground truth:** *you*, in named reference poses.
 
-**Procedure (sense-capture protocol — tooling TODO):** the harness prompts a
+**Procedure (sense-capture protocol, tooling TODO):** the harness prompts a
 pose, you hold ~3 s, it logs the median of every telemetry field:
 
 | Pose | Reads out | Establishes |
 |---|---|---|
-| Face straight, eyes center | yaw/pitch/roll, pupilΔ, faceBox center | **resting bias** (should be ~0 / centered — biases found here) |
+| Face straight, eyes center | yaw/pitch/roll, pupilΔ, faceBox center | **resting bias** (should be ~0 / centered; biases found here) |
 | Turn head right (comfortable) | yaw sign + magnitude | yaw sign; comfortable yaw range |
 | Turn head left | yaw | symmetry |
 | Tilt head right / left | roll sign + magnitude | **roll sign (the head-tilt fix)**; tilt range |
@@ -110,12 +110,12 @@ pose, you hold ~3 s, it logs the median of every telemetry field:
 | Eyes up / down | pupilΔy | pupil y sign + swing |
 | Blink, then wink each eye | eyeOpenL/R | open/closed/partial levels; L-vs-R labels |
 
-Output: a table of `(signal: restingBias, sign, usableRange)` — the inputs Stage 2
+Output: a table of `(signal: restingBias, sign, usableRange)`, the inputs Stage 2
 needs. The resting-bias column is what surfaces the mystery "47".
 
 ---
 
-## Stage 2 — MAP (sensor → motor target)
+## Stage 2: MAP (sensor → motor target)
 
 **Goal:** turn a sensed value into a motor target that **mirrors** you and
 **fills Mabu's range with exaggeration**.
@@ -129,14 +129,14 @@ target = neutral  +  sign * clamp( (sensed - restingBias) / inputRange , -1, +1 
 - `restingBias`, `sign`, and the natural `inputRange` come from Stage 1.
 - `inputRange` = the input magnitude that should drive the motor to its extreme.
   **Set it SMALLER than your true range to exaggerate** (e.g. if you comfortably
-  turn ±25° but we set `inputRange = 18°`, a normal turn already saturates Mabu —
+  turn ±25° but we set `inputRange = 18°`, a normal turn already saturates Mabu:
   lively, not static).
 - `sign` is flipped to mirror (Stage-1 sign ⊕ desired mirror direction).
 - `outHalf` = how far from neutral we allow (≤ the motor's safe half-range).
 - `neutral`, hard-stops from Stage 4.
 
 **Today this is `motorFromAngle(angle * sign)` with a single `neckAngleRange`
-for all neck axes** — a simplification. Calibration may split it per-axis
+for all neck axes**: a simplification. Calibration may split it per-axis
 (`yawRange`, `pitchRange`, `rollRange`) and add per-axis `outHalf` so each DOF
 fills its own range. Eyes use `eyeGazeGain` on the pupil offset; that's the same
 formula with `inputRange = 0.5/eyeGazeGain`.
@@ -156,7 +156,7 @@ is "right". Document the chosen origin/axis/mirror so the two paths can't drift.
 
 ---
 
-## Stage 3 — DYNAMICS (the feel)
+## Stage 3: DYNAMICS (the feel)
 
 Only meaningful once 4/1/2 are right. Tuned with `pc-brain/mabu_tune.py` against
 the telemetry. Params + what we've learned:
@@ -166,14 +166,14 @@ the telemetry. Params + what we've learned:
 | `smoothAlphaEyes/Neck` | output tween speed | lower = smoother, more lag |
 | `eyeGazeInputAlpha` | low-pass on noisy pupil | |
 | `eyeGazeDeadband` | fixation hold | eyes steady at rest; too high = frozen/laggy |
-| `eyeGazeGain` | eye exaggeration | **keep ≤ 1.5** — 2.0 amplifies noise past the deadband |
+| `eyeGazeGain` | eye exaggeration | **keep ≤ 1.5**: 2.0 amplifies noise past the deadband |
 | `eyelidCoupling` / `eyelidWinkOpen` | two-eye blink vs wink | high coupling + winkOpen ~0.8 closes both on a real blink, keeps winks |
 | `eyelidCloseLevel` / `eyelidBlinkHoldMs` | crisp full blink | latch a full closure through a 1-frame blink |
 | `eyelidOpenInputAlpha` | partial-closure (squint) smoothing | |
 | `eyelidPoseSoftDeg` / `eyelidPoseLimitDeg` | head-pose reliability gate | past these angles the far eye is occluded → bias lids open (stops "wink when looking away") |
 
 **Measured so far:** properly framed, eye rest-jitter is ~0 at defaults; the big
-jitter (~11) was Mabu off to the side (occlusion) — the same root as the eyelid
+jitter (~11) was Mabu off to the side (occlusion): the same root as the eyelid
 issue. Candidate next step: extend the **pose-reliability gate to eye gaze** (when
 turned, freeze eyes toward center instead of chasing the unreliable pupil).
 
@@ -181,14 +181,14 @@ turned, freeze eyes toward center instead of chasing the unreliable pupil).
 
 ## Open issues to resolve during calibration
 
-- **The "47" offset** — a resting reading of ~47 where ~50/neutral is expected.
+- **The "47" offset**: a resting reading of ~47 where ~50/neutral is expected.
   Identify which signal (motor pos? target? a head angle?) and trace it; the
   Stage-1 resting-bias capture surfaces all of them at once.
-- **Head-tilt mismatch** — roll→NT sign/scale and/or NT motor direction; resolve
+- **Head-tilt mismatch**: roll→NT sign/scale and/or NT motor direction; resolve
   with the Stage-1 roll sign + the Stage-4 NT direction, then set `neckTiltSign`.
-- **Eyelid neutral discrepancy** — `MabuMotors.EYELID_NEUTRAL = 25` but the guide
+- **Eyelid neutral discrepancy**: `MabuMotors.EYELID_NEUTRAL = 25` but the guide
   records 20. Pick one (Stage 4) and make code + guide agree.
-- **Single `neckAngleRange` for all 3 neck axes** — yaw/pitch/roll likely want
+- **Single `neckAngleRange` for all 3 neck axes**: yaw/pitch/roll likely want
   different input ranges; consider per-axis.
 - **Screen-space mirror consistency** between FOLLOW and PUPPET.
 
@@ -198,8 +198,8 @@ turned, freeze eyes toward center instead of chasing the unreliable pupil).
 
 1. **Motor exerciser** (calibration mode): step one motor through known values on
    command, for Stage 4.
-2. **Telemetry additions**: expose the raw sensing the mapping hides — face-box
-   center (screen xy), eye-landmark positions, and resting/neutral values — so
+2. **Telemetry additions**: expose the raw sensing the mapping hides: face-box
+   center (screen xy), eye-landmark positions, and resting/neutral values, so
    "sensor says X, motor does Y" is visible. (`/status` already has head angles,
    pupil raw/filtered, eye-open, motor positions, pose reliability.)
 3. **Harness protocols** in `mabu_tune.py`: `calibrate sense` (reference-pose
@@ -225,7 +225,7 @@ turned, freeze eyes toward center instead of chasing the unreliable pupil).
 
 ### Unit 4 (10.0.0.69)
 
-_Mapping params (`TuningSettings`) — current; update as calibrated:_
+_Mapping params (`TuningSettings`), current; update as calibrated:_
 
 | Param | Value | Stage | Status |
 |---|---|---|---|
@@ -250,18 +250,18 @@ _Motor truth: see the Stage-4 table above; reconcile EYELID_NEUTRAL._
 | roll | +1.7 | **+ = tilt RIGHT** | ~36 | left-tilt was shallow (+5.8) → recapture left |
 | pupil_x | +0.02 | **+ = eyes LEFT** | 0.79 | clean |
 | pupil_y | **+0.43** | **+ = eyes DOWN** | 0.62 | big rest bias (kiosk / close distance) |
-| eye_open | L 0.95 / R 0.86 | — | closed L 0.06 / R 0.23 | right-eye closed only reaches 0.23 |
-| face_ctr | (0.54, 0.55) | — | — | ~centered; the "47" wasn't here |
+| eye_open | L 0.95 / R 0.86 | N/A | closed L 0.06 / R 0.23 | right-eye closed only reaches 0.23 |
+| face_ctr | (0.54, 0.55) | N/A | N/A | ~centered; the "47" wasn't here |
 
 **Conclusions / action items from this capture:**
 1. **MAP must subtract resting bias.** The current `motorFromAngle(angle*sign)` has no
    bias term, so pitch **+18.5°** and pupil_y **+0.43** push neck-elev and eye-Y off
-   neutral *while looking straight*. Add the `(sensed − restingBias)` term — top priority.
+   neutral *while looking straight*. Add the `(sensed − restingBias)` term: top priority.
 2. **Kiosk look-up.** The tablet is mounted tilted up; when the user is close their
    face sits high in the FOV and Mabu should **look up**. Drive eye/neck-Y from
    `face_center_y` (and maybe `face_width_frac` as a proximity proxy) instead of a
    static `gazeYOffset`. Design in Stage 3.
-3. **Recapture pitch (nod) and left-roll** — both were unreliable this run (nod-up lost
+3. **Recapture pitch (nod) and left-roll**: both were unreliable this run (nod-up lost
    the face; left-tilt was shallow). The new in-line retry should make the redo clean.
 4. **Mirror signs** (derivable now): yaw `+`=left, roll `+`=tilt-right, pupil_x `+`=left,
    pupil_y `+`=down. Set `*Sign` so Mabu reflects the user.

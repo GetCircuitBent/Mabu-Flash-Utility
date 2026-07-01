@@ -761,7 +761,7 @@ from an elevated PowerShell. Hardware can't be installed; verify physically.
 |---|---|---|
 | Mabu unit, opened to the 30-pin header | Target device | No external USB/buttons |
 | Internal USB programming harness | Only USB path to the board | One-shot per unit; we have one. Direct USB 3 to the PC works, no hub needed |
-| Stable DC power to the tablet | Avoid mid-flash power loss | — |
+| Stable DC power to the tablet | Avoid mid-flash power loss | N/A |
 
 ### A.2 Flashing Toolchain (Loader-Side)
 | Tool | Source | Verify |
@@ -805,7 +805,7 @@ path is **ADB (WiFi) + on-device ARM magiskpolicy + `find-vendor-file.py` +
 | **magiskpolicy** (binary-policy patcher, runs **on the Mabu**, ARM) | **staged** `../tools/magiskpolicy/magiskpolicy-armeabi-v7a` (Magisk v30.7) | `file` shows "ARM ... for Android" |
 | **`find-vendor-file.py`** (ext4 inode-walk → file LBA) | **bundled** `../Mabu/scripts/find-vendor-file.py` | needs **Python 3** on host |
 | `rkdeveloptool` (dump + `wl` the policy) | **bundled** (A.2) | `rkdeveloptool ld` |
-| Policy rule + reference | **bundled** `assets/selinux/mabu_serial_access.te` | — |
+| Policy rule + reference | **bundled** `assets/selinux/mabu_serial_access.te` | N/A |
 | WSL + `setools`/`policycoreutils` | **winget** `Microsoft.WSL` + `apt` | `seinfo --version`: **inspection only, optional** |
 
 > **Dead end, documented so you don't repeat it:** the **x86_64** magiskpolicy in

@@ -1,14 +1,14 @@
-# MABU FLASH GUIDE — Permanent direct serial access (delete the motor bridge)
+# MABU FLASH GUIDE: Permanent direct serial access (delete the motor bridge)
 
 > **Goal of this guide:** make the Mabu app able to open `/dev/ttyS1` (the motor
 > board) **directly**, by adding one rule to the device's SELinux policy via a
 > one-time Rockchip Loader session. After this, the TCP "motor bridge" and the
-> in-app ADB bridge can be **deleted entirely** — the app talks to the motors
+> in-app ADB bridge can be **deleted entirely**; the app talks to the motors
 > the same way the original factory app did.
 >
 > **Audience:** an operator (or agent) with the **internal USB harness connected**
-> and the device catchable in Rockchip Loader. It is written cold-start — it does
-> not assume you read any other doc — but it reuses the proven tooling in
+> and the device catchable in Rockchip Loader. It is written cold-start; it does
+> not assume you read any other doc, but it reuses the proven tooling in
 > `scripts/` and `firmware/`.
 >
 > Companion docs: [`MABU_MOTOR_GUIDE.md`](../MABU_MOTOR_GUIDE.md) (protocol/motors),
@@ -43,7 +43,7 @@ doesn't have). But we **can** edit the rulebook file directly on the flash chip
 using the same Rockchip Loader tool that was used to liberate the device. One
 harness session, one file changed, and the bridge is gone forever.
 
-**Why this is safe-ish:** it does **not** touch `boot.img` (the known brick zone —
+**Why this is safe-ish:** it does **not** touch `boot.img` (the known brick zone:
 see §8), it only changes one file on the `/vendor` partition, and we keep the
 original bytes so it can be reverted in one command (§7).
 
@@ -67,10 +67,10 @@ original bytes so it can be reverted in one command (§7).
   not permissive. The liberation set `androidboot.selinux=permissive` in the
   kernel command line, but on a `user` build Android's `init` **ignores** that and
   forces enforcing at boot. (The `androidboot.veritymode=disabled` half of that
-  same patch *did* take effect — which is why `/system` and `/vendor` can be
+  same patch *did* take effect, which is why `/system` and `/vendor` can be
   edited offline. Only the SELinux half was overridden.)
 - The **active** binary policy at runtime is **`/vendor/etc/selinux/precompiled_sepolicy`**
-  (confirmed in `notes/HANDOFF.md`, session 2026-05-25 — patching the `/system`
+  (confirmed in `notes/HANDOFF.md`, session 2026-05-25, patching the `/system`
   text policy files had *no* effect; the precompiled binary on `/vendor` is what
   the kernel loads). **That file is our target.**
 
@@ -79,7 +79,7 @@ original bytes so it can be reverted in one command (§7).
 `/vendor/etc/selinux/plat_sepolicy_and_mapping.sha256` still matches the
 `/system` plat CIL inputs. We are **not** changing any `/system` CIL files, so
 that hash still matches and our patched binary loads as-is. (Worst case, if init
-ever recompiled from CIL instead, our patch would simply be **ignored** — the
+ever recompiled from CIL instead, our patch would simply be **ignored**; the
 device still boots normally. It is not a brick path. See §8.)
 
 ---
@@ -93,20 +93,20 @@ device still boots normally. It is not a brick path. See §8.)
 | `/vendor` partition start LBA | **`0x592000`** (decimal 5,840,896) |
 | `/vendor` partition size | `0x80000` sectors = **256 MB** |
 | Target file | `/vendor/etc/selinux/precompiled_sepolicy` |
-| Policy format | kernel binary policydb, **version 30**, MLS — confirmed patchable |
+| Policy format | kernel binary policydb, **version 30**, MLS, confirmed patchable |
 | The rule to add | `allow untrusted_app serial_device:chr_file { open read write getattr ioctl };` |
 | App SELinux domain | `untrusted_app` (per the recorded denial) |
 | eMMC sector size | 512 bytes |
 | ext4 block size | 4096 bytes (confirm from superblock, §B1) |
 
 **OFF-LIMITS:** `boot.img` (boot partition LBA `0x20000`). Repacking it bricks to
-recovery — proven twice (`notes/HANDOFF.md` finding #4). This guide never touches it.
+recovery: proven twice (`notes/HANDOFF.md` finding #4). This guide never touches it.
 
 ---
 
 ## 3. Prerequisites / setup (one-time, on the PC)
 
-**Two commands, one manual step — then every Mabu is a single command forever.**
+**Two commands, one manual step; then every Mabu is a single command forever.**
 Clone the repo and run from its root:
 
 ```powershell
@@ -121,7 +121,7 @@ cd mabu-guides
 
 `install-android-driver.ps1` patches the Google Android USB driver INF to recognise
 VID 0x2207 / PID 0x0006 (the Mabu in Android mode), then opens Device Manager and
-walks you through the one manual click. **This step is required** — without it, USB
+walks you through the one manual click. **This step is required**: without it, USB
 ADB won't see the device after liberation and `flash-new-mabu.ps1` will time out
 waiting for ADB. After this driver is installed it persists across reboots.
 
@@ -135,13 +135,13 @@ After both scripts succeed:
    ```
    In Zadig: **Options → List All Devices** (check), **Options → Ignore Hubs or
    Composite Parents** (uncheck). In the dropdown, find the entry whose USB ID is
-   **`2207 320A`** — it will appear as **"Unknown Device"** (no name) because no
+   **`2207 320A`**; it will appear as **"Unknown Device"** (no name) because no
    driver is bound yet. Confirm the USB ID matches before clicking **Install
-   Driver** (target: WinUSB). Windows remembers this binding — only needed once
+   Driver** (target: WinUSB). Windows remembers this binding; only needed once
    per PC. If ADB is working, the device stays in Loader indefinitely so there is
    no time pressure.
 
-2. **Flash.** Every Mabu, every time — one command:
+2. **Flash.** Every Mabu, every time, one command:
    ```powershell
    .\scripts\flash-new-mabu.ps1
    ```
@@ -149,25 +149,25 @@ After both scripts succeed:
    end-to-end, and stops with a clear message if anything fails.
 
 > **Catching the Loader:** power the unit OFF fully (PWRON held >7 s if needed),
-> then power on; within ~10 s run `rkdeveloptool ld` — it should report
+> then power on; within ~10 s run `rkdeveloptool ld`; it should report
 > `Vid=0x2207,Pid=0x320a...Loader`. If the device already booted to Android, you
 > can re-enter Loader cleanly over WiFi ADB with `adb shell reboot loader`
-> (no physical button needed — confirmed in `notes/HANDOFF.md`).
+> (no physical button needed; confirmed in `notes/HANDOFF.md`).
 
 ---
 
-## 4. Phase A — Offline prep (NO device attached; do this first)
+## 4. Phase A: Offline prep (NO device attached; do this first)
 
 This is the safe part. We produce and verify the patched policy on the PC before
 the harness ever touches the robot.
 
-### Phase A status — already verified (2026-06-01)
+### Phase A status: already verified (2026-06-01)
 
 - `selinux/sepolicy.bin` (a copy of the device's policy, 299,979 bytes) is a valid
   **version-30 kernel policydb** (header magic `8c ff 7c f9`, vers `1e`).
 - The three names the rule references are all present in that policy:
   `untrusted_app` (×9), `serial_device` (×1), `chr_file` (×1). **The rule will
-  inject cleanly — no missing-type risk.**
+  inject cleanly: no missing-type risk.**
 
 > ⚠️ `selinux/sepolicy.bin` was pulled on 2026-05-28. Before relying on it for the
 > real write, **re-pull the live policy** during the session and diff it (§B1),
@@ -175,7 +175,7 @@ the harness ever touches the robot.
 
 ### A1. Install the policy tools in WSL
 
-**`install-tools.ps1` handles this automatically** — it installs `libsepol-dev`,
+**`install-tools.ps1` handles this automatically**: it installs `libsepol-dev`,
 `build-essential`, `setools` in WSL and compiles `tools/sepolicy-inject.c` into
 `/usr/local/bin/sepolicy-inject`. If you ran that script successfully, skip to A2.
 
@@ -198,7 +198,7 @@ cp selinux/sepolicy.bin /tmp/sepolicy.orig.bin
 # sepolicy-inject is built by install-tools.ps1 and lives at /usr/local/bin/
 sepolicy-inject /tmp/sepolicy.orig.bin /tmp/sepolicy.patched.bin
 # Output: "Inserted new AV rule." + "Done -> /tmp/sepolicy.patched.bin"
-# (If the rule already exists it prints "Rule already exists; ORing in new perms." — also fine.)
+# (If the rule already exists it prints "Rule already exists; ORing in new perms.", also fine.)
 ```
 
 ### A3. Verify the patch (must pass before you go near the device)
@@ -216,7 +216,7 @@ stat -c '%s' /tmp/sepolicy.patched.bin  # e.g. ~300,0xx bytes (a few bytes large
 ```
 
 Record the **patched size**. Adding one rule typically grows the file by tens of
-bytes, well within one 4 KB block of slack — this matters for Route 1.
+bytes, well within one 4 KB block of slack; this matters for Route 1.
 
 ### A4. Stage the locator script
 
@@ -227,7 +227,7 @@ image you have to confirm it executes.)
 
 ---
 
-## 5. Phase B — Harness session (the actual write)
+## 5. Phase B: Harness session (the actual write)
 
 > Connect the harness, catch the Loader (§3). Then:
 
@@ -289,7 +289,7 @@ It prints, for `/vendor/etc/selinux/precompiled_sepolicy`:
 
 ---
 
-### Route 1 — Surgical in-place write (recommended when metadata_csum is OFF)
+### Route 1: Surgical in-place write (recommended when metadata_csum is OFF)
 
 Only the policy file's data blocks + one 4-byte size field change. The block
 **count** is unchanged (a few extra bytes fit in the file's last 4 KB block), so
@@ -345,14 +345,14 @@ Proceed to **B3**.
 
 ---
 
-### Route 2 — Whole `/vendor` reflash (foolproof; no ext4 hand-editing)
+### Route 2: Whole `/vendor` reflash (foolproof; no ext4 hand-editing)
 
 You already dumped `firmware\scratch\vendor-full.img` in B1. Just swap the file
 inside it (mount handles all metadata + checksums) and flash it back.
 
 ```bash
 # In WSL: overwrite the file's CONTENT in place (preserves inode, owner, and the
-# SELinux context xattr — important so init can still read it).
+# SELinux context xattr: important so init can still read it).
 sudo mount -o loop firmware/scratch/vendor-full.img /mnt/vendor
 cat /tmp/sepolicy.patched.bin | sudo tee /mnt/vendor/etc/selinux/precompiled_sepolicy >/dev/null
 sync
@@ -362,7 +362,7 @@ sudo umount /mnt/vendor
 ```
 
 Flash the whole partition back (writes do **not** hit the read-wedge, per
-`notes/HANDOFF.md` — a single `wl` of 256 MB is normally fine; if it ever stalls,
+`notes/HANDOFF.md`: a single `wl` of 256 MB is normally fine; if it ever stalls,
 split into a few `wl` calls at successive LBAs):
 
 ```powershell
@@ -386,7 +386,7 @@ Wait ~30–60 s for Android, then reconnect WiFi ADB:
 
 ---
 
-## 6. Phase C — Verify on the device
+## 6. Phase C: Verify on the device
 
 ```powershell
 $adb = "X:\Claude\android platform-tools\adb.exe"
@@ -405,13 +405,13 @@ $adb = "X:\Claude\android platform-tools\adb.exe"
 
 **If you still see `avc: denied ... serial_device`:** the patch didn't load. Most
 likely init recompiled from CIL (the `/vendor` precompiled file wasn't used). The
-device is fine — see §8 contingency. Re-pull the live policy and confirm your
+device is fine; see §8 contingency. Re-pull the live policy and confirm your
 write actually changed the on-disk bytes (mount the partition again and
 `sesearch`).
 
 > Per project rules: **do not run any motor-movement test** until Alex confirms
 > the hardware is OK and he is watching. Phase C only opens the port / checks
-> logs — it does not command motors.
+> logs; it does not command motors.
 
 ---
 
@@ -449,7 +449,7 @@ un-edited dump, flash that; otherwise restore the file inside the image from
 `selinux/sepolicy.bin` and re-flash.
 
 **Backstop:** `scripts/restore-boot.ps1` rewrites the original `boot.img` and
-clears `misc` if anything ever affects boot (it should not — we never touch boot).
+clears `misc` if anything ever affects boot (it should not; we never touch boot).
 
 ---
 
@@ -457,25 +457,25 @@ clears `misc` if anything ever affects boot (it should not — we never touch bo
 
 | Symptom | Cause | What it means / fix |
 |---|---|---|
-| After reboot, app still gets `avc: denied ... serial_device` | init recompiled policy from CIL and ignored our precompiled file | **Not a brick** — device boots normally. The hash check in §1 should prevent this; if it happens, re-verify the on-disk write, or escalate (patch the CIL inputs + their hash, or use Route 2). |
+| After reboot, app still gets `avc: denied ... serial_device` | init recompiled policy from CIL and ignored our precompiled file | **Not a brick**: device boots normally. The hash check in §1 should prevent this; if it happens, re-verify the on-disk write, or escalate (patch the CIL inputs + their hash, or use Route 2). |
 | Boot loops / no Android | policy file truncated or corrupt | Restore originals (§7). This is why we capture originals **before** writing and why Route 1 requires the size to fit existing blocks. |
 | `rkdeveloptool` can't see device | Loader window missed, or WinUSB not bound | Power-cycle, re-catch within ~10 s; re-run `bind-winusb.ps1` / Zadig. |
-| `wl` reports not-100% | partial write | Re-run the `wl`; never leave a partial policy write — restore + retry. |
+| `wl` reports not-100% | partial write | Re-run the `wl`; never leave a partial policy write; restore + retry. |
 | Read wedge during `/vendor` dump | known Loader limit (~28 MB/session) | The cycled dumper handles it; just let it cycle, or power-cycle and resume. |
 
-**Boot.img is never modified** — that's the only thing proven to brick this unit
+**Boot.img is never modified**: that's the only thing proven to brick this unit
 to recovery. Everything here is confined to one `/vendor` file with originals saved.
 
 ---
 
-## 9. Phase D — App revert (do AFTER Phase C verifies; separate work)
+## 9. Phase D: App revert (do AFTER Phase C verifies; separate work)
 
 Once the app can open `/dev/ttyS1` directly, delete the bridge. These are the
 edits to make in the **app project** (`X:\Claude\Mabu\MabuFaceTrack`, the working
-app — **not** the read-only reference `mabu-git/mabu-android`). `BridgeProblem.md`
+app, **not** the read-only reference `mabu-git/mabu-android`). `BridgeProblem.md`
 marks every line with `// TEMP`:
 
-1. **`MabuMotors.kt`** — replace the `Socket("127.0.0.1", 7777)` / `OutputStream`
+1. **`MabuMotors.kt`**: replace the `Socket("127.0.0.1", 7777)` / `OutputStream`
    path with the native serial JNI (`serial.c` / `SerialPort.kt` from the
    reference app) opening `/dev/ttyS1` at 57600 8N1 raw. In `serial.c`'s termios
    setup, **also clear `HUPCL`** (`tio.c_cflag &= ~HUPCL;`) so closing the fd does
@@ -485,14 +485,14 @@ marks every line with `// TEMP`:
 3. Remove the `INTERNET` permission from `AndroidManifest.xml` (no longer needed).
 4. On the device, you can now stop and delete `motor-bridge.sh` and remove any
    startup of it. The 5×-power-on cold-boot wake (`MABU_MOTOR_GUIDE.md` §3) still
-   applies — keep that in the app's init.
+   applies; keep that in the app's init.
 
 Re-build/deploy per `guides/MABU_BUILD_GUIDE.md`, then (with Alex watching, per
 project rules) confirm motors move directly with no bridge running.
 
 ---
 
-## Appendix A — `locate_vendor_policy.py`
+## Appendix A: `locate_vendor_policy.py`
 
 Self-contained ext4 locator. Parses the superblock (so it works on `/vendor`,
 whose ext4 geometry may differ from `/system`), walks
@@ -606,7 +606,7 @@ print("\nRoute decision:", "Route 1 OK (metadata_csum OFF)" if not META_CSUM
 
 ---
 
-## Appendix B — Quick reference: what `rkdeveloptool` calls do
+## Appendix B: Quick reference: what `rkdeveloptool` calls do
 
 | Command | Meaning |
 |---|---|

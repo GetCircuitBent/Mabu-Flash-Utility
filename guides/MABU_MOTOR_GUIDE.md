@@ -1,6 +1,6 @@
 # Mabu Motor Guide
 
-> **CRITICAL REFERENCE — load this document at the start of every Mabu session.**
+> **CRITICAL REFERENCE: load this document at the start of every Mabu session.**
 > Covers the motor protocol, wire encoding, per-motor limits and neutrals, movement directions,
 > serial access, and known gotchas. Mistakes here cause silent failures or grinding.
 
@@ -19,20 +19,20 @@ servo command stable for fixed intervals. Left for the next session.
 **Motor control: WORKING via native JNI, no bridge required.**
 
 - App: `facetrackadb` (`com.mabu.facetrackadb`) at `X:\Claude\Mabu\facetrackadb\`
-- `facetrackadb` is the **sole home launcher** — auto-starts on every boot.
+- `facetrackadb` is the **sole home launcher**: auto-starts on every boot.
 - Serial access: native C `open("/dev/ttyS1")` via JNI. No SELinux denial, no bridge.
-- **Decoupled tween architecture** (2026-06-04) — detection thread (10 Hz) writes targets only; a dedicated 25 Hz `mabu-tween` HandlerThread LP-filters position toward targets and owns ALL motor I/O. Kendrick-pattern, see Section 14.
-- **`SEND_DEADBAND` in MabuMotors (1.0 motor units)** — `moveAll` skips the wire frame if no motor has changed by ≥ ~2.5 wire steps from what was last sent. Load-bearing fix for servo rattle: collapses each LP-tween convergence into one or two wire frames rather than a stream of micro-updates.
-- **Per-axis fixation deadzones (`TARGET_DEADZONE = 0.5` horizontal, `TARGET_DEADZONE_UD = 2.5` vertical)** — `updateTargets` only commits a new target if it differs from the current target by more than the threshold for that axis. Wider UD band absorbs the heavier bbox jitter at the top/bottom edges of the frame.
-- **Persistent input EMA across face drops (`TARGET_SMOOTH = 0.4`)** — `smoothedXNorm/YNorm` are NOT reset on grace expiry or new-face confirm; re-seeding caused the eye to snap to ML Kit's first re-acquire frame which was often a hallucinated edge-clipped position. Keeping state means the first new sample blends 40/60 with the pre-drop position.
-- **In-frame face selection** — when ML Kit returns multiple faces (common on fresh boot during autoexposure settle), prefer the confirmed-ID face, then the face with highest IoU vs predicted bbox, then the largest face WHOSE CENTER IS INSIDE THE IMAGE, then last-resort largest-overall. Old "biggest area" heuristic locked onto phantoms whose bbox extended off-screen.
-- **Zero-overlap IoU rejection** — when the tracker is alive but the new bbox shares ZERO pixels with the predicted position, reject the detection entirely. It's almost certainly a different physical face or a phantom; eye holds, no target update, no tracker poisoning.
-- **IoU cross-frame tracker** (session 19) — maintains bbox + velocity estimate independent of ML Kit IDs. When ML Kit reassigns an ID to the same physical face, IoU with the predicted position is high → accepted immediately with no hysteresis. See Section 14.
-- **FACE_LOSS_GRACE_MS = 1000 ms** — within grace, targets hold; past grace, the tween pulls targets toward neutrals via `RETURN_ALPHA = 0.05` for a gentle drift.
+- **Decoupled tween architecture** (2026-06-04): detection thread (10 Hz) writes targets only; a dedicated 25 Hz `mabu-tween` HandlerThread LP-filters position toward targets and owns ALL motor I/O. Kendrick-pattern, see Section 14.
+- **`SEND_DEADBAND` in MabuMotors (1.0 motor units)**: `moveAll` skips the wire frame if no motor has changed by ≥ ~2.5 wire steps from what was last sent. Load-bearing fix for servo rattle: collapses each LP-tween convergence into one or two wire frames rather than a stream of micro-updates.
+- **Per-axis fixation deadzones (`TARGET_DEADZONE = 0.5` horizontal, `TARGET_DEADZONE_UD = 2.5` vertical)**: `updateTargets` only commits a new target if it differs from the current target by more than the threshold for that axis. Wider UD band absorbs the heavier bbox jitter at the top/bottom edges of the frame.
+- **Persistent input EMA across face drops (`TARGET_SMOOTH = 0.4`)**: `smoothedXNorm/YNorm` are NOT reset on grace expiry or new-face confirm; re-seeding caused the eye to snap to ML Kit's first re-acquire frame which was often a hallucinated edge-clipped position. Keeping state means the first new sample blends 40/60 with the pre-drop position.
+- **In-frame face selection**: when ML Kit returns multiple faces (common on fresh boot during autoexposure settle), prefer the confirmed-ID face, then the face with highest IoU vs predicted bbox, then the largest face WHOSE CENTER IS INSIDE THE IMAGE, then last-resort largest-overall. Old "biggest area" heuristic locked onto phantoms whose bbox extended off-screen.
+- **Zero-overlap IoU rejection**: when the tracker is alive but the new bbox shares ZERO pixels with the predicted position, reject the detection entirely. It's almost certainly a different physical face or a phantom; eye holds, no target update, no tracker poisoning.
+- **IoU cross-frame tracker** (session 19): maintains bbox + velocity estimate independent of ML Kit IDs. When ML Kit reassigns an ID to the same physical face, IoU with the predicted position is high → accepted immediately with no hysteresis. See Section 14.
+- **FACE_LOSS_GRACE_MS = 1000 ms**: within grace, targets hold; past grace, the tween pulls targets toward neutrals via `RETURN_ALPHA = 0.05` for a gentle drift.
 - **Camera on dedicated `mabu-camera-vision` HandlerThread** (session 18) at `THREAD_PRIORITY_BACKGROUND - 5` (nice +5).
-- **4 callback buffers** — reduces backpressure drops to ~1/50 frames.
-- **Debug overlay rate-limited to 4 Hz** — main-thread TextView re-layout per frame was preempting the camera thread.
-- **Three-tier perf instrumentation** — HAL arrival cadence, ML Kit inference time + histogram, end-to-end pipeline interval. Logged every 50 frames. See Section 15.
+- **4 callback buffers**: reduces backpressure drops to ~1/50 frames.
+- **Debug overlay rate-limited to 4 Hz**: main-thread TextView re-layout per frame was preempting the camera thread.
+- **Three-tier perf instrumentation**: HAL arrival cadence, ML Kit inference time + histogram, end-to-end pipeline interval. Logged every 50 frames. See Section 15.
 
 **Removed 2026-06-04** (now replaced by the decoupled tween + send-deadband, do not re-introduce):
 slew window (`ID_TRANSITION_FRAMES`/`MAX_RATE`), EUD/NE asymmetric rate caps, `SMOOTH`/`DEADBAND`/`SEND_INTERVAL_MS`, the inline `motors.moveAll` in the empty-faces grace path, and `deadbandSmooth()`. See Section 14 for rationale.
@@ -92,7 +92,7 @@ for each byte b in frame (including FA 00 header):
 append s2, then s1
 ```
 
-### Multi-motor payload (preferred — one atomic frame)
+### Multi-motor payload (preferred, one atomic frame)
 ```
 [0x01, bitmask, 0x01, val_motor_MSB, val_motor_next, …]
 ```
@@ -111,12 +111,12 @@ Only include values for bits set in the bitmask.
 FA 00 02 4F 7F 0B CB
 ```
 
-#### Cold-boot wake-up sequence (CRITICAL — confirmed 2026-05-29)
+#### Cold-boot wake-up sequence (CRITICAL: confirmed 2026-05-29)
 After a fresh Mabu boot, **sending power-on ONCE is not enough.** The motor board
 will silently ignore subsequent commands even though bytes are reaching `/dev/ttyS1`
 and the motors are clearly powered (head stiff, holding position).
 
-**Working wake-up sequence — must do this once per cold boot:**
+**Working wake-up sequence, must do this once per cold boot:**
 ```
 1. Send power-on (FA 00 02 4F 7F 0B CB)
 2. Wait 200 ms
@@ -129,7 +129,7 @@ single open of `/dev/ttyS1`). Splitting it across multiple connections has been
 observed to fail.
 
 Once the board has been woken this way, subsequent connections only need a single
-power-on (or none at all) — the board stays alive until the next cold boot.
+power-on (or none at all); the board stays alive until the next cold boot.
 
 **Why this is needed:** Empirically determined. Likely the motor-board MCU has a
 post-boot init period during which it drops UART bytes, so the first few power-on
@@ -137,21 +137,21 @@ frames are lost. Multiple repetitions ensure at least one lands after the MCU is
 ready to receive.
 
 ### Wait ~500 ms after power-on before sending movement commands
-(only applies once the board is already awake — not for the cold-boot sequence above)
+(only applies once the board is already awake, not for the cold-boot sequence above)
 
 ---
 
-## 4. Neutral Positions (This Unit — Visually confirmed 2026-05-29)
+## 4. Neutral Positions (This Unit, Visually confirmed 2026-05-29)
 
 | Motor | Neutral | Notes |
 |-------|---------|-------|
-| LDL   | 20      | **Updated 2026-05-29 — approved by operator.** wire=0x33=51. Mostly open. For max open drive to 0. Previous value of 25 was incorrect. |
-| LDR   | 20      | **Updated 2026-05-29 — approved by operator.** wire=0x33=51. Matches LDL. For max open drive to 0. Previous value of 25 was incorrect. |
-| ELR   | 50      | **Confirmed 2026-05-29 — approved by operator.** wire=0x80=128. |
+| LDL   | 20      | **Updated 2026-05-29, approved by operator.** wire=0x33=51. Mostly open. For max open drive to 0. Previous value of 25 was incorrect. |
+| LDR   | 20      | **Updated 2026-05-29, approved by operator.** wire=0x33=51. Matches LDL. For max open drive to 0. Previous value of 25 was incorrect. |
+| ELR   | 50      | **Confirmed 2026-05-29, approved by operator.** wire=0x80=128. |
 | EUD   | 50      | Confirmed |
-| NE    | 50      | **Updated 2026-05-29 — approved by operator.** wire=0x80=128. Head level at 50. Previous value of 25 was incorrect. |
-| NR    | 50      | **Updated 2026-05-29 — approved by operator.** wire=0x80=128. Head straight at 50. Previous value of 42 was incorrect. |
-| NT    | 50      | **Updated 2026-05-29 — approved by operator.** wire=0x80=128. Head level at 50. Previous value of 45 was incorrect. Direction: lower=right tilt, higher=left tilt. |
+| NE    | 50      | **Updated 2026-05-29, approved by operator.** wire=0x80=128. Head level at 50. Previous value of 25 was incorrect. |
+| NR    | 50      | **Updated 2026-05-29, approved by operator.** wire=0x80=128. Head straight at 50. Previous value of 42 was incorrect. |
+| NT    | 50      | **Updated 2026-05-29, approved by operator.** wire=0x80=128. Head level at 50. Previous value of 45 was incorrect. Direction: lower=right tilt, higher=left tilt. |
 
 Test: from a fresh-boot "head-back + neck-turned-left + eyelids-half + eyes-up"
 rest pose, sending all 7 motors at the above neutrals returns the head to
@@ -163,15 +163,15 @@ straight-and-centered. Confirmed visually by user 2026-05-29.
 
 | Motor | Soft Min | Soft Max | Notes |
 |-------|----------|----------|-------|
-| LDL   | 0        | 100      | Full 0–100 confirmed 2026-05-29 — approved by operator. 0 = max open hard stop, 100 = fully closed. No grinding at either extreme. |
-| LDR   | 0        | 100      | Full 0–100 confirmed 2026-05-29 — approved by operator. Matches LDL. 0 = max open hard stop, 100 = fully closed. No grinding at either extreme. |
-| ELR   | 0        | 100      | Full 0–100 confirmed 2026-05-29 — approved by operator. No grinding at either extreme. |
-| EUD   | 0        | 100      | Full 0–100 confirmed 2026-05-29 — approved by operator. No grinding at either extreme. 0 = max up, 100 = max down (inverted). Oscillation bug root-caused and fixed 2026-06-02 via EUD_MAX_RATE cap — see Section 12. |
-| NE    | 0        | 100      | Full 0–100 confirmed 2026-05-29 — approved by operator. No grinding at either extreme. Community docs say 50 max — WRONG for this unit. Previous lower limit of 18 was also wrong. |
-| NR    | 0        | 100      | Full 0–100 confirmed 2026-05-29 — approved by operator. No grinding at either extreme. |
-| NT    | 0        | 100      | Full 0–100 confirmed 2026-05-29 — approved by operator. 0 = fully right, 100 = fully left. No grinding at either extreme. |
+| LDL   | 0        | 100      | Full 0–100 confirmed 2026-05-29, approved by operator. 0 = max open hard stop, 100 = fully closed. No grinding at either extreme. |
+| LDR   | 0        | 100      | Full 0–100 confirmed 2026-05-29, approved by operator. Matches LDL. 0 = max open hard stop, 100 = fully closed. No grinding at either extreme. |
+| ELR   | 0        | 100      | Full 0–100 confirmed 2026-05-29, approved by operator. No grinding at either extreme. |
+| EUD   | 0        | 100      | Full 0–100 confirmed 2026-05-29, approved by operator. No grinding at either extreme. 0 = max up, 100 = max down (inverted). Oscillation bug root-caused and fixed 2026-06-02 via EUD_MAX_RATE cap; see Section 12. |
+| NE    | 0        | 100      | Full 0–100 confirmed 2026-05-29, approved by operator. No grinding at either extreme. Community docs say 50 max, WRONG for this unit. Previous lower limit of 18 was also wrong. |
+| NR    | 0        | 100      | Full 0–100 confirmed 2026-05-29, approved by operator. No grinding at either extreme. |
+| NT    | 0        | 100      | Full 0–100 confirmed 2026-05-29, approved by operator. 0 = fully right, 100 = fully left. No grinding at either extreme. |
 
-> **Community docs warning:** Many online references state NE hard-stops at logical 50, and earlier testing on this unit suggested a lower limit of 18. Both are wrong — full range [0, 100] confirmed 2026-05-29, approved by operator.
+> **Community docs warning:** Many online references state NE hard-stops at logical 50, and earlier testing on this unit suggested a lower limit of 18. Both are wrong: full range [0, 100] confirmed 2026-05-29, approved by operator.
 
 ---
 
@@ -190,26 +190,26 @@ straight-and-centered. Confirmed visually by user 2026-05-29.
 **Eyelid hold-test result (2026-05-29):** 4s holds at logical 0, 25, 50, 80, 100.
 0 visibly most open; eyelids progressively close as the value increases; 100
 fully closed. The max-open position at 0 looks slightly less wide than a human's
-fully-open eye — this is the mechanical hard stop, not a software limit.
+fully-open eye; this is the mechanical hard stop, not a software limit.
 
 **EUD is inverted on this unit.** Lower logical value = eyes look upward.
-All other units in community docs may differ — always test per unit.
+All other units in community docs may differ; always test per unit.
 
 ---
 
-## 7. TCP Motor Bridge *(DEPRECATED — no longer needed)*
+## 7. TCP Motor Bridge *(DEPRECATED: no longer needed)*
 
 > **As of 2026-06-02, `facetrackadb` opens `/dev/ttyS1` directly via JNI (see Section 9).**
 > The bridge and everything in this section is kept for reference and for diagnosing
 > hardware issues outside the app context. Do not use the bridge for normal operation.
 
 ~~The app cannot open `/dev/ttyS1` directly (SELinux blocks `untrusted_app → serial_device`).~~
-The native JNI path bypasses this — see Section 9 for the full explanation.
+The native JNI path bypasses this; see Section 9 for the full explanation.
 The bridge runs as shell context and is still useful for one-off hardware testing from
 adb shell without the app running.
 
 **Bridge file:** `/data/local/tmp/motor-bridge.sh`
-**Bridge port:** TCP 7777 on `0.0.0.0` (LAN-visible — no firewall currently)
+**Bridge port:** TCP 7777 on `0.0.0.0` (LAN-visible; no firewall currently)
 
 ### Starting the bridge (once per reboot)
 ```bash
@@ -223,12 +223,12 @@ adb shell "busybox netstat -tlnp | grep 7777"
 **CRITICAL:** The app sends motor commands continuously while tracking. Neutralize it before any
 manual test or it will contend for the bridge slot and cause short-write storms.
 
-**Preferred method — PAUSE tracking (app stays alive but silent):**
+**Preferred method: PAUSE tracking (app stays alive but silent):**
 ```bash
 adb shell "am broadcast -a com.mabu.facetrackadb.PAUSE_TRACKING --ez paused true -p com.mabu.facetrackadb"
 ```
 
-**If a full restart is needed:** force-stop kills the bridge too — always restart the bridge AFTER
+**If a full restart is needed:** force-stop kills the bridge too; always restart the bridge AFTER
 the app, never before. See "Clean motor-control establishment / re-establishment" below.
 
 ### Clean motor-control establishment / re-establishment (verified 2026-05-31)
@@ -301,7 +301,7 @@ hardware 2026-05-31:
   All subsequent commands are silently ignored.
 
 ### Sending commands from PowerShell (via TCP)
-Build the frame as a single `byte[]` — **do not use `+` to concatenate byte arrays in PowerShell 5.1**,
+Build the frame as a single `byte[]`: **do not use `+` to concatenate byte arrays in PowerShell 5.1**,
 it returns `Object[]` which breaks `Stream.Write(byte[], int, int)`.
 
 ```powershell
@@ -385,12 +385,12 @@ Wire value from CSV: `wire = clamp(int(round(csv_value + 128)), 0, 255)`
 
 ---
 
-## 9. SELinux Notes — Corrected 2026-06-02
+## 9. SELinux Notes: Corrected 2026-06-02
 
 - `/dev/ttyS1` Unix permissions: `crwxrwxrwx` (wide open)
 - SELinux label: `u:object_r:serial_device:s0`
 - App context: `u:r:untrusted_app:s0`
-- Shell context: `u:r:shell:s0` — allowed for all operations
+- Shell context: `u:r:shell:s0`; allowed for all operations
 
 ### What is actually blocked vs allowed for untrusted_app
 
@@ -421,19 +421,19 @@ The TCP motor bridge is no longer needed.
 
 - [ ] **ASCII only in PowerShell scripts (.ps1).** NEVER use em-dashes (or any non-ASCII char) in a `.ps1` file. PowerShell 5.1 reads a UTF-8-without-BOM file as Windows-1252, so an em-dash's third byte `0x94` becomes a curly double-quote that silently terminates/reopens strings and desyncs the whole parse (cascading "Unexpected token" errors far from the real line). Use `-` or `--` instead. If a script must contain non-ASCII, save it with a UTF-8 BOM. This has bitten us multiple times.
 
-- [ ] **Use native JNI to open `/dev/ttyS1` from the app — never Java I/O.** Java calls `stat()` first, which requires `getattr`; SELinux denies `getattr` for `untrusted_app`. Native `open()` bypasses `stat()` and succeeds. See Section 9.
+- [ ] **Use native JNI to open `/dev/ttyS1` from the app; never Java I/O.** Java calls `stat()` first, which requires `getattr`; SELinux denies `getattr` for `untrusted_app`. Native `open()` bypasses `stat()` and succeeds. See Section 9.
 - [ ] **Command-latch: distinguish two states (Section 11).** STIFF + MUTE (zero telemetry) = hung MCU → power-cycle likely helps. STIFF + heartbeat-only + commands ignored = State B → **use direct exec+stty recovery (Section 11)**. Power-cycle is not needed for State B. Read telemetry first.
-- [ ] **Cold boot: send power-on 5x with 200ms gaps + 1s wait** — single power-on does not wake the board (see Section 3 cold-boot wake-up)
-- [ ] All wake-up frames must be in one open of `/dev/ttyS1` (keep the fd open) — splitting across connections has failed
-- [ ] NE range is [0, 100] — do NOT limit to 50 (community docs wrong) or 18 (also wrong). Confirmed 2026-05-29.
-- [ ] EUD is inverted — lower value = eyes look UP
-- [ ] EUD soft min = 5 may cause slight grinding — raise to 8 if needed
-- [ ] PowerShell `[math]::Round(50 * 2.55)` = 127 not 128 — use floor+0.5 formula
-- [ ] PowerShell byte[] + byte[] = Object[] — build frames with indexed assignment only
+- [ ] **Cold boot: send power-on 5x with 200ms gaps + 1s wait**: single power-on does not wake the board (see Section 3 cold-boot wake-up)
+- [ ] All wake-up frames must be in one open of `/dev/ttyS1` (keep the fd open); splitting across connections has failed
+- [ ] NE range is [0, 100]: do NOT limit to 50 (community docs wrong) or 18 (also wrong). Confirmed 2026-05-29.
+- [ ] EUD is inverted: lower value = eyes look UP
+- [ ] EUD soft min = 5 may cause slight grinding; raise to 8 if needed
+- [ ] PowerShell `[math]::Round(50 * 2.55)` = 127 not 128; use floor+0.5 formula
+- [ ] PowerShell byte[] + byte[] = Object[]; build frames with indexed assignment only
 
 ---
 
-## 11. "Motors not responding" — diagnostic order
+## 11. "Motors not responding": diagnostic order
 
 ### ⚠️ FIRST: read telemetry to classify the stuck state.
 
@@ -443,12 +443,12 @@ There are **two distinct stuck states** with different recovery paths. Read `/de
 adb shell "busybox timeout -t 5 cat /dev/ttyS1 | busybox hexdump -C"
 ```
 
-**State A — STIFF + MUTE (zero telemetry, not even a heartbeat):** the MCU is hung.
+**State A: STIFF + MUTE (zero telemetry, not even a heartbeat):** the MCU is hung.
 A physical power-cycle recovered this state in session 8 (2026-05-31). After cycling: reconnect ADB, run the clean-control procedure (Section 7), do the 5× cold-boot wake, then a validation move with Alex watching.
 
-**State B — STIFF + heartbeat-only (`FA 00 01 00 ED FB`) + commands ignored:** recovery confirmed 2026-05-31.
+**State B: STIFF + heartbeat-only (`FA 00 01 00 ED FB`) + commands ignored:** recovery confirmed 2026-05-31.
 
-**Recovery — direct exec+stty (NOT the bridge):**
+**Recovery: direct exec+stty (NOT the bridge):**
 ```bash
 adb shell "exec 3<>/dev/ttyS1; busybox stty -F /dev/ttyS1 57600 raw -hupcl; \
   busybox printf '\xFA\x00\x02\x4F\x7F\x0B\xCB' >&3; sleep 1; \
@@ -458,7 +458,7 @@ Replace `<motor-frame>` with the target move frame (e.g. `\xFA\x00\x04\x01\x02\x
 
 **What does NOT clear State B:** bridge/nc relay path (any form), 5× wake via bridge, single `> /dev/ttyS1` redirect, force-stopping app, device-loopback via bridge.
 
-**Mechanism hypothesis (unconfirmed):** opening a second fd to `/dev/ttyS1` via `exec 3<>` while the bridge already holds fd3 may assert a UART signal (DTR or break) that resets the board's command-accept state. The persistent-fd form is required — the simple `>` redirect (which opens and immediately closes) does not work.
+**Mechanism hypothesis (unconfirmed):** opening a second fd to `/dev/ttyS1` via `exec 3<>` while the bridge already holds fd3 may assert a UART signal (DTR or break) that resets the board's command-accept state. The persistent-fd form is required; the simple `>` redirect (which opens and immediately closes) does not work.
 
 **Boot-time contention (investigation incomplete):** `com.catalia.factorymode` (installed, has `RECEIVE_BOOT_COMPLETED` permission and references `/dev/ttyS1` in its DEX) is a candidate cause of State B on boot. If this or any process writes to the serial port during the board's post-boot init window, it may trigger State B.
 
@@ -475,7 +475,7 @@ When motors don't move, work through these in order:
 1. **Limp vs stiff test.** Gently push the head with a finger.
    - **Limp** → motor board is unpowered. Wiring/power issue, NOT a software problem.
    - **Stiff** → board is powered and holding position. Continue below.
-2. **Read telemetry** (see above) — classify State A (mute) vs State B (heartbeat-only) vs working (see `FA 00 09` on commands).
+2. **Read telemetry** (see above): classify State A (mute) vs State B (heartbeat-only) vs working (see `FA 00 09` on commands).
 3. **Is this a cold boot?** If yes → run the 5× power-on wake-up sequence (Section 3).
 4. **App contention?** Verify no established client on 7777 before sending. Pause tracking if needed.
 5. **Bridge or board?** Try writing directly to `/dev/ttyS1` using the exec+stty form (NOT a simple redirect):
@@ -496,14 +496,14 @@ When motors don't move, work through these in order:
   The control file is `/sys/devices/virtual/gpio_control/gpio/gpio_control`, mode
   `-rw-rw-r-- root:root`. Shell user **cannot write to it without root**, and we have
   no root path on this unit. Even if it does enable motor power, it's not reachable
-  from our environment. Don't go down this rabbit hole — the motor board has its own
+  from our environment. Don't go down this rabbit hole; the motor board has its own
   power that survives reboots, the issue is always wake-up/state, not power-enable.
 
 ---
 
 ## 12. Known Bugs
 
-### EUD oscillation during face tracking — ROOT CAUSE FOUND AND FIXED (2026-06-02, session 13)
+### EUD oscillation during face tracking: ROOT CAUSE FOUND AND FIXED (2026-06-02, session 13)
 
 **Status: FIXED in `facetrackadb` via `EUD_MAX_RATE = 1.0`.** Residual micro-oscillation
 (ptp ≈ 10–25 wire units, < 0.2s duration) remains; visually acceptable. Further tuning deferred.
@@ -525,7 +525,7 @@ tracking upward at EUD≈25–40, face returns to center, eye starts returning t
 
 **What the oscillation is NOT:**
 - Not caused by hitting the hard stop at wire=0 (EUD=0). Live telemetry confirmed EUD never
-  went below wire≈44 during normal face tracking — well above the physical stop.
+  went below wire≈44 during normal face tracking; well above the physical stop.
 - Not caused by neck elevation (NE). NE was flat (ptp=0–2 wire) at every burst.
 - Not a transport or frame-format bug.
 
@@ -533,12 +533,12 @@ tracking upward at EUD≈25–40, face returns to center, eye starts returning t
 - 9 EUD oscillation bursts in 45s, ptp 80–100 wire units (31–39 logical), lasting up to 2s each.
 - 5 ELR bursts (cross-contamination from large EUD bounces).
 - Bursts always preceded by EUD returning from ~wire 83–116 (EUD≈33–45) toward center.
-- NE completely flat at all burst times — neck not the cause.
+- NE completely flat at all burst times: neck not the cause.
 
 **Early (wrong) hypotheses that were eliminated:**
 - `EYE_UD_MIN = 5` causing hard-stop contact → raised to 20. Did not fix the oscillation
   because the actual tracking range never reached wire=51 (EUD=20) in practice.
-- Ramping the return (5u/70ms or 3u/150ms) — tested in isolation with single-motor frames,
+- Ramping the return (5u/70ms or 3u/150ms): tested in isolation with single-motor frames,
   appeared clean. But live app uses all-7-motor frames at 70ms, which behave differently.
 
 ---
@@ -554,7 +554,7 @@ val deltaEUD = deadbandSmooth(posEUD, targetEUD)
 posEUD += if (deltaEUD > 0) deltaEUD.coerceAtMost(EUD_MAX_RATE) else deltaEUD
 ```
 
-`deltaEUD > 0` means EUD is rising (returning toward center from a low position) — the direction
+`deltaEUD > 0` means EUD is rising (returning toward center from a low position); the direction
 that excites the PID overshoot. Only that direction is capped. Downward tracking (EUD falling,
 face moving upward) runs free so the eyes follow without sluggishness.
 
@@ -564,8 +564,8 @@ overshoot significantly in either direction.
 
 **Result after fix (live telemetry, 45s session):**
 - EUD bursts: 2 (down from 9), ptp 11–25 wire (down from 80–100). Peak reversals = 3.
-- ELR bursts: 0 (down from 5) — cross-contamination eliminated.
-- Residual bursts are brief (<0.2s) and small — likely at or below visual perception threshold.
+- ELR bursts: 0 (down from 5); cross-contamination eliminated.
+- Residual bursts are brief (<0.2s) and small; likely at or below visual perception threshold.
 
 **0.75 was tested and performed worse** (ELR bursts returned: 3 bursts including one ptp=66
 wire). Slower EUD return appears to cause cross-axis interference on the board. 1.0 is the
@@ -573,23 +573,23 @@ current deployed value.
 
 ---
 
-#### Follow-up tuning (2026-06-02, session 14) — RESOLVED
+#### Follow-up tuning (2026-06-02, session 14): RESOLVED
 
 **Visual confirmation:** residual micro-oscillations (ptp≈10–25 wire) are visually acceptable.
 
 **EYE_UD_MIN floor tuning:**
-- Lowering to 5.0 still produced occasional oscillation — the physical stop at wire≈0 is close
+- Lowering to 5.0 still produced occasional oscillation; the physical stop at wire≈0 is close
   enough that the rate cap alone doesn't fully prevent PID bounce at that floor.
 - **Settled on `EYE_UD_MIN = 10.0`** as the practical minimum. Gives meaningful additional upward
   eye range compared to the old 20.0 floor while keeping enough buffer from the stop.
 
-**Y_OFFSET asymmetry — UD neck trigger fix:**
+**Y_OFFSET asymmetry, UD neck trigger fix:**
 The camera is fixed to Mabu's head at a steep upward angle, requiring `Y_OFFSET = -0.70` to
 correct the tracking center. This creates a permanent asymmetry in the UD axis:
 - **Upward** (face high in frame): effective effort `ay = yNorm - 0.70` can reach −1.0+, giving
   full effort and cleanly triggering the neck at the shared `EYE_NECK_TRIGGER = 0.60`.
 - **Downward** (face low in frame): maximum `yNorm ≈ 1.0`, so `ay ≤ 1.0 − 0.70 = 0.30`. The
-  shared 0.60 trigger is **unreachable** when looking down — neck can never engage.
+  shared 0.60 trigger is **unreachable** when looking down; neck can never engage.
 
 Fix: separate neck trigger for the UD axis, `UD_NECK_TRIGGER = 0.20`, passed to
 `computeEyeNeckAxis` as a parameter. LR axis keeps `EYE_NECK_TRIGGER = 0.60`.
@@ -597,7 +597,7 @@ Result: neck now engages when looking down; no change to horizontal tracking beh
 
 **Floor setting is irrelevant to oscillation (confirmed 2026-06-02, session 14):**
 Extensive floor testing (5.0, 7.5, 10.0) found oscillation at all values. Logcat analysis showed
-`posEUD` reaches ~11 naturally from face tracking — neither the 5.0 nor 10.0 floor was ever hit.
+`posEUD` reaches ~11 naturally from face tracking; neither the 5.0 nor 10.0 floor was ever hit.
 The PID overshoot fires on any return from a low EUD position (~11–15) toward center, regardless
 of the floor clamp. **`EYE_UD_MIN = 5.0` is the deployed value** (5 vs 10 makes no difference to
 oscillation; 5 gives more upward range).
@@ -607,9 +607,9 @@ looking down (max neckFrac ≈ 12.5%); at 0.05 the neck reaches ~26% of range at
 effort, which is visibly effective.
 
 **Remaining open items:**
-1. ~~Asymmetric EUD rate cap~~ — **RESOLVED 2026-06-03 (session 15).** Deployed. See updated fix block above.
-2. ~~Tracking smoothness~~ — **RESOLVED 2026-06-03 (session 15).** `SMOOTH` raised from 0.12 → 0.30; `SEND_INTERVAL_MS` lowered from 70 → 50ms. See Section 14.
-3. ELR, NR, NE oscillation testing under rapid reversal — not yet done.
+1. ~~Asymmetric EUD rate cap~~: **RESOLVED 2026-06-03 (session 15).** Deployed. See updated fix block above.
+2. ~~Tracking smoothness~~: **RESOLVED 2026-06-03 (session 15).** `SMOOTH` raised from 0.12 → 0.30; `SEND_INTERVAL_MS` lowered from 70 → 50ms. See Section 14.
+3. ELR, NR, NE oscillation testing under rapid reversal: not yet done.
 
 ---
 
@@ -622,14 +622,14 @@ Original hypothesis was mechanical rebound at EUD=0 hard stop. Session 7 observe
 
 These observations were real but the **cause was misidentified**. The physical hard stop at
 wire=0 does amplify oscillation (confirmed: EUD=0 caused 166 reversals vs EUD=20 causing ~1 with
-rate cap), but the primary issue is the PID overshoot on ANY return from a low EUD position —
+rate cap), but the primary issue is the PID overshoot on ANY return from a low EUD position:
 even EUD=33 (wire=84, far from the stop) caused 9 bursts without the fix.
 
 ---
 
 ## 13. Serial Telemetry / Readback (board → host)
 
-The motor board is **NOT silent** — it continuously transmits status frames on `/dev/ttyS1`.
+The motor board is **NOT silent**: it continuously transmits status frames on `/dev/ttyS1`.
 This is a useful, camera-free signal for detecting movement, oscillation, and the latch state.
 
 ### How to read it
@@ -638,7 +638,7 @@ This is a useful, camera-free signal for detecting movement, oscillation, and th
 > `termios` settings are shared across all file descriptions on a character device. Opening a
 > second fd from adb shell and running `busybox stty` on it overwrites the baud rate / mode
 > settings that the app set on its fd. Result: app sends frames but the motor board can no longer
-> parse them — motors go silent. **Recovery: `am force-stop` + restart the app.**
+> parse them; motors go silent. **Recovery: `am force-stop` + restart the app.**
 > Safe diagnostic path while the app is running: **logcat only** (see Section 14).
 
 To read telemetry when the app is **not** running (e.g. for standalone hardware testing):
@@ -658,10 +658,10 @@ adb shell "exec 3<>/dev/ttyS1; busybox stty -F /dev/ttyS1 57600 raw -hupcl; busy
 ### Using telemetry as a marker
 - **Engagement check:** a successful move streams `FA 00 09 …` frames. If you send commands and
   see **only** heartbeat (`FA 00 01 00`), the board did not engage → cold boot needs the 5× wake,
-  or it is in the command-latch state — see Section 11 to classify and choose recovery path.
+  or it is in the command-latch state; see Section 11 to classify and choose recovery path.
 - **Oscillation detector (closed-loop):** during an oscillation, the EUD byte (4th payload byte)
   in successive `FA 00 09` frames rings up and down before settling. Polling that byte gives a
-  programmatic oscillation signal with no camera needed — captured live during the EUD=0 bug
+  programmatic oscillation signal with no camera needed; captured live during the EUD=0 bug
   (the EUD byte cycled ~`7c 78 7b 7a …` around center). This is the basis for future
   closed-loop tuning.
 
@@ -678,7 +678,7 @@ confirmed working on this unit.
 The face detector and the motor I/O run on **separate threads at different
 rates**. Detection on `motorExecutor` (~10 Hz, camera-bound); motor frames on a
 dedicated `mabu-tween` HandlerThread at 25 Hz. The detector NEVER touches the
-serial port — it only writes `targetELR/EUD/NR/NE` (volatile fields). The tween
+serial port; it only writes `targetELR/EUD/NR/NE` (volatile fields). The tween
 LP-filters `posELR/EUD/NR/NE` toward those targets at every tick and calls
 `motors.moveAll`, which has its own send-side deadband so a steady-on-target
 motor produces zero serial traffic.
@@ -686,11 +686,11 @@ motor produces zero serial traffic.
 This is the architectural pattern from Kendrick's `mabu-android` app
 (`gazeTickRunnable`); we adopted it after diagnosing the 2026-06-04 servo rattle.
 Before the refactor, the detection callback drove motor I/O directly, sending a
-fresh 7-motor frame every ~10 Hz with small wire-byte jitter — the servos
+fresh 7-motor frame every ~10 Hz with small wire-byte jitter; the servos
 audibly tracked each micro-update. After the refactor, motor frames go on the
 wire only when the LP-filtered position actually crosses a wire-step threshold.
 
-The advantage isn't smoothness alone — it's that the **motor I/O cadence is
+The advantage isn't smoothness alone: it's that the **motor I/O cadence is
 decoupled from the noisy detection cadence**. ML Kit's bbox can wobble
 frame-to-frame without producing matching wobble on the wire.
 
@@ -702,10 +702,10 @@ frame-to-frame without producing matching wobble on the wire.
 | `EYES_ALPHA` | `0.30` | Per-tick LP coefficient for eye motors. `posELR += (targetELR − posELR) * α`. At 25 Hz this gives a ~80 ms time constant to reach 63% of any new target. |
 | `NECK_ALPHA` | `0.12` | Per-tick LP coefficient for neck motors. Slower than eyes so neck visibly follows eye movement rather than racing it. |
 | `RETURN_ALPHA` | `0.05` | When face lost > `FACE_LOSS_GRACE_MS`, the tween pulls targets toward neutrals at this rate per tick (~125 ms time constant). Gentle drift back to center, never snapping. |
-| `TARGET_SMOOTH` | `0.4` | Input EMA on `xNorm`/`yNorm` from the face bbox center, applied in the detection callback before computing targets. Damps ML Kit's frame-to-frame bbox jitter. A single-frame outlier contributes only 40 %. Persistent across face drops (deliberately NOT re-seeded on grace expiry or new-face confirm — re-seeding caused the eye to snap to whatever ML Kit hallucinated on the first re-acquire frame). |
+| `TARGET_SMOOTH` | `0.4` | Input EMA on `xNorm`/`yNorm` from the face bbox center, applied in the detection callback before computing targets. Damps ML Kit's frame-to-frame bbox jitter. A single-frame outlier contributes only 40 %. Persistent across face drops (deliberately NOT re-seeded on grace expiry or new-face confirm; re-seeding caused the eye to snap to whatever ML Kit hallucinated on the first re-acquire frame). |
 | `TARGET_DEADZONE` | `0.5` | Fixation deadzone for **ELR / NR** in motor units. `updateTargets` only commits a new target if it differs from the current target by more than this (~1.3 wire steps). Eye locks when face wobbles within the band. |
-| `TARGET_DEADZONE_UD` | `2.5` | Fixation deadzone for **EUD / NE** (vertical axis) in motor units. Wider than the horizontal band because the bottom edge of the frame produces ~2 unit `tEUD` swings per detection as `yNorm` flickers across ±1.0 — the smaller LR band can't absorb that. ~6.4 wire steps; only real downward gaze shifts cross it. |
-| `SEND_DEADBAND` (MabuMotors) | `1.0` | Output-side deadband in motor units. `motors.moveAll` skips the wire frame if EVERY motor is within `SEND_DEADBAND` of what was last sent. ~2.5 wire steps. Critical for servo rattle — the LP tween emits a series of small-but-deadband-crossing updates during each convergence, and a larger send-deadband collapses those into one or two frames per target update. Started at 0.5, raised to 1.0 on 2026-06-04 to silence persistent edge-condition EUD chatter. |
+| `TARGET_DEADZONE_UD` | `2.5` | Fixation deadzone for **EUD / NE** (vertical axis) in motor units. Wider than the horizontal band because the bottom edge of the frame produces ~2 unit `tEUD` swings per detection as `yNorm` flickers across ±1.0; the smaller LR band can't absorb that. ~6.4 wire steps; only real downward gaze shifts cross it. |
+| `SEND_DEADBAND` (MabuMotors) | `1.0` | Output-side deadband in motor units. `motors.moveAll` skips the wire frame if EVERY motor is within `SEND_DEADBAND` of what was last sent. ~2.5 wire steps. Critical for servo rattle: the LP tween emits a series of small-but-deadband-crossing updates during each convergence, and a larger send-deadband collapses those into one or two frames per target update. Started at 0.5, raised to 1.0 on 2026-06-04 to silence persistent edge-condition EUD chatter. |
 | `FACE_LOSS_GRACE_MS` | `1000L` | After this much time with no face, the tween starts pulling targets toward neutrals via `RETURN_ALPHA`. Within grace, targets just hold. Also clears the IoU tracker reference. |
 | `TRACKING_CONFIRM_FRAMES` | `4` | Hysteresis: a new face ID must persist 4 consecutive frames before being accepted as the tracked face. Only used when there's NO tracker reference (post-grace) AND IoU < threshold. |
 | `OVERLAY_INTERVAL_MS` | `250L` | Debug overlay rate-limit (4 Hz). Per-frame TextView updates preempted the camera thread; rate-limiting eliminated the ≥120 ms inference outliers entirely. **Always keep this.** |
@@ -750,7 +750,7 @@ a phantom detection appears at the frame edge. The old "biggest area" heuristic
 locked onto phantoms whose bbox extended off-screen (raw area includes
 off-image pixels). Current order:
 
-1. The face whose `trackingId` equals `confirmedTrackingId` — fastest path.
+1. The face whose `trackingId` equals `confirmedTrackingId`: fastest path.
 2. If the tracker is alive, the face with the **highest IoU against the
    tracker's predicted bbox**, drawn from in-frame candidates if any.
 3. The largest face **whose center is inside the image** (filters phantoms with
@@ -762,7 +762,7 @@ off-image pixels). Current order:
 When the face center reports outside `[-1, 1]` (face partly off-frame), the
 detector clamps `xNorm`/`yNorm` to ±1.0 instead of skipping. Skipping froze
 motors AND let trackerBbox go stale, refiring the slew window on every reentry
-(historical — slew window no longer exists, but the staleness problem would
+(historical: slew window no longer exists, but the staleness problem would
 have re-emerged).
 
 Two edge-clip frame counters (`xClipFrames`, `yClipFrames`) increment on each
@@ -772,12 +772,12 @@ being pushed further toward the mechanical end-stop in the clipped direction.
 ### Face-loss behavior
 
 Within `FACE_LOSS_GRACE_MS` (1 s) of the last good detection, targets simply
-hold. The tween still runs and continues LP-filtering `pos` toward `target` —
+hold. The tween still runs and continues LP-filtering `pos` toward `target`;
 but with `target` unchanged, `pos` converges to it and `SEND_DEADBAND` stops
 the wire frames. The motor goes silent.
 
 Past grace, the tween pulls each target toward its neutral via `RETURN_ALPHA`
-(0.05 / tick). At 25 Hz that's a ~500 ms time constant to drift halfway back —
+(0.05 / tick). At 25 Hz that's a ~500 ms time constant to drift halfway back;
 gentle, never snapping.
 
 When detection resumes after a long absence, `smoothedXNorm`/`smoothedYNorm`
@@ -810,14 +810,14 @@ the key fix for the "freaking out on re-acquire" pathology.
 | `Y_OFFSET` | `-0.70` | Shifts tracking center up. Compensates camera mounting angle + pixel center offset. |
 | `X_OFFSET` | `0.0` | No horizontal compensation needed on this unit. |
 | `ELR_GAIN` | `1.4` | Scales xNorm (max ≈ ±0.7 in practice) to fill ±1.0 effort range. |
-| Camera resolution | `320×240` | Smallest available — keeps ML Kit latency low on Mabu's CPU. |
+| Camera resolution | `320×240` | Smallest available: keeps ML Kit latency low on Mabu's CPU. |
 | ML Kit mode | `PERFORMANCE_MODE_FAST` | No landmarks, no classification. |
-| `minFaceSize` | `0.10f` | Min face width as fraction of frame (32px at 320 wide). Was 0.15 (48px) — too large, caused loss at distance or near frame edges. |
+| `minFaceSize` | `0.10f` | Min face width as fraction of frame (32px at 320 wide). Was 0.15 (48px): too large, caused loss at distance or near frame edges. |
 | `enableTracking()` | enabled | ML Kit maintains a face model across frames using temporal prediction. Dramatically reduces detection loss during fast motion or partial blur. Safe for single-person tracking; the doc note about "accuracy loss with overlapping faces" does not apply here. |
 
 ---
 
-## 15. Face-tracking Performance — Hardware Ceiling (session 18, 2026-06-03)
+## 15. Face-tracking Performance: Hardware Ceiling (session 18, 2026-06-03)
 
 Definitive measurements with three-tier instrumentation (HAL arrival, ML Kit inference, end-to-end pipeline). All numbers from a clean run with no audio/voice load.
 
@@ -827,12 +827,12 @@ Definitive measurements with three-tier instrumentation (HAL arrival, ML Kit inf
 |---|---|---|---|
 | **HAL arrival** (handleFrame cadence) | 100 ms (10.0 fps) | 117–121 ms | Camera HAL delivers frames at a tight, fixed ~10 fps cadence. Very stable (jitter ±15 ms). |
 | **ML Kit inference** | 33–37 ms | 85–110 ms | ~70% of frames are ≤40 ms; long tail ~20% at 60–110 ms (GC / thermal / ML Kit internal variance). |
-| **End-to-end pipeline interval** | 103–110 ms | 173–208 ms | 200 ms outliers correspond 1:1 with backpressure drops — when inference goes long, the next HAL frame arrives during `busy=true` and is dropped, doubling the next interval. |
+| **End-to-end pipeline interval** | 103–110 ms | 173–208 ms | 200 ms outliers correspond 1:1 with backpressure drops: when inference goes long, the next HAL frame arrives during `busy=true` and is dropped, doubling the next interval. |
 
 ### Findings
 
-1. **The HAL is a hard ceiling at ~10 fps.** Camera advertises 24 fps in `supportedPreviewFpsRange` (`[24000-24000]` mHz) and accepts the request — but actually delivers 10 fps. No userland change can lift this.
-2. **ML Kit inference on RK3288 averages ~35 ms** at 320×240 with `PERFORMANCE_MODE_FAST` and no landmarks/contours/classification. Kendrick's `mabu-anima` code comments cite ~109 ms — but that was under WebRTC audio load with detection deprioritized; uncontended, it's ~3× faster.
+1. **The HAL is a hard ceiling at ~10 fps.** Camera advertises 24 fps in `supportedPreviewFpsRange` (`[24000-24000]` mHz) and accepts the request, but actually delivers 10 fps. No userland change can lift this.
+2. **ML Kit inference on RK3288 averages ~35 ms** at 320×240 with `PERFORMANCE_MODE_FAST` and no landmarks/contours/classification. Kendrick's `mabu-anima` code comments cite ~109 ms, but that was under WebRTC audio load with detection deprioritized; uncontended, it's ~3× faster.
 3. **`PERFORMANCE_MODE_ACCURATE` is not worth it** on this hardware. Inference would jump to 100+ ms, exceeding the 100 ms HAL slot every frame → constant drops → effective fps drops below 10. Stay on FAST.
 4. **Buffer pool of 4** (was 2) reduces backpressure drops from ~6% to ~2%. Marginal but real. Going higher gives diminishing returns.
 5. **Camera thread priority matters for audio coexistence.** ML Kit lazily spawns its inference worker pool on the FIRST `detector.process()` call, and the workers inherit the calling thread's nice value. Opening the camera on the `mabu-camera-vision` HandlerThread at nice +5 means future URGENT_AUDIO threads (nice -19) will preempt face detection. Required pattern when audio/voice work lands.
@@ -853,9 +853,9 @@ Interpretation:
 - **Pipeline interval max ≫ 200 ms** → multiple consecutive drops. Investigate inference tail and GC; consider reducing per-frame allocations.
 - **Native heap growing every window** → leak. Should stay ~13–15 MB indefinitely.
 
-### Future levers (NOT pulled yet — out of scope for current session)
+### Future levers (NOT pulled yet, out of scope for current session)
 
 - Pre-allocate the per-frame `InputImage` byte buffer to remove that allocation from the GC hot path.
-- Replace ML Kit with a smaller tflite face detector (Mobile FaceNet variants run in ~10 ms on Cortex-A17). Would unlock 30+ fps if HAL cooperated — but HAL is the cap, so the practical gain is just CPU headroom for other work.
+- Replace ML Kit with a smaller tflite face detector (Mobile FaceNet variants run in ~10 ms on Cortex-A17). Would unlock 30+ fps if HAL cooperated, but HAL is the cap, so the practical gain is just CPU headroom for other work.
 - Roll a custom across-frame tracker (bbox IoU + velocity prior) on top of ML Kit detections, treating ML Kit as a per-frame detector. Most likely real lever for ID-churn problem, since we can't get more frames.
 
