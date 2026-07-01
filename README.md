@@ -1,5 +1,4 @@
 # Mabu Flash Utility
-
 This repo contains the scripts and firmware patches needed to free a **Mabu** robot tablet from its factory software lock and install your own apps. The full process takes about fifteen minutes on a PC that has done it before, and about thirty minutes on a fresh machine.
 
 ---

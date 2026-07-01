@@ -1,5 +1,4 @@
 # Flashing a Brand-New Mabu out of the Box
-
 End-to-end procedure for taking a factory Mabu robot tablet (Catalia Health
 H7R, Rockchip RK3288, Android 8.1, locked by Esper MDM) and turning it into a
 freely user-controlled device that runs **our own apps** — including the
@@ -18,7 +17,6 @@ face-tracking app, which needs motor access that SELinux blocks by default.
 ---
 
 ## 0. The One-Paragraph Version
-
 Catch the Rockchip Loader on power-on, run one PowerShell script that writes 8
 raw-eMMC patches (disable dm-verity, neutralize Esper, open ADB), optionally
 wipes `/data`, boots to plain Android, installs F-Droid + Lawnchair + Mabu
@@ -40,7 +38,7 @@ One command handles the full unit.
 .\scripts\flash-mabu.ps1 -RestoreMabu
 ```
 
-> **State auto-detect:** the script probes the unit over adb and classifies it:
+> **State auto-detect:** the script probes the unit over ADB and classifies it:
 > - **State A** (active Esper DPC in `/data`) → patches + 96 MB `/data` wipe
 > - **State B** (factory-reset Esper, no live DPC) → patches only, no wipe
 > - **Liberated** (already patched — `init.esper.rc` zeroed, no Esper control) →
@@ -52,7 +50,6 @@ One command handles the full unit.
 > probe), state is Unknown and the script wipes.
 
 ### Script Flags
-
 | Flag | Effect |
 |---|---|
 | `-RestoreMabu` | Install Mabu factory mode APK + push animation/voice assets |
@@ -63,7 +60,6 @@ One command handles the full unit.
 | `-WifiIp <ip>` | WiFi hint for first adb connect attempt (auto-discovered at runtime) |
 
 ### What the Script Does, in Order
-
 1. **Detect state** (A / B / Liberated / Unknown)
 2. **Enter Loader** and apply 8 liberation patches *(skipped for Liberated)*
 3. **Wipe `/data` head** (96 MB) if State A or forced *(skipped for B / Liberated)*
@@ -71,12 +67,11 @@ One command handles the full unit.
 5. **Install apps** — F-Droid, Lawnchair (set as home)
 6. **Restore Mabu** — factory mode APK + assets *(if `-RestoreMabu`)*
 7. **SELinux fix** — on-device `magiskpolicy` patch → Loader write to `0x5A8AB8` *(skippable with `-SkipSELinux`)*
-8. **Self-test** — 12 checks: liberation, apps, SELinux policy SHA, AVC denial check, WiFi adb
+8. **Self-test** — 12 checks: liberation, apps, SELinux policy SHA, AVC denial check, WiFi ADB
 
 ---
 
 ## 1. What You Need
-
 ### Hardware
 - The Mabu unit, opened enough to reach the **30-pin internal header** (these
   units have no external USB port or buttons). USB OTG is on pins 3/5/7/9
@@ -145,7 +140,6 @@ timing, not the host port:
 ---
 
 ## 2. Understand the Two Starting States
-
 A factory unit is in one of two states; they need slightly different handling
 (both are covered by `flash-mabu.ps1`, which **auto-detects which one** — see
 below):
@@ -155,7 +149,7 @@ below):
 | **A. Active Esper** | Kiosk / Mabu dashboard boots, USB ADB wedges within ~5 s | Patches **+ 96 MB `/data` wipe** (the real DPC, `io.shoonya.shoonyadpc`, lives in `/data/app` and survives the /system patches) | `pm path io.shoonya.shoonyadpc` returns a package |
 | **B. Factory-reset Esper** | Normal-ish boot, no kiosk, but Device Owner ref still set | Patches alone are enough; `/data` wipe skipped | that package is **absent** |
 
-**The script picks for you:** it runs `pm path io.shoonya.shoonyadpc` over adb
+**The script picks for you:** it runs `pm path io.shoonya.shoonyadpc` over ADB
 before entering Loader and wipes only on State A. (Esper's `/system` apps —
 espersupervisor etc. — survive a factory reset, so they're present in *both*
 states and can't distinguish them; the `/data`-resident shoonya DPC is the
@@ -185,14 +179,13 @@ with a Settings/Dev-Options regression; smaller wipes don't reliably trigger the
 ---
 
 ## 3. Catch the Loader
-
-There are two ways in. **If you can get an adb shell, use the first — it's
+There are two ways in. **If you can get an ADB shell, use the first — it's
 deterministic and instant.**
 
-### Optimal: `adb reboot loader` (When adb Is Reachable)
-Stock Esper units are *often* already adb-authorized — Esper does not always
+### Optimal: `adb reboot loader` (When ADB Is Reachable)
+Stock Esper units are *often* already ADB-authorized — Esper does not always
 suppress the auth grant (on the validated unit `adb` showed `device`, not
-`unauthorized`). And post-liberation adb is always open. Whenever `adb devices`
+`unauthorized`). And post-liberation ADB is always open. Whenever `adb devices`
 shows the tablet, just:
 ```powershell
 adb reboot loader      # drops straight into Rockchip Loader (PID 320A)
@@ -201,7 +194,7 @@ On the validated unit this landed in Loader in **~1 second** — no power-on
 timing race. This is also how you re-enter Loader between phases.
 
 ### Fallback: Boot into Loader by Holding ADKEY (Validated on This PC)
-If there is no adb at all, **hold ADKEY through power-on to force Loader.** This
+If there is no ADB at all, **hold ADKEY through power-on to force Loader.** This
 is the reliable way in on a unit that otherwise free-boots straight to the
 auth-walled Esper Android (PID 0006) — confirmed 2026-06-27 on this flashing PC,
 which had never once reached Loader until this sequence:
@@ -274,7 +267,6 @@ Verify from the Mabu repo root:
 ---
 
 ## 3A. (Flash and Capture Only) Capture the Original Mabu Software: Before Any Wipe
-
 > **This section is ONLY for the "flash and capture" path.** For a plain **flash**
 > (the default), skip it entirely and go to Section 4.
 >
@@ -362,12 +354,11 @@ wipe.
 ---
 
 ## 4. Flash: Liberate + Provision (One Command)
-
 > For a plain **flash** (the default), run this directly. Only detour through
 > Section 3A first if you explicitly want **flash and capture** on a unit that
 > still has Mabu software worth keeping.
 
-From the repo root, with a **booted, adb-reachable unit** (so the script can
+From the repo root, with a **booted, ADB-reachable unit** (so the script can
 detect the state and reboot it into Loader itself):
 
 ```powershell
@@ -398,7 +389,7 @@ What it does, in order (`scripts/flash-mabu.ps1` → `scripts/liberate-mabu.ps1`
    removing the in-`/data` Esper DPC. (Done in a separate Loader session; doing
    patches + wipe back-to-back wedges Loader.)
 3. **Reset to Android**, wait for ADB to come up, then **join WiFi and switch to
-   WiFi adb** for everything that follows (see the transport rule below — USB adb
+   WiFi ADB** for everything that follows (see the transport rule below — USB ADB
    on this hardware times out too fast to rely on).
 4. **Install F-Droid + Lawnchair**, set Lawnchair as home.
 5. **(`-RestoreMabu`)** install `com.catalia.factorymode` + push animation/voice
@@ -447,9 +438,9 @@ you to join WiFi on the touch UI before app installs proceed.
 > which hangs an unattended shell. To stage it: run
 > `.\scripts\flash-mabu.ps1 -WipeData -SkipApps` (does all 8 patches + the
 > inter-phase reset + 96 MB wipe, then exits cleanly **before** the pause), then
-> drive the app installs yourself over adb. USB adb comes up authorized right
+> drive the app installs yourself over ADB. USB ADB comes up authorized right
 > after the wipe (the adbd auth-bypass patch), but it **times out too fast to rely
-> on** — join WiFi and run the installs over WiFi adb (`adb connect <ip>:5555`).
+> on** — join WiFi and run the installs over WiFi ADB (`adb connect <ip>:5555`).
 > See the transport rule below.
 
 **Result:** plain Android 8.1, Lawnchair home, F-Droid, ADB open (USB + WiFi on
@@ -467,19 +458,19 @@ adb -s <tablet-ip>:5555 shell "pm list packages | grep -iE 'esper|shoonya'"  # e
 > - **The Loader flash itself (`rkdeveloptool`)** — rock-solid, and there is no
 >   WiFi alternative. Wrote 96 MB + all patches with zero issues. (Loader *reads*
 >   wedge after ~28 MB cumulative per session — power-cycle / re-catch to continue.)
-> - **Opening adb** — i.e. the auth-bypass patch the flash writes. That is the
->   *only* job USB adb has.
+> - **Opening ADB** — i.e. the auth-bypass patch the flash writes. That is the
+>   *only* job USB ADB has.
 >
-> Once adb is open, **switch to WiFi adb (`adb connect <ip>:5555`) for everything
+> Once ADB is open, **switch to WiFi ADB (`adb connect <ip>:5555`) for everything
 > else** — app installs, shell, verification, and especially pulls. **Android USB
-> adb times out too fast to rely on:**
+> ADB times out too fast to rely on:**
 > - **USB pulls (`adb pull`, device→host)** wedge after a cumulative **~80–128 KB
 >   per boot**, then the device drops to `offline` and only a **power-cycle**
 >   recovers it. Chunking only buys a few before the same cumulative wedge.
 > - **USB pushes (`adb install`, `adb push`)** can complete for small payloads but
 >   time out / wedge unpredictably under any real load — don't plan around them.
 >
-> **WiFi adb must be switched on — it does NOT auto-listen on every unit
+> **WiFi ADB must be switched on — it does NOT auto-listen on every unit
 > (corrected 2026-06-27).** On the original validated unit `adb connect <ip>:5555`
 > worked immediately, but on the 2026-06-27 unit adbd was **not** listening on
 > 5555, so the connect silently failed. The fix is the standard one: run
@@ -499,7 +490,6 @@ adb -s <tablet-ip>:5555 shell "pm list packages | grep -iE 'esper|shoonya'"  # e
 ---
 
 ## 5. Install Our Own Apps / OS
-
 You now have a normal Android tablet. Three layers, pick what you need:
 
 - **Just apps:** sideload any APK with `adb install`, or use F-Droid on-device.
@@ -512,7 +502,6 @@ You now have a normal Android tablet. Three layers, pick what you need:
   ("Assembly-line strategy") for that pipeline.
 
 ### Installing the Facetrack App
-
 ```powershell
 # build the APK (Android Studio / gradle) from ../Mabu/mabu-facetrack/, then:
 adb -s <tablet-ip>:5555 install MabuFaceTrack.apk
@@ -528,9 +517,7 @@ that's the SELinux issue. Section 6.
 ---
 
 ## 6. The SELinux Issue and the Fix (Read This)
-
 ### What Actually Goes Wrong
-
 The motor board is on `/dev/ttyS1`, labeled `u:object_r:serial_device:s0`. An
 app installed normally runs as `u:r:untrusted_app:s0`, and stock AOSP policy has
 **no `allow untrusted_app serial_device` rule**. So every `open("/dev/ttyS1")`
@@ -550,7 +537,7 @@ is a **`user` build**, and on user builds Android `init` ignores that flag and
 forces SELinux **enforcing** at startup (`ALLOW_PERMISSIVE_SELINUX` is compiled
 out). The `permissive=0` in the denial above is the proof: the device is
 enforcing at runtime regardless of the kernel cmdline. `setenforce 0` also fails
-(no root), and `/system` can't be remounted rw from a non-root adb shell.
+(no root), and `/system` can't be remounted rw from a non-root ADB shell.
 
 So there are exactly two ways to give the app motor access. **Tier 1 works today
 with zero policy changes; Tier 2 is the permanent fix to apply while the harness
@@ -559,7 +546,6 @@ is still connected.**
 ---
 
 ### Tier 1: TCP Motor Bridge (Recommended for Immediate Bring-Up)
-
 The `shell` domain (`u:r:shell:s0`) **is** allowed to open `serial_device` —
 that's why `adb shell printf ... > /dev/ttyS1` moves motors. So we run a tiny
 shell-user daemon that owns the serial port and exposes it on a local TCP port;
@@ -583,7 +569,7 @@ Then launch the app — it connects to the bridge and the robot tracks faces.
 
 **Limits of Tier 1:**
 - The bridge must be relaunched after every reboot (it lives in
-  `/data/local/tmp` and runs in the shell/adb context). For a fixed install,
+  `/data/local/tmp` and runs in the shell/ADB context). For a fixed install,
   auto-start it from a host on the LAN (e.g. a scheduled task that runs
   `adb connect <ip>:5555` then the `nohup` line on boot).
 - One client at a time; ~10–50 ms gap on reconnect (the app retries).
@@ -593,7 +579,6 @@ Then launch the app — it connects to the bridge and the robot tracks faces.
 ---
 
 ### Tier 2: Permanent SELinux Policy Patch (Validated; Now Automated)
-
 > **`flash-mabu.ps1` applies this automatically as Phase 7.** The manual steps
 > below are reference only — follow them if you need to re-apply the fix outside
 > of a full flash run, or if you're debugging the automated path.
@@ -629,7 +614,7 @@ with no root, so the patched policy is written by raw eMMC overwrite via Loader.
 > *inspecting* policy, not injection.)
 
 **Step 1 — patch the policy on-device** (Loader not needed yet; do this from an
-adb shell — WiFi adb if you'll pull it, see below):
+ADB shell — WiFi ADB if you'll pull it, see below):
 ```bash
 DEV=<ip>:5555
 adb -s $DEV push ../tools/magiskpolicy/magiskpolicy-armeabi-v7a /data/local/tmp/magiskpolicy
@@ -647,7 +632,7 @@ access-vector table. **Same size ⇒ same 74 ext4 blocks ⇒ a raw overwrite is
 block-safe** (the Size caveat below never triggered). Confirm `in ≠ out` by hash
 so you know the rule was actually added.
 
-**Step 2 — pull the patched policy to the host (use WiFi adb).** A 293 KB `adb
+**Step 2 — pull the patched policy to the host (use WiFi ADB).** A 293 KB `adb
 pull` over **USB wedges** (~80–128 KB inbound ceiling per boot — see the
 transport note in Section 4). Over WiFi it's instant:
 ```bash
@@ -686,7 +671,7 @@ reliable):
 .\tools\rkdeveloptool\rkdeveloptool.exe rd        # reboot to Android
 ```
 
-**Step 5 — verify after reboot** (WiFi adb):
+**Step 5 — verify after reboot** (WiFi ADB):
 ```bash
 adb connect <ip>:5555
 adb -s <ip>:5555 shell "sha256sum /vendor/etc/selinux/precompiled_sepolicy"  # == patched hash
@@ -725,7 +710,6 @@ is marked `// TEMP` in `MabuMotors.kt`):
 ---
 
 ## 7. Motor Calibration (per Unit)
-
 Motor mechanical zeros differ per unit and are wiped by the `/data` reformat.
 Two options:
 - Launch **Mabu Factory Mode** → *Trouble Shooting / Motor Debug* and run its
@@ -742,7 +726,6 @@ Protocol reference (don't hand-compute checksums — use the code):
 ---
 
 ## 8. Emergency / Recovery
-
 - **Bad patch bricks boot:** `..\Mabu\scripts\restore-boot.ps1` writes the
   original `boot.img` back and clears `misc`.
 - **Re-lock ADB for deployment on an untrusted network:**
@@ -755,12 +738,11 @@ Protocol reference (don't hand-compute checksums — use the code):
 ---
 
 ## 9. Quick Checklist
-
-- [ ] Loader caught (PID 320A) — `adb reboot loader` if adb is up, else hold ADKEY (pin 4)→GND through power-on
+- [ ] Loader caught (PID 320A) — `adb reboot loader` if ADB is up, else hold ADKEY (pin 4)→GND through power-on
 - [ ] **PID 320A bound to WinUSB** (not `rockusb.sys`) — `flash-mabu.ps1` auto-launches Zadig if not; one-time per PC, then persists. `ld` listing the Loader is *not* proof: a `rockusb.sys` binding writes-fail with "creating comm object failed"
 - [ ] `flash-mabu.ps1 -RestoreMabu` completes — confirm the "Detected State X" / "Wipe policy" line matches the unit (force with `-WipeData`/`-NoWipe` if needed; re-run wipe if it "FAILED at chunk 0")
 - [ ] Device Owner clear, no esper/shoonya packages
-- [ ] Re-joined WiFi, WiFi ADB on 5555, static lease set (the working transport for all on-device adb — USB only for the Loader flash + opening adb)
+- [ ] Re-joined WiFi, WiFi ADB on 5555, static lease set (the working transport for all on-device ADB — USB only for the Loader flash + opening ADB)
 - [ ] Launcher + apps installed
 - [ ] **SELinux: Tier 1 bridge running → app moves motors**
 - [ ] **SELinux: Tier 2 policy patch applied (optional, permanent)** — magiskpolicy on-device → `find-vendor-file.py` → Loader `wl` → verify persisted + Enforcing → revert app to direct serial
@@ -770,7 +752,6 @@ Protocol reference (don't hand-compute checksums — use the code):
 ---
 
 ## Appendix A: Complete Prerequisites (Flash + Build + Deploy + SELinux)
-
 Everything needed end-to-end, grouped by what it's for. Items marked **bundled**
 ship inside the `../Mabu/` repo (no install). Items marked **winget** install
 from an elevated PowerShell. Hardware can't be installed — verify physically.
@@ -791,7 +772,7 @@ from an elevated PowerShell. Hardware can't be installed — verify physically.
 | **Zadig** (bind WinUSB to PID 320A) | **winget** `akeo.ie.Zadig` | app opens |
 | **adb / platform-tools** | **winget** `Google.PlatformTools` | `adb version` |
 
-> The Rockchip `android_winusb.inf` (adb driver for PID 0006/0011) is staged in
+> The Rockchip `android_winusb.inf` (ADB driver for PID 0006/0011) is staged in
 > the driver store alongside `rockusb.sys`. Verify: `pnputil /enum-drivers | findstr android_winusb`.
 
 ### A.3 Android Build + Deploy Toolchain
@@ -814,8 +795,8 @@ unrelated tooling.)
 
 ### A.4 Permanent SELinux Fix Toolchain (Tier 2, Optional)
 Only needed to apply the permanent `allow untrusted_app serial_device` policy
-rule. The Tier-1 TCP bridge needs none of this (just adb). The validated Tier-2
-path is **adb (WiFi) + on-device ARM magiskpolicy + `find-vendor-file.py` +
+rule. The Tier-1 TCP bridge needs none of this (just ADB). The validated Tier-2
+path is **ADB (WiFi) + on-device ARM magiskpolicy + `find-vendor-file.py` +
 `rkdeveloptool` + Python** — WSL is **not** actually required for the injection.
 
 | Tool | Source | Verify |
@@ -859,5 +840,5 @@ download the SDK, or install components headlessly with `sdkmanager`.
 > **Validated-flash facts (unit 2022010501038, H7R 8.1 `OPM6.171019.030.E1`):**
 > State-A active Esper; `adb reboot loader` worked on stock; full liberate +
 > 96 MB wipe + F-Droid/Lawnchair/factorymode + Tier-2 SELinux all succeeded.
-> `/vendor` policy file LBA `0x5A8AB8`. WiFi adb (5555) was essential for pulling
+> `/vendor` policy file LBA `0x5A8AB8`. WiFi ADB (5555) was essential for pulling
 > the policy (USB pulls wedge ~128 KB).
