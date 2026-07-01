@@ -1,7 +1,5 @@
-# SELinux — serial port access for the Mabu app
-
-## The problem
-
+# SELinux — Serial Port Access for the Mabu App
+## The Problem
 `/dev/ttyS1` (the motor board serial port) is labeled `u:object_r:serial_device:s0`.
 The Mabu face-tracking app runs as `u:r:untrusted_app:s0`. Stock AOSP policy
 does not grant `untrusted_app` access to `serial_device`, so all `open()` calls
@@ -19,8 +17,7 @@ Note: `ro.boot.selinux=permissive` is set by the liberation parameter patch,
 but Android init switches to enforcing mode during startup. The boot property
 does NOT persist at runtime.
 
-## Temporary workaround (no USB required)
-
+## Temporary Workaround (No USB Required)
 `AdbShellBridge.kt` in the app connects to the local adbd daemon
 (`127.0.0.1:5555`) over TCP and routes motor commands through a persistent
 shell session. The shell runs as `u:r:shell:s0` which IS allowed to write
@@ -29,30 +26,28 @@ no key exchange is needed.
 
 The app tries native serial first, falls back to ADB automatically.
 
-## Permanent fix (requires USB access to write /system)
-
+## Permanent Fix (Requires USB Access to Write /system)
 Add the rule in `mabu_serial_access.te` to the device SELinux policy:
 
 ```
 allow untrusted_app serial_device:chr_file { open read write getattr ioctl };
 ```
 
-### Option A — AOSP build (cleanest)
+### Option A — AOSP Build (Cleanest)
 1. Copy `mabu_serial_access.te` into `system/sepolicy/private/` (or your
    device-specific sepolicy dir)
 2. `m sepolicy`
 3. Flash `out/.../precompiled_sepolicy` to `/system/etc/selinux/`
 
-### Option B — Patch running policy (WSL, USB required)
+### Option B — Patch Running Policy (WSL, USB Required)
 Run `apply-patch.sh` — see comments inside for full procedure.
 
-### After applying the permanent fix
+### After Applying the Permanent Fix
 Remove the `AdbShellBridge` fallback from `MabuMotors.open()` (or leave it
 in as a belt-and-suspenders fallback — it won't be reached if native serial
 opens successfully).
 
 ## Files
-
 | File | Purpose |
 |---|---|
 | `mabu_serial_access.te` | The single policy rule needed |
