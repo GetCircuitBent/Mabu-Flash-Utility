@@ -4,7 +4,7 @@
 > Covers the motor protocol, wire encoding, per-motor limits and neutrals, movement directions,
 > serial access, and known gotchas. Mistakes here cause silent failures or grinding.
 
-## Current State (as of 2026-06-04, end-of-session tuning pass)
+## Current State (as of 2026-06-04, End-of-Session Tuning Pass)
 
 **Known remaining issue:** faint EUD rattle persists when the face is hovering at the
 bottom edge of the frame. Send rate is down to roughly 0–5 sends/sec at the edge
@@ -63,7 +63,7 @@ Logical values are **0–100** (50 = nominal center for most motors).
 wire_byte = clamp(round(logical * 2.55), 0, 255)
 ```
 
-### Critical: floating-point trap
+### Critical: Floating-Point Trap
 `50 * 2.55` in IEEE 754 double = **127.4999…**, not 127.5.
 Standard "round half up" gives **127**, not 128.
 Always verify: `wire(50) = 128 (0x80)`, `wire(25) = 64 (0x40)`.
@@ -83,7 +83,7 @@ FA 00 <payload_len> <payload_bytes…> <fletcher_s2> <fletcher_s1>
 - `payload_len` = number of payload bytes (1 byte)
 - Checksum is **Fletcher-8 mod 255** (not 256) over the **entire frame including the `FA 00` header**
 
-### Fletcher-8 algorithm
+### Fletcher-8 Algorithm
 ```
 s1 = 0, s2 = 0
 for each byte b in frame (including FA 00 header):
@@ -92,7 +92,7 @@ for each byte b in frame (including FA 00 header):
 append s2, then s1
 ```
 
-### Multi-motor payload (preferred, one atomic frame)
+### Multi-Motor Payload (Preferred, One Atomic Frame)
 ```
 [0x01, bitmask, 0x01, val_motor_MSB, val_motor_next, …]
 ```
@@ -101,17 +101,17 @@ Only include values for bits set in the bitmask.
 
 **Wrong bitmask = silent discard by motor board.** No error, no movement.
 
-### Single-motor payload
+### Single-Motor Payload
 ```
 [0x01, single_bitmask, 0x01, wire_value]
 ```
 
-### Power-on frame (hardcoded)
+### Power-On Frame (Hardcoded)
 ```
 FA 00 02 4F 7F 0B CB
 ```
 
-#### Cold-boot wake-up sequence (CRITICAL: confirmed 2026-05-29)
+#### Cold-Boot Wake-Up Sequence (CRITICAL: Confirmed 2026-05-29)
 After a fresh Mabu boot, **sending power-on ONCE is not enough.** The motor board
 will silently ignore subsequent commands even though bytes are reaching `/dev/ttyS1`
 and the motors are clearly powered (head stiff, holding position).
@@ -136,12 +136,12 @@ post-boot init period during which it drops UART bytes, so the first few power-o
 frames are lost. Multiple repetitions ensure at least one lands after the MCU is
 ready to receive.
 
-### Wait ~500 ms after power-on before sending movement commands
+### Wait ~500 ms after Power-On before Sending Movement Commands
 (only applies once the board is already awake, not for the cold-boot sequence above)
 
 ---
 
-## 4. Neutral Positions (This Unit, Visually confirmed 2026-05-29)
+## 4. Neutral Positions (This Unit, Visually Confirmed 2026-05-29)
 
 | Motor | Neutral | Notes |
 |-------|---------|-------|
@@ -197,7 +197,7 @@ All other units in community docs may differ; always test per unit.
 
 ---
 
-## 7. TCP Motor Bridge *(DEPRECATED: no longer needed)*
+## 7. TCP Motor Bridge *(DEPRECATED: No Longer Needed)*
 
 > **As of 2026-06-02, `facetrackadb` opens `/dev/ttyS1` directly via JNI (see Section 9).**
 > The bridge and everything in this section is kept for reference and for diagnosing
@@ -206,19 +206,19 @@ All other units in community docs may differ; always test per unit.
 ~~The app cannot open `/dev/ttyS1` directly (SELinux blocks `untrusted_app → serial_device`).~~
 The native JNI path bypasses this; see Section 9 for the full explanation.
 The bridge runs as shell context and is still useful for one-off hardware testing from
-adb shell without the app running.
+ADB shell without the app running.
 
 **Bridge file:** `/data/local/tmp/motor-bridge.sh`
 **Bridge port:** TCP 7777 on `0.0.0.0` (LAN-visible; no firewall currently)
 
-### Starting the bridge (once per reboot)
+### Starting the Bridge (Once per Reboot)
 ```bash
 adb shell "nohup sh /data/local/tmp/motor-bridge.sh > /data/local/tmp/motor-bridge.log 2>&1 &"
 # Wait 2–3 s, then verify:
 adb shell "busybox netstat -tlnp | grep 7777"
 ```
 
-### Stop the app before manual testing
+### Stop the App before Manual Testing
 
 **CRITICAL:** The app sends motor commands continuously while tracking. Neutralize it before any
 manual test or it will contend for the bridge slot and cause short-write storms.
@@ -231,7 +231,7 @@ adb shell "am broadcast -a com.mabu.facetrackadb.PAUSE_TRACKING --ez paused true
 **If a full restart is needed:** force-stop kills the bridge too; always restart the bridge AFTER
 the app, never before. See "Clean motor-control establishment / re-establishment" below.
 
-### Clean motor-control establishment / re-establishment (verified 2026-05-31)
+### Clean Motor-Control Establishment / Re-Establishment (Verified 2026-05-31)
 
 The proven, repeatable sequence for taking reliable manual control. Verified twice back-to-back
 (head full-left, then full-right) with 0 short writes each time.
@@ -292,7 +292,7 @@ hardware 2026-05-31:
 | NR=0   | head full RIGHT | `FA 00 04 01 02 01 00 FC 03` |
 | ELR=80 | eyes right      | `FA 00 04 01 10 01 CC F3 DD` |
 
-### Critical bridge rules
+### Critical Bridge Rules
 - **NEVER start the bridge twice.** A second instance opens `/dev/ttyS1` again, resetting
   termios and DTR, killing motor response until the bridge is killed and restarted.
 - **Persistent fd required.** The bridge opens fd3 once and never closes it. Opening/closing
@@ -300,7 +300,7 @@ hardware 2026-05-31:
 - **`-hupcl` is mandatory.** Without it, closing the last fd drops DTR, resetting the motor board.
   All subsequent commands are silently ignored.
 
-### Sending commands from PowerShell (via TCP)
+### Sending Commands from PowerShell (via TCP)
 Build the frame as a single `byte[]`: **do not use `+` to concatenate byte arrays in PowerShell 5.1**,
 it returns `Object[]` which breaks `Stream.Write(byte[], int, int)`.
 
@@ -319,14 +319,14 @@ Send **power-on and movement commands in the same TCP connection** (or with powe
 close, then reconnect with movement). A gap between separate connections may cause the motor
 board to lose state and ignore commands.
 
-### Sending commands from adb shell (reliable alternative)
+### Sending Commands from ADB Shell (Reliable Alternative)
 ```bash
 adb shell "busybox printf '\xFA\x00\x0A...' | nc 127.0.0.1 7777"
 ```
 `busybox printf` supports `\xNN` hex escapes. `nc` closes when stdin (printf) exits.
 Use `127.0.0.1` (loopback) not `192.168.0.180` to avoid external routing.
 
-### Connection failures and the `nc: short write` storm (investigated 2026-05-31)
+### Connection Failures and the `nc: short write` Storm (Investigated 2026-05-31)
 
 **Symptom:** a PC TCP client to port 7777 fails mid-burst with "An established connection
 was aborted by the software in your host machine." The bridge log shows repeated
@@ -360,13 +360,13 @@ tracking via the `PAUSE_TRACKING` broadcast (or force-stop, though it relaunches
 Verify `busybox netstat -tn | grep 7777` shows NO established client before sending. One sender
 at a time.
 
-### Hardened bridge (deployed 2026-05-31)
+### Hardened Bridge (Deployed 2026-05-31)
 The on-device `/data/local/tmp/motor-bridge.sh` now adds, vs the original: `exec 1>>"$LOG" 2>&1`
 at the top (force log output to the file) and `clocal` in the stty (so a fresh fd3 open does not
 block on carrier). These are hygiene improvements; they do NOT fix the short-write storm - the fix
 for that is removing app/sender contention (above). Local copy: `X:\Claude\Mabu\motor-bridge-hardened.sh`.
 
-### Environment gotchas found this session
+### Environment Gotchas Found This Session
 - **`adb push` path mangling.** `adb push <local> /data/local/tmp/...` from the Bash tool (Git
   Bash / MSYS) rewrites the device path into `C:/Program Files/Git/data/local/tmp/...` and fails
   with `remote secure_mkdirs failed: No such file or directory`. Prefix the command with
@@ -392,7 +392,7 @@ Wire value from CSV: `wire = clamp(int(round(csv_value + 128)), 0, 255)`
 - App context: `u:r:untrusted_app:s0`
 - Shell context: `u:r:shell:s0`; allowed for all operations
 
-### What is actually blocked vs allowed for untrusted_app
+### What Is Actually Blocked vs Allowed for untrusted_app
 
 The SELinux policy on this device (Rockchip Android 8.1) allows `untrusted_app` to
 `open`, `read`, `write`, and `ioctl` on `serial_device`, but denies `getattr`.
@@ -407,7 +407,7 @@ The SELinux policy on this device (Rockchip Android 8.1) allows `untrusted_app` 
   `open` for `untrusted_app`, so it returns a valid fd. Confirmed 2026-06-02:
   `MabuSerial: opened 57600 baud, fd=42` with zero new AVC denials in dmesg.
 
-### Practical rule
+### Practical Rule
 Use JNI (`serial.c`) to access `/dev/ttyS1` from the app. Never use Java I/O.
 The TCP motor bridge is no longer needed.
 
@@ -433,9 +433,9 @@ The TCP motor bridge is no longer needed.
 
 ---
 
-## 11. "Motors not responding": diagnostic order
+## 11. "Motors not responding": Diagnostic Order
 
-### ⚠️ FIRST: read telemetry to classify the stuck state.
+### ⚠️ FIRST: Read Telemetry to Classify the Stuck State.
 
 There are **two distinct stuck states** with different recovery paths. Read `/dev/ttyS1` before doing anything else:
 
@@ -462,13 +462,13 @@ Replace `<motor-frame>` with the target move frame (e.g. `\xFA\x00\x04\x01\x02\x
 
 **Boot-time contention (investigation incomplete):** `com.catalia.factorymode` (installed, has `RECEIVE_BOOT_COMPLETED` permission and references `/dev/ttyS1` in its DEX) is a candidate cause of State B on boot. If this or any process writes to the serial port during the board's post-boot init window, it may trigger State B.
 
-#### Post-power-cycle recovery (State A)
+#### Post-Power-Cycle Recovery (State A)
 1. `adb disconnect 192.168.0.180:5555 && adb connect 192.168.0.180:5555` (may take a couple of tries).
 2. Follow the clean-control procedure in Section 7.
 3. Run the 5× cold-boot wake (Section 3), then a validation move **with Alex watching**.
 4. Confirm engagement via telemetry: a successful move streams `FA 00 09 …` position frames (Section 13).
 
-### Full diagnostic order
+### Full Diagnostic Order
 
 When motors don't move, work through these in order:
 
@@ -486,10 +486,10 @@ When motors don't move, work through these in order:
    - **State B:** direct exec+stty IS the recovery, not just a diagnostic. Try it before declaring the board stuck.
    - Neither works → board is in State A (hung MCU) → power-cycle.
 
-### NEVER reboot Mabu via ADB
+### NEVER Reboot Mabu via ADB
 `adb reboot` has caused WiFi to not reconnect after boot, leaving the device unreachable with no recovery path (no USB, no physical buttons). **Do not run `adb reboot` under any circumstances.** If a reboot is truly needed, power-cycle the physical hardware instead.
 
-### Rabbit holes to avoid (already investigated, don't re-chase)
+### Rabbit Holes to Avoid (Already Investigated, Don't Re-Chase)
 
 - **`/sys/class/gpio_control` / `inhuasoft_gpio_control` driver.** This is a Catalia-custom
   GPIO control interface exposing 3 GPIO pins (controllers 0xA8/0xA9, pins 16/19/9).
@@ -503,14 +503,14 @@ When motors don't move, work through these in order:
 
 ## 12. Known Bugs
 
-### EUD oscillation during face tracking: ROOT CAUSE FOUND AND FIXED (2026-06-02, session 13)
+### EUD Oscillation during Face Tracking: ROOT CAUSE FOUND AND FIXED (2026-06-02, Session 13)
 
 **Status: FIXED in `facetrackadb` via `EUD_MAX_RATE = 1.0`.** Residual micro-oscillation
 (ptp ≈ 10–25 wire units, < 0.2s duration) remains; visually acceptable. Further tuning deferred.
 
 ---
 
-#### Root cause (confirmed 2026-06-02)
+#### Root Cause (Confirmed 2026-06-02)
 
 The oscillation is **not** caused by hitting the mechanical hard stop at EUD=0. It is caused
 by the motor board's PID controller overshooting when EUD changes direction (e.g., eye was
@@ -543,7 +543,7 @@ tracking upward at EUD≈25–40, face returns to center, eye starts returning t
 
 ---
 
-#### Fix applied
+#### Fix Applied
 
 **`EUD_MAX_RATE = 1.0` logical unit per callback, asymmetric** in `facetrackadb/MainActivity.kt`:
 
@@ -573,7 +573,7 @@ current deployed value.
 
 ---
 
-#### Follow-up tuning (2026-06-02, session 14): RESOLVED
+#### Follow-Up Tuning (2026-06-02, Session 14): RESOLVED
 
 **Visual confirmation:** residual micro-oscillations (ptp≈10–25 wire) are visually acceptable.
 
@@ -613,7 +613,7 @@ effort, which is visibly effective.
 
 ---
 
-#### Historical notes (sessions 6–7, now superseded)
+#### Historical Notes (Sessions 6–7, Now Superseded)
 
 Original hypothesis was mechanical rebound at EUD=0 hard stop. Session 7 observed:
 - Abrupt EUD=0→50 oscillates 100% of trials.
@@ -627,16 +627,16 @@ even EUD=33 (wire=84, far from the stop) caused 9 bursts without the fix.
 
 ---
 
-## 13. Serial Telemetry / Readback (board → host)
+## 13. Serial Telemetry / Readback (Board → Host)
 
 The motor board is **NOT silent**: it continuously transmits status frames on `/dev/ttyS1`.
 This is a useful, camera-free signal for detecting movement, oscillation, and the latch state.
 
-### How to read it
+### How to Read It
 
 > ⚠️ **CRITICAL: Do NOT open `/dev/ttyS1` from `adb shell` while `facetrackadb` is running.**
 > `termios` settings are shared across all file descriptions on a character device. Opening a
-> second fd from adb shell and running `busybox stty` on it overwrites the baud rate / mode
+> second fd from ADB shell and running `busybox stty` on it overwrites the baud rate / mode
 > settings that the app set on its fd. Result: app sends frames but the motor board can no longer
 > parse them; motors go silent. **Recovery: `am force-stop` + restart the app.**
 > Safe diagnostic path while the app is running: **logcat only** (see Section 14).
@@ -648,14 +648,14 @@ adb shell "exec 3<>/dev/ttyS1; busybox stty -F /dev/ttyS1 57600 raw -hupcl; busy
 
 `busybox timeout` on this unit uses `-t SECONDS` (e.g. `-t 5`), NOT `timeout 5 …`.
 
-### Frame types
+### Frame Types
 | Frame | Meaning |
 |-------|---------|
 | `FA 00 01 00 ED FB` | **Idle heartbeat** (payload `00`). Streamed continuously when the board is not moving any motor. |
 | `FA 00 09 01 00 [LDL LDR ELR EUD NE NR NT] [s2 s1]` | **Position report.** Streamed while the board is engaged/moving. The 7 payload bytes are the live wire positions of all motors. |
 | `FA 00 02 4F 7F 0B CB` | Power-on frame **echoed back** (appears right after you send a power-on). |
 
-### Using telemetry as a marker
+### Using Telemetry as a Marker
 - **Engagement check:** a successful move streams `FA 00 09 …` frames. If you send commands and
   see **only** heartbeat (`FA 00 01 00`), the board did not engage → cold boot needs the 5× wake,
   or it is in the command-latch state; see Section 11 to classify and choose recovery path.
@@ -673,7 +673,7 @@ Reference for all tunable constants in `facetrackadb/MainActivity.kt` and
 `facetrackadb/MabuMotors.kt`. These are the deployed values as of 2026-06-04,
 confirmed working on this unit.
 
-### Architecture: decoupled tween (Kendrick-pattern, 2026-06-04)
+### Architecture: Decoupled Tween (Kendrick-Pattern, 2026-06-04)
 
 The face detector and the motor I/O run on **separate threads at different
 rates**. Detection on `motorExecutor` (~10 Hz, camera-bound); motor frames on a
@@ -694,7 +694,7 @@ The advantage isn't smoothness alone: it's that the **motor I/O cadence is
 decoupled from the noisy detection cadence**. ML Kit's bbox can wobble
 frame-to-frame without producing matching wobble on the wire.
 
-### Motion smoothing (current values)
+### Motion Smoothing (Current Values)
 
 | Constant | Value | Effect |
 |----------|-------|--------|
@@ -720,7 +720,7 @@ frame-to-frame without producing matching wobble on the wire.
 empty-faces grace path, and the `deadbandSmooth()` function. The LP tween +
 SEND_DEADBAND replace all of these cleanly.
 
-### IoU cross-frame tracker
+### IoU Cross-Frame Tracker
 
 ML Kit's `enableTracking()` reassigns face IDs every few seconds due to
 detection gaps, blinks, partial occlusion, or multi-face frames. The IoU
@@ -743,7 +743,7 @@ hysteresis / smoothing each time. On each detection:
 6. If IoU < threshold AND tracker is null (post-grace, no reference) → genuine
    new face; run hysteresis.
 
-### Face selection priority (when ML Kit returns multiple faces)
+### Face Selection Priority (When ML Kit Returns Multiple Faces)
 
 ML Kit returns multiple faces on fresh boot while autoexposure settles, or when
 a phantom detection appears at the frame edge. The old "biggest area" heuristic
@@ -757,7 +757,7 @@ off-image pixels). Current order:
    off-screen centers).
 4. Last-resort fallback to the largest face overall.
 
-### Edge-clip handling
+### Edge-Clip Handling
 
 When the face center reports outside `[-1, 1]` (face partly off-frame), the
 detector clamps `xNorm`/`yNorm` to ±1.0 instead of skipping. Skipping froze
@@ -769,7 +769,7 @@ Two edge-clip frame counters (`xClipFrames`, `yClipFrames`) increment on each
 clipped frame. Once they cross `EDGE_FREEZE_FRAMES` (1), the eye target stops
 being pushed further toward the mechanical end-stop in the clipped direction.
 
-### Face-loss behavior
+### Face-Loss Behavior
 
 Within `FACE_LOSS_GRACE_MS` (1 s) of the last good detection, targets simply
 hold. The tween still runs and continues LP-filtering `pos` toward `target`;
@@ -785,7 +785,7 @@ are NOT reset. The first new sample EMA-blends 40 / 60 with the pre-drop
 position, naturally resisting wild outliers from re-acquire frames. This was
 the key fix for the "freaking out on re-acquire" pathology.
 
-### Eye/neck soft limits
+### Eye/Neck Soft Limits
 
 | Constant | Value | Notes |
 |----------|-------|-------|
@@ -794,7 +794,7 @@ the key fix for the "freaking out on re-acquire" pathology.
 | `NECK_MIN` / `NECK_MAX` | `20` / `80` | NR tracking range |
 | `NE_MIN` / `NE_MAX` | `18` / `100` | NE tracking range |
 
-### Eye/neck coordination thresholds
+### Eye/Neck Coordination Thresholds
 
 | Constant | Value | Axis | Notes |
 |----------|-------|------|-------|
@@ -803,7 +803,7 @@ the key fix for the "freaking out on re-acquire" pathology.
 | `NECK_FULL_UNLOCK` | `0.80` | both | Neck at 80% → eye uses full range |
 | `EYE_FULL_UNLOCK` | `0.90` | both | Eye at 90% → both axes unlock |
 
-### Camera / input
+### Camera / Input
 
 | Constant | Value | Notes |
 |----------|-------|-------|
@@ -817,7 +817,7 @@ the key fix for the "freaking out on re-acquire" pathology.
 
 ---
 
-## 15. Face-tracking Performance: Hardware Ceiling (session 18, 2026-06-03)
+## 15. Face-Tracking Performance: Hardware Ceiling (Session 18, 2026-06-03)
 
 Definitive measurements with three-tier instrumentation (HAL arrival, ML Kit inference, end-to-end pipeline). All numbers from a clean run with no audio/voice load.
 
@@ -837,7 +837,7 @@ Definitive measurements with three-tier instrumentation (HAL arrival, ML Kit inf
 4. **Buffer pool of 4** (was 2) reduces backpressure drops from ~6% to ~2%. Marginal but real. Going higher gives diminishing returns.
 5. **Camera thread priority matters for audio coexistence.** ML Kit lazily spawns its inference worker pool on the FIRST `detector.process()` call, and the workers inherit the calling thread's nice value. Opening the camera on the `mabu-camera-vision` HandlerThread at nice +5 means future URGENT_AUDIO threads (nice -19) will preempt face detection. Required pattern when audio/voice work lands.
 
-### Diagnostic playbook (when "tracking feels off")
+### Diagnostic Playbook (When "Tracking Feels Off")
 
 Read the three Logcat lines emitted every ~5 s:
 
@@ -853,7 +853,7 @@ Interpretation:
 - **Pipeline interval max ≫ 200 ms** → multiple consecutive drops. Investigate inference tail and GC; consider reducing per-frame allocations.
 - **Native heap growing every window** → leak. Should stay ~13–15 MB indefinitely.
 
-### Future levers (NOT pulled yet, out of scope for current session)
+### Future Levers (NOT Pulled Yet, Out of Scope for Current Session)
 
 - Pre-allocate the per-frame `InputImage` byte buffer to remove that allocation from the GC hot path.
 - Replace ML Kit with a smaller tflite face detector (Mobile FaceNet variants run in ~10 ms on Cortex-A17). Would unlock 30+ fps if HAL cooperated, but HAL is the cap, so the practical gain is just CPU headroom for other work.

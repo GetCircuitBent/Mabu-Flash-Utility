@@ -8,13 +8,13 @@
 
 ## 1. Environment
 
-### Device facts
+### Device Facts
 - **Android 8.1.0 (API 27)**: many newer Android APIs are unavailable
 - **Build type:** `user` (not `userdebug`); `adb root` fails
 - **ADB connection:** WiFi only at `192.168.0.180:5555`; no USB, no physical buttons
 - **ADB path (PC):** `X:\Claude\android platform-tools\adb.exe`
 
-### Build environment (PC)
+### Build Environment (PC)
 - **Java:** `C:\Program Files\Android\Android Studio\jbr`
 - **Gradle wrapper:** `./gradlew` in project root
 - **Active project:** `X:\Claude\Mabu\facetrackadb\` (package `com.mabu.facetrackadb`)
@@ -58,7 +58,7 @@ $adb = "X:\Claude\android platform-tools\adb.exe"
 `-r` = reinstall over existing app. **No bridge setup required**: `facetrackadb` opens
 `/dev/ttyS1` directly via JNI and self-initializes motors on startup.
 
-### After install: restart the app
+### After Install: Restart the App
 
 ```powershell
 $adb = "X:\Claude\android platform-tools\adb.exe"
@@ -70,7 +70,7 @@ Start-Sleep -Seconds 1
 The app opens `/dev/ttyS1` in its `MabuMotors.open()` call, sends the 5× cold-boot
 wake-up, and centers all motors. Expect ~2s before motors move.
 
-### Full deploy sequence (copy-paste)
+### Full Deploy Sequence (Copy-Paste)
 
 ```powershell
 $adb = "X:\Claude\android platform-tools\adb.exe"
@@ -87,16 +87,16 @@ Start-Sleep -Seconds 1
 
 ## 4. App Lifecycle Quirks
 
-### The home launcher
+### The Home Launcher
 `com.mabu.facetrackadb` **is** the Android HOME launcher; it auto-starts on every boot
 and relaunches after force-stop. After `am force-stop`, wait ~2s for the launcher to
 restart before sending further commands.
 
-### No bridge dependency
+### No Bridge Dependency
 `facetrackadb` opens `/dev/ttyS1` via JNI directly. There is no `motor-bridge.sh` process
 to worry about. Force-stop and restart are clean.
 
-### NEVER reboot via `adb reboot`
+### NEVER Reboot via `adb reboot`
 Running `adb reboot` has caused WiFi to not reconnect after boot on this unit, leaving the
 device permanently unreachable (no USB, no physical buttons). **Always ask the user to
 power-cycle the hardware instead.**
@@ -108,19 +108,19 @@ power-cycle the hardware instead.**
 The app registers a `BroadcastReceiver` for `com.mabu.facetrackadb.PAUSE_TRACKING`.
 This is the primary way to stop motor output from the PC during testing.
 
-### Pause face tracking (motors hold last position)
+### Pause Face Tracking (Motors Hold Last Position)
 ```powershell
 & "X:\Claude\android platform-tools\adb.exe" shell "am broadcast -a com.mabu.facetrackadb.PAUSE_TRACKING --ez paused true -p com.mabu.facetrackadb"
 ```
 
-### Resume face tracking
+### Resume Face Tracking
 ```powershell
 & "X:\Claude\android platform-tools\adb.exe" shell "am broadcast -a com.mabu.facetrackadb.PAUSE_TRACKING --ez paused false -p com.mabu.facetrackadb"
 ```
 
 When paused, the overlay shows `*** TRACKING PAUSED ***`. When resumed it shows `tracking active`.
 
-### Verify the broadcast was received
+### Verify the Broadcast Was Received
 ```powershell
 & "X:\Claude\android platform-tools\adb.exe" logcat -d -s MabuFaceTrack:I
 ```
@@ -147,7 +147,7 @@ Look for: `I MabuFaceTrack: trackingPaused=true`
 
 ## 7. Known API 27 (Android 8.1) Gotchas
 
-### `RECEIVER_EXPORTED` / `RECEIVER_NOT_EXPORTED` do not exist
+### `RECEIVER_EXPORTED` / `RECEIVER_NOT_EXPORTED` Do Not Exist
 These `Context` constants were added in API 33. On this device (API 27), calling
 `registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)` will silently fail
 (the 3-argument form with flags doesn't exist in API 27).
@@ -158,15 +158,15 @@ These `Context` constants were added in API 33. On this device (API 27), calling
 registerReceiver(receiver, IntentFilter("your.action"))
 ```
 
-### Background broadcast restrictions (Android 8+)
+### Background Broadcast Restrictions (Android 8+)
 Apps in the background cannot receive implicit broadcasts registered in the manifest.
 Dynamically registered receivers (in `onCreate`) still work while the app is in the
 foreground. Since `com.mabu.facetrack` is the HOME launcher it is always in the foreground.
 
-### Camera: use Camera1 API only
+### Camera: Use Camera1 API Only
 Mabu's camera HAL is a Camera1 shim. CameraX fails on this hardware. Use `Camera1Source.kt`.
 
-### SELinux and serial port access
+### SELinux and Serial Port Access
 SELinux denies `getattr` for `untrusted_app → serial_device`, but allows `open/read/write`.
 Java `FileOutputStream` calls `stat()` first (needs `getattr`) and fails. Native C `open()`
 bypasses `stat()` and succeeds. **Use JNI (`serial.c`); never Java I/O for `/dev/ttyS1`.**
