@@ -709,6 +709,90 @@ is marked `// TEMP` in `MabuMotors.kt`):
 
 ---
 
+## 6A. System Modifications (Replacing Files in `/system`, `/vendor`)
+> **Status: planning, not yet executed.** No unit has had this applied.
+> First candidate: replacing the stock `/system/media/bootanimation.zip`
+> (factory wavy-leaf animation) with a Get Circuit Bent–branded one.
+
+The Tier 2 SELinux patch (Section 6) already proved the core technique: with
+no root and `/system`/`/vendor` mounted read-only, a file can still be
+overwritten by locating its raw eMMC blocks and writing them directly via the
+Loader (`rkdeveloptool wl`) while dm-verity is disabled. That technique
+generalizes to **any** read-only-partition file, not just the sepolicy blob —
+but the validated case was a narrow one, and the constraints matter for what
+comes next.
+
+### Why the SELinux Patch Was the Easy Case
+The sepolicy patch worked as a direct block overwrite because the patched
+output was **byte-for-byte the same size** as the original (299,979 B → same
+74 ext4 blocks). A same-size in-place overwrite of an existing extent is safe
+regardless of fragmentation, because nothing about the file's block *layout*
+changes — only the bytes inside those blocks. The guide's own caveat:
+
+> if the new file is **larger** than the original and spills into an extra
+> block, a raw overwrite corrupts whatever file used to own that block. Only
+> raw-overwrite when out-size ≤ original block count.
+
+### Why `bootanimation.zip` Is a Different Case
+Stock `/system/media/bootanimation.zip` on the validated unit is **1,870,133
+bytes** (~457 4 KB blocks) vs. the sepolicy's 74 — an order of magnitude
+bigger, and much more likely to span multiple non-contiguous extents. Two
+viable paths, in order of preference:
+
+**Path A — same-size (or smaller, zero-padded) direct overwrite.**
+If we build a replacement zip that fits in ≤ 457 blocks *and* we can enumerate
+every extent the original occupies (not just the first one, unlike the
+sepolicy's single contiguous run), a block-for-block write is still just as
+safe as the SELinux case. Padding to the exact original byte count is **not**
+safe by default — Android's `bootanimation.zip` is read by scanning backward
+from EOF for the zip End-of-Central-Directory record, so trailing zero
+padding after a valid EOCD can break the scan. If padding is needed, it must
+go in the zip's own EOCD comment field (which has a length byte the scanner
+respects), not as raw bytes after the file.
+
+**Path B — dump, edit, and reflash the whole `/system` image.**
+The guide already names this as the fallback for oversized replacements
+(Section 5, "clean firmware flash" model) and it sidesteps the extent-mapping
+problem entirely by treating the whole partition as one unit. Cost: `/system`
+is almost certainly larger than the documented **28 MB Loader read-wedge per
+session** (`dump-system-cycled.ps1` handles the power-cycling this requires),
+and every write pass needs the unit re-opened on the **one-shot internal
+harness** — a real hardware session, not a WiFi ADB task.
+
+### Concrete Plan (Path A first, fall back to B)
+1. **Confirm the target unit is liberated** (dm-verity disabled) — a
+   prerequisite either way; a non-liberated unit can't have `/system` written
+   regardless of path. Check via the Quick Checklist (Section 9) / self-test.
+2. **Build the replacement animation**: standard Android bootanimation
+   format — `desc.txt` (dimensions/fps; this hardware is confirmed
+   **1024×600**) + `part0`/`part1` PNG frame folders, zipped with **no
+   compression** (store mode) on those folders, per AOSP's bootanimation spec.
+   Target ≤ 1,870,133 B.
+3. **Locate the file's extents.** `../Mabu/scripts/find-vendor-file.py` did
+   this for `/vendor`; it needs a `/system`-partition analogue (different
+   base LBA — re-derive per unit, same as the vendor LBA note in Section 6).
+   Unlike the sepolicy file, **do not assume a single contiguous extent** —
+   walk and record all of them.
+4. **Read-verify, write, read-verify** — same discipline as Section 6 Step 4:
+   confirm located bytes match the original before writing, write, then
+   read back and confirm they match the new file.
+5. **Reboot and visually confirm** the new animation plays.
+6. If extents can't be safely enumerated/fit (Path A fails), fall back to
+   Path B: `dump-system-cycled.ps1` → mount the image, replace the file
+   in-place in a proper filesystem (no extent math needed) → reflash whole
+   `/system` via Loader.
+
+### Open Questions Before Attempting This
+- No `find-system-file.py` exists yet (only the `/vendor` variant does).
+- Whether `bootanimation.zip` is single-extent on this build is unconfirmed —
+  unlike the sepolicy file, this hasn't been walked yet.
+- Creative asset (the actual branded animation) isn't built yet — see the
+  [[mabu-creeper-controller]] memory for the existing GCB mark
+  (`gcb_text_logo.png`: green cat-face + orange pixel-font wordmark) as the
+  likely visual starting point.
+
+---
+
 ## 7. Motor Calibration (per Unit)
 Motor mechanical zeros differ per unit and are wiped by the `/data` reformat.
 Two options:
