@@ -42,11 +42,27 @@
 #        (kills the set-device-owner init service definition)
 #   6. /system/bin/set-device-owner.sh data block at LBA 1,691,408 zeroed
 #        (defense-in-depth no-op script)
+#
+# Optional (-KeepRoot):
+#   7. /system/bin/adbd adbd_main() privilege-drop bypass
+#        adbd_main() at vaddr 0xBAA4 (file off 0x3AA4, LBA 1,694,581 byte 164):
+#        the drop-block entry `bl is_device_unlocked` (00 f0 56 fb) is replaced
+#        with `b.w 0xBBBE` (00 f0 8b b8), an unconditional jump to the
+#        keep-root path (minijail_enter with no change_uid/change_gid). This
+#        makes adbd stay uid 0 instead of dropping to AID_SHELL (2000), so
+#        `adb root` state is effectively always on. See ROOT-PATCH.md.
+#        SECURITY: anyone who can reach ADB (port 5555) then has uid-0 ADB,
+#        not just shell. Intended for the closed Mabu-hotspot deployment model
+#        where only the host device joins Mabu's own AP. Also: uid 0 is still
+#        confined by *enforcing* SELinux (shell domain) — this alone does NOT
+#        grant arbitrary /system writes over WiFi; that needs an SELinux
+#        relaxation too (see ROOT-PATCH.md "SELinux caveat").
 
 [CmdletBinding()]
 param(
     [switch] $DryRun,
-    [switch] $Reset
+    [switch] $Reset,
+    [switch] $KeepRoot   # opt-in persistent uid-0 adbd patch (see -KeepRoot note above)
 )
 
 $ErrorActionPreference = 'Stop'
@@ -77,6 +93,12 @@ $inputs = @(
     @{ Name='set-device-owner.sh-zero';     Lba=1691408; File='firmware/patches/zeros-4k.bin' },
     @{ Name='init.esper.rc-zero';           Lba=2076672; File='firmware/patches/zeros-4k.bin' }
 )
+
+# Opt-in persistent-root patch (adbd privilege-drop bypass). See -KeepRoot note above.
+if ($KeepRoot) {
+    $inputs += @{ Name='adbd-rootdrop-patched.bin'; Lba=1694581; File='firmware/patches/adbd-rootdrop-patched.bin' }
+    Write-Host "-KeepRoot: persistent uid-0 adbd patch INCLUDED (see ROOT-PATCH.md for scope + SELinux caveat)." -ForegroundColor Yellow
+}
 foreach ($i in $inputs) {
     $p = Join-Path $Root $i.File
     if (-not (Test-Path $p)) {
