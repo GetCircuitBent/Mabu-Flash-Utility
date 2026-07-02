@@ -739,16 +739,24 @@ bytes** (~457 4 KB blocks) vs. the sepolicy's 74 — an order of magnitude
 bigger, and much more likely to span multiple non-contiguous extents. Two
 viable paths, in order of preference:
 
-**Path A — same-size (or smaller, zero-padded) direct overwrite.**
+**Path A — same-or-smaller direct overwrite, with `i_size` patched to match.**
 If we build a replacement zip that fits in ≤ 457 blocks *and* we can enumerate
 every extent the original occupies (not just the first one, unlike the
-sepolicy's single contiguous run), a block-for-block write is still just as
-safe as the SELinux case. Padding to the exact original byte count is **not**
-safe by default — Android's `bootanimation.zip` is read by scanning backward
-from EOF for the zip End-of-Central-Directory record, so trailing zero
-padding after a valid EOCD can break the scan. If padding is needed, it must
-go in the zip's own EOCD comment field (which has a length byte the scanner
-respects), not as raw bytes after the file.
+sepolicy's single contiguous run), we only need to write as many leading
+blocks as the new content actually needs — the *inode's* `i_size` field
+controls the file's logical length, so it must be patched to the new byte
+count rather than left at the original. Zero-padding the replacement content
+itself to the original byte count does **not** work when the size gap is
+large: Android locates the zip's End-of-Central-Directory record by scanning
+only the **last 64KB** of the file (the EOCD comment-length field is 16-bit,
+max 65,535 B) — any gap bigger than that leaves the real EOCD outside the
+scan window regardless of where the padding lives. Confirmed for our built
+replacement (1.36MB vs. the stock 1.78MB, a ~515KB gap): patching `i_size` is
+required, not optional. See `assets/bootanimation/DEPLOY.md` for the worked
+procedure. **Caveat:** if the partition's `metadata_csum` feature is on (ext4
+checksums each inode), hand-patching `i_size` without recomputing that
+checksum corrupts the inode — check this before patching, fall back to Path B
+if so.
 
 **Path B — dump, edit, and reflash the whole `/system` image.**
 The guide already names this as the fallback for oversized replacements
@@ -759,37 +767,32 @@ session** (`dump-system-cycled.ps1` handles the power-cycling this requires),
 and every write pass needs the unit re-opened on the **one-shot internal
 harness** — a real hardware session, not a WiFi ADB task.
 
-### Concrete Plan (Path A first, fall back to B)
-1. **Confirm the target unit is liberated** (dm-verity disabled) — a
-   prerequisite either way; a non-liberated unit can't have `/system` written
-   regardless of path. Check via the Quick Checklist (Section 9) / self-test.
-2. **Build the replacement animation**: standard Android bootanimation
-   format — `desc.txt` (dimensions/fps; this hardware is confirmed
-   **1024×600**) + `part0`/`part1` PNG frame folders, zipped with **no
-   compression** (store mode) on those folders, per AOSP's bootanimation spec.
-   Target ≤ 1,870,133 B.
-3. **Locate the file's extents.** `../Mabu/scripts/find-vendor-file.py` did
-   this for `/vendor`; it needs a `/system`-partition analogue (different
-   base LBA — re-derive per unit, same as the vendor LBA note in Section 6).
-   Unlike the sepolicy file, **do not assume a single contiguous extent** —
-   walk and record all of them.
-4. **Read-verify, write, read-verify** — same discipline as Section 6 Step 4:
-   confirm located bytes match the original before writing, write, then
-   read back and confirm they match the new file.
-5. **Reboot and visually confirm** the new animation plays.
-6. If extents can't be safely enumerated/fit (Path A fails), fall back to
-   Path B: `dump-system-cycled.ps1` → mount the image, replace the file
-   in-place in a proper filesystem (no extent math needed) → reflash whole
-   `/system` via Loader.
+### Status: Asset Built, Tooling Staged, Awaiting Harness (2026-07-02)
+Everything doable without the physical unit is done. `assets/bootanimation/`:
+- `bootanimation.zip` (1,355,264 B, sha256 `da1a04e6...`) — GCB text logo
+  (unmodified, per the style guide) on Bluewood 900 `#1A242D`, with brand-
+  colored outlined sparkles (orange core/green rim and green core/orange rim)
+  twinkling around it. Built by `make_bootanim.py`. Fits Path A (well under
+  the stock 1,870,133 B).
+- `scripts/find_system_file.py` — the `/system` analogue of
+  `scripts/locate_vendor_policy.py`, generalized to arbitrary paths and
+  multi-extent aware (unlike the single-extent sepolicy case).
+- `/system` start LBA confirmed live on unit `2022010501476`: **`0x18C000`**
+  (`cat /sys/class/block/mmcblk1p11/start` over ADB) — this drifts per unit,
+  don't reuse blindly.
+- `assets/bootanimation/DEPLOY.md` — full step-by-step procedure, written as
+  a manual runbook (not a blind script) given the real risk of a botched
+  multi-extent write. Key finding during planning: the ~515KB size gap
+  between the new and stock zip is too big to hide via padding (zip EOCD
+  scan only checks the last 64KB) — the correct fix is patching the inode's
+  `i_size` field directly, writing only the blocks the new content needs,
+  and leaving the rest of the original extents untouched (wasted but
+  harmless once outside `i_size`).
 
-### Open Questions Before Attempting This
-- No `find-system-file.py` exists yet (only the `/vendor` variant does).
-- Whether `bootanimation.zip` is single-extent on this build is unconfirmed —
-  unlike the sepolicy file, this hasn't been walked yet.
-- Creative asset (the actual branded animation) isn't built yet — see the
-  [[mabu-creeper-controller]] memory for the existing GCB mark
-  (`gcb_text_logo.png`: green cat-face + orange pixel-font wordmark) as the
-  likely visual starting point.
+**Blocked on:** the internal USB programming harness being physically
+connected — WiFi ADB can catch Loader (`adb reboot loader`) but the actual
+`rkdeveloptool` read/write only works over USB. Once connected, follow
+`assets/bootanimation/DEPLOY.md` steps 1–7.
 
 ---
 
