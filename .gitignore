@@ -12,3 +12,4 @@ desktop.ini
 
 # Scratch / working dumps -- never commit these
 firmware/scratch/
+dumps/**/extracted/
