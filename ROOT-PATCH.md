@@ -74,14 +74,34 @@ DAC root, but MAC still applies:
 already allows, run tools that only needed DAC root, and skip the
 shell-vs-root friction for `/data`, props, etc.
 
-**To actually do `/system` writes over WiFi** you'd pair this with an SELinux
-relaxation — the repo already has the tooling (on-device `magiskpolicy` +
-`locate_vendor_policy.py`, used for the motor `serial_device` rule). Either
-add `allow`/`permissive` rules for the shell (or adbd) domain to remount and
-write `system_file`, or make that domain `permissive`. That's a deliberate,
-separate step (bigger blast radius than the motor rule) — not done here.
-Until then, `/system` changes (like the boot animation) still go through the
-Loader harness path in `assets/bootanimation/DEPLOY.md`.
+**This is now paired into `-KeepRoot`.** When you flash with `-KeepRoot`,
+`flash-mabu.ps1` Phase 7 adds `permissive shell` to the sepolicy alongside the
+motor rule (same on-device `magiskpolicy` mechanism), so the shell domain is
+unconfined and uid-0 adbd can remount + write `/system` over WiFi. So the full
+pair (`-KeepRoot` = adbd uid-0 patch **+** permissive shell) is what actually
+delivers "WiFi /system writes."
+
+**Size guard — the reason this isn't a fully hands-off step.** The motor rule
+was a same-size bit-flip (299,979 B), so the raw Loader overwrite (`wl` at the
+policy's data blocks) was block-safe with no inode change. `permissive shell`
+may *grow* the binary policy. Phase 7 measures `sepolicy.out` on-device and:
+- **same size** → writes it (safe, as before);
+- **grew but ≤ 303,104 B** (still 74 blocks) → **stops** and points here,
+  because the inode `i_size` must also be patched to the new size (same class
+  of fix as the boot animation) or the kernel loads a truncated policy and the
+  device may not boot cleanly — Phase 7 does not do i_size patching inline;
+- **grew past 74 blocks** → **stops**, use the full `/vendor` reflash path.
+
+If Phase 7 stops on a grown policy, patch `i_size` the same way
+`assets/bootanimation/DEPLOY.md` step 5 describes, using
+`scripts/locate_vendor_policy.py <vendor-dump> 0x592000` to get the sepolicy
+inode's `INODE_LBA`/`INODE_OFFSET`, then write the data blocks + patched inode
+via Loader. (The `permissive`-ebitmap growth is often zero or a few bytes, so
+the same-size fast path frequently applies — but it's measured live, not
+assumed.)
+
+Until the pair is flashed, `/system` changes (like the boot animation) still
+go through the Loader harness path in `assets/bootanimation/DEPLOY.md`.
 
 ## Verify after flashing
 ```powershell

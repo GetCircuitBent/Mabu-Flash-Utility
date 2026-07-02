@@ -48,6 +48,7 @@ param(
     [switch] $RestoreMabu,       # install factorymode + push animations/voice assets
     [switch] $SkipApps,          # only do Loader-side patches; no F-Droid/Lawnchair
     [switch] $SkipSELinux,       # skip the SELinux policy fix (already applied, or not needed)
+    [switch] $KeepRoot,          # persistent uid-0 adbd + permissive shell domain (WiFi /system writes). See ROOT-PATCH.md.
     [string] $WifiIp = '192.168.0.18',  # initial hint only; auto-discovered from the device (wlan0) at runtime
     [string] $UsbSerial,         # if known; else autodetect
     [string] $LawnchairApk = 'apks/Lawnchair.apk',
@@ -224,14 +225,19 @@ function Get-DeviceWifiIp {
 function Apply-SELinuxFix {
     # Patch /vendor/etc/selinux/precompiled_sepolicy to allow untrusted_app to
     # open/write serial_device (needed for the facetrack app to drive the motors).
+    # With -PermissiveShell, ALSO make the `shell` domain permissive so uid-0
+    # adbd (the -KeepRoot patch) can remount and write /system over WiFi.
     # Uses on-device magiskpolicy (ARM), pulls the result, then writes it via Loader.
-    #   Stock SHA:   7f26df2d...
-    #   Patched SHA: 03f180a2...
-    param([string] $Dev)
+    #   Stock SHA:        7f26df2d...
+    #   Motor-only SHA:   03f180a2... (299,979 B, same-size bit-flip -> raw overwrite safe)
+    #   +permissive shell: size/SHA measured live (permissive may GROW the policy;
+    #                      guarded below -- see ROOT-PATCH.md "SELinux caveat").
+    param([string] $Dev, [switch] $PermissiveShell)
     Section 'SELinux policy fix'
     $sha = (& $ADB -s $Dev shell 'sha256sum /vendor/etc/selinux/precompiled_sepolicy 2>/dev/null' 2>&1) -join ''
-    if ($sha -match '03f180a2') { Ok 'SELinux policy already patched (03f180a2) -- skipping.'; return }
-    if ($sha -match '7f26df2d') { Info 'Stock policy confirmed (7f26df2d) -- applying fix.' }
+    if (-not $PermissiveShell -and $sha -match '03f180a2') { Ok 'SELinux policy already patched (03f180a2) -- skipping.'; return }
+    if ($sha -match '7f26df2d') { Info 'Stock policy confirmed (7f26df2d).' }
+    elseif ($sha -match '03f180a2') { Info 'Motor-rule policy present (03f180a2); adding permissive shell on top.' }
     else { Warn "Unexpected policy SHA: $sha -- proceeding anyway." }
 
     $mp = Join-Path $Root 'tools/magiskpolicy/magiskpolicy-armeabi-v7a'
@@ -239,16 +245,42 @@ function Apply-SELinuxFix {
     & $ADB -s $Dev push $mp /data/local/tmp/magiskpolicy 2>&1 | Out-Null
     & $ADB -s $Dev shell 'chmod 755 /data/local/tmp/magiskpolicy' 2>&1 | Out-Null
 
-    $r = & $ADB -s $Dev shell "cp /vendor/etc/selinux/precompiled_sepolicy /data/local/tmp/sepolicy.in && /data/local/tmp/magiskpolicy --load /data/local/tmp/sepolicy.in --save /data/local/tmp/sepolicy.out 'allow untrusted_app serial_device chr_file { open read write getattr ioctl }' && echo PATCH_OK" 2>&1
+    # Build the magiskpolicy rule list. Motor rule always; permissive shell opt-in.
+    $rules = @("'allow untrusted_app serial_device chr_file { open read write getattr ioctl }'")
+    if ($PermissiveShell) { $rules += "'permissive shell'"; Warn 'Including: permissive shell (uid-0 adbd -> WiFi /system writes). See ROOT-PATCH.md.' }
+    $ruleArgs = $rules -join ' '
+
+    $r = & $ADB -s $Dev shell "cp /vendor/etc/selinux/precompiled_sepolicy /data/local/tmp/sepolicy.in && /data/local/tmp/magiskpolicy --load /data/local/tmp/sepolicy.in --save /data/local/tmp/sepolicy.out $ruleArgs && echo PATCH_OK" 2>&1
     if ($r -notmatch 'PATCH_OK') { Warn "magiskpolicy failed: $($r -join ' ') -- skipping."; return }
     Ok 'On-device patch succeeded.'
+
+    # Size guard: the raw Loader overwrite (wl at the file's data blocks) is only
+    # block-safe if the patched policy still fits the original's allocated blocks.
+    # The motor bit-flip kept 299,979 B exactly. `permissive shell` may grow it.
+    $inSize  = [int]((& $ADB -s $Dev shell 'stat -c %s /data/local/tmp/sepolicy.in'  2>&1) -join '').Trim()
+    $outSize = [int]((& $ADB -s $Dev shell 'stat -c %s /data/local/tmp/sepolicy.out' 2>&1) -join '').Trim()
+    Info "sepolicy size: in=$inSize out=$outSize bytes (74 blocks = 303,104 B allocated)"
 
     $outFile = Join-Path $Root 'firmware\scratch\sepolicy.patched'
     & $ADB -s $Dev pull /data/local/tmp/sepolicy.out $outFile 2>&1 | Out-Null
     if (-not (Test-Path $outFile)) { Warn 'Pull failed -- skipping Loader write.'; return }
     $patchedSha = (Get-FileHash $outFile -Algorithm SHA256).Hash.ToLower()
     Info "Patched SHA256: $patchedSha"
-    if ($patchedSha -notmatch '^03f180a2') { Warn "Patched SHA unexpected ($patchedSha) -- aborting Loader write."; return }
+
+    if (-not $PermissiveShell) {
+        # Motor-only path: unchanged, expect the known same-size result.
+        if ($patchedSha -notmatch '^03f180a2') { Warn "Patched SHA unexpected ($patchedSha) -- aborting Loader write."; return }
+    } else {
+        if ($outSize -eq $inSize) {
+            Ok "permissive-shell policy is same size ($outSize B) -> raw overwrite is block-safe, no i_size patch needed."
+        } elseif ($outSize -le 303104) {
+            Warn "permissive-shell policy GREW to $outSize B (was $inSize). Still <= 74 blocks, but the inode i_size MUST be patched to $outSize or the kernel reads a truncated policy. Phase 7 does NOT do i_size patching -- STOP and follow ROOT-PATCH.md 'SELinux caveat' (locate_vendor_policy.py -> patch i_size -> write blocks). Not writing automatically."
+            return
+        } else {
+            Warn "permissive-shell policy is $outSize B > 303,104 B (74 blocks) -- does NOT fit a raw overwrite. Use the full /vendor reflash path. Not writing."
+            return
+        }
+    }
 
     Info 'Entering Loader for policy write...'
     & $ADB -s $Dev shell reboot loader 2>&1 | Out-Null
@@ -434,9 +466,13 @@ Confirm-LoaderWinUsb
 
 # --- Phase 2: Apply patches ---
 Section 'Applying liberation patches'
-& (Join-Path $Root 'scripts/liberate-mabu.ps1')
+if ($KeepRoot) {
+    & (Join-Path $Root 'scripts/liberate-mabu.ps1') -KeepRoot
+} else {
+    & (Join-Path $Root 'scripts/liberate-mabu.ps1')
+}
 if ($LASTEXITCODE -ne 0) { Fail 'liberate-mabu.ps1 failed.'; exit 1 }
-Ok 'All 8 patches written.'
+Ok 'Liberation patches written.'
 
 # --- Phase 3: /data wipe (State A / forced / undetermined) ---
 # A single Loader session can do all 8 small patch writes OR a 96 MB wipe,
@@ -588,7 +624,7 @@ if (-not $SkipApps -and -not $SkipSELinux) {
     # the assets push, so allow USB fallback -- SELinux only does small shell ops.
     $selinuxDev = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 120
     if (-not $selinuxDev) { $selinuxDev = $dev }
-    Apply-SELinuxFix -Dev $selinuxDev
+    Apply-SELinuxFix -Dev $selinuxDev -PermissiveShell:$KeepRoot
 }
 
 # --- Phase 8: Self-test ---
