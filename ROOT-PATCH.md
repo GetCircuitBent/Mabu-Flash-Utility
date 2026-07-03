@@ -1,5 +1,10 @@
 # Persistent-Root adbd Patch (`-KeepRoot`)
 
+> **BLOCKED (2026-07-02): this patch bootloops unit 2022010501476 — reproduced
+> twice. Do NOT flash `-KeepRoot` until diagnosed. See
+> [`KEEPROOT-BOOTLOOP-BLOCKED.md`](KEEPROOT-BOOTLOOP-BLOCKED.md).**
+
+
 Makes `/system/bin/adbd` stay **uid 0** instead of dropping to `AID_SHELL`
 (2000) at startup, so `adb root` is effectively always on and future changes
 can (partly — see the SELinux caveat) be done over WiFi ADB instead of the
