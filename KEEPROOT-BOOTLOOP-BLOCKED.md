@@ -1,12 +1,47 @@
-# `-KeepRoot` BOOTLOOP — BLOCKED, do not re-flash until diagnosed
+# `-KeepRoot` BOOTLOOP — ROOT CAUSE FOUND (not the patch)
 
-**Status (2026-07-02): the `-KeepRoot` adbd uid-0 rootdrop patch bootloops unit
-2022010501476. Reproduced TWICE on two independent flashes. Do NOT flash
-`-KeepRoot` again until the root cause below is confirmed and fixed.**
+## CORRECTION (2026-07-02, later session) — the patch is NOT the cause
+Deeper diagnosis DISPROVED the "the rootdrop patch bootloops" conclusion below.
+The real cause is a **factory burn-in app**, not the adbd patch:
 
-The rest of liberation (parameter/verity, adbd auth-bypass, Esper EOCD nukes,
-init.esper.rc zero) is fine and unchanged. Only the persistent-root patch is
-implicated.
+- **`com.cghs.stresstest`** (system-uid stress/burn-in test) auto-launches at
+  boot, drives the UI (endless `am_restart_activity` into Settings screens), and
+  **reboots the device** via its `StressTest`/`rebootFlag` receiver
+  (`RecoveryReceiver` reads `/mnt/external_sd/Recovery_state`). Caught live in
+  `firmware/scratch/bootloop-capture.txt`: `Start proc ...com.cghs.stresstest`,
+  then `D/StressTest: onReceive rebootFlag`, then every system service dies at
+  once (a clean userspace reboot). No kernel panic (pstore/last_kmsg empty).
+- **The rootdrop patch is provably CORRECT for this build.** Pulled the LIVE
+  `/system/bin/adbd`: it matches `firmware/originals/adbd.bin` byte-for-byte
+  except the 3 known auth-patch bytes (0x1c438/0x1c439/0xd311c). Disassembly
+  (capstone) confirms `0xBAA4` is `bl` and `b.w 0xBBBE` lands on the genuine
+  keep-root path — the code ALREADY branches there via `bne.w #0xbbbe` at
+  `0xBAA0`, with identical register state. So forcing keep-root is sound.
+
+**Fix / plan to actually root it (resume here):**
+1. Boot the unit; catch an adb window (they recur ~every 40s, ~20s long during
+   the loop — or just when it happens to reach home).
+2. `pm disable-user --user 0 com.cghs.stresstest` (persists in /data; also
+   `am force-stop` it first). Disable `com.catalia.factorymode` defensively
+   (re-enableable — it's the wanted motor-diagnostics app, so re-enable later).
+3. With the reboot source gone, the already-applied uid-0 rootdrop patch boots
+   and stays up → `adb shell id` should read `uid=0(root)`.
+4. Then apply the permissive-shell sepolicy (Phase 7) for WiFi /system writes.
+
+**Current unit state at session close (2026-07-02):** rootdrop patch IS applied
+(re-flashed + verified sha `7da6ee29…`). Device last booted to Android. Stress
+test NOT yet disabled (host USB adb enumeration was too flaky to land the
+`pm disable`). Tooling installed: capstone/keystone/pyelftools in the active
+python; `firmware/scratch/` holds `adbd-live.bin`, `bootloop-capture.txt`, the
+disassembly, and screencap. Watchers/scripts left in `/tmp` (`killstress2.sh`
+etc.).
+
+---
+## ORIGINAL (SUPERSEDED) conclusion — kept for history
+**The rest of liberation (parameter/verity, adbd auth-bypass, Esper EOCD nukes,
+init.esper.rc zero) is fine and unchanged.** The section below hypothesized the
+patch itself bootloops (build-offset mismatch); that hypothesis is WRONG per the
+correction above — the live-vs-original binary diff proved the offset is right.
 
 ## What happened
 1. Flashed `flash-mabu.ps1 -KeepRoot`. All 9 Loader writes reported `OK`,
