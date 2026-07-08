@@ -10,6 +10,8 @@
 
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="27" />
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
+    <!-- for suggestDesiredDimensions (force the wallpaper surface to screen size) -->
+    <uses-permission android:name="android.permission.SET_WALLPAPER_HINTS" />
 
     <application
         android:label="GCB Wallpaper"

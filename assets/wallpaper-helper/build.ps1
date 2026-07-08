@@ -1,7 +1,10 @@
 # build.ps1 -- build the GCB wallpaper helper APK (no Gradle; raw build-tools).
 # Output: <worktree>/apks/gcb-wallpaper.apk. Repeatable; run after changing the
 # source or regenerating res/drawable-nodpi/gcb_wallpaper.png (make_wallpaper.py).
-$ErrorActionPreference = 'Stop'
+# NOTE: 'Continue' (not 'Stop') -- the build tools (javac deprecation Notes, etc.)
+# write to stderr, which under 'Stop' becomes a fatal NativeCommandError. Real
+# failures are caught by the explicit `if ($LASTEXITCODE) { throw }` checks below.
+$ErrorActionPreference = 'Continue'
 $here = $PSScriptRoot
 $root = (Resolve-Path (Join-Path $here '..\..')).Path
 $sdk  = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
