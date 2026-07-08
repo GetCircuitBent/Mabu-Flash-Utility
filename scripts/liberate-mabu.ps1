@@ -62,12 +62,26 @@
 param(
     [switch] $DryRun,
     [switch] $Reset,
-    [switch] $KeepRoot   # opt-in persistent uid-0 adbd patch (see -KeepRoot note above)
+    [switch] $KeepRoot,             # opt-in persistent uid-0 adbd patch (see -KeepRoot note above)
+    [switch] $AllowKnownBrokenRoot  # override the KNOWN-BROKEN -KeepRoot gate (patch-rework re-testing ONLY)
 )
 
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
 $Rk   = Join-Path $Root 'tools\rkdeveloptool\rkdeveloptool.exe'
+
+# -KeepRoot safety gate -- the rootdrop patch is KNOWN-BROKEN on the H7R build.
+# PROVEN 2026-07-07 (unit 2022010500003): the patched adbd does not come up (no USB
+# adb gadget, no TCP listener) -> adb dies, root NOT achieved. The write is correct;
+# the patched adbd is non-functional at runtime. Reverting the sector to stock restores
+# adb. Rework the patch before use. See ROOT-PATCH.md / mabuflash-keeproot-hardening.
+if ($KeepRoot -and -not $AllowKnownBrokenRoot) {
+    Write-Host "-KeepRoot rootdrop patch is KNOWN-BROKEN on this H7R build: the patched adbd" -ForegroundColor Red
+    Write-Host "does not start (no adb, no root). Proven 2026-07-07 on unit 2022010500003;" -ForegroundColor Red
+    Write-Host "reverting the sector to stock restored adb. Rework the patch first." -ForegroundColor Red
+    Write-Host "To re-test a REWORKED patch, re-run with -AllowKnownBrokenRoot." -ForegroundColor Red
+    exit 1
+}
 
 function Test-Loader {
     $out = & $Rk ld 2>&1

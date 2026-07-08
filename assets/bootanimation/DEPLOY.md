@@ -1,5 +1,16 @@
 # Deploying the GCB Boot Animation
 
+> **Automated now (2026-07-07):** `flash-mabu.ps1 -Branded` does all of the below —
+> reads the per-unit `/system` LBA over adb, dumps the head, runs
+> `scripts/stage_bootanim.py` to locate + verify + plan the write, then flashes and
+> read-verifies. **Run `-BrandedPlanOnly` first** to preview the plan with zero
+> device writes. The planner refuses unless the located inode's `i_size` equals the
+> stock size (proves it found the real file) and `metadata_csum` is OFF. The manual
+> steps below remain the reference / fallback. NOT yet hardware-validated — do the
+> plan-only preview on the first real unit.
+
+
+
 Replaces `/system/media/bootanimation.zip` on a **confirmed-liberated** unit
 via the raw-eMMC same-size-overwrite technique (Path A, FLASH-A-NEW-MABU.md
 Section 6A) — same core technique as the validated Tier 2 SELinux patch, but

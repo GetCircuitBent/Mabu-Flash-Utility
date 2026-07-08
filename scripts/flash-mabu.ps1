@@ -19,7 +19,9 @@
 #     liberate it. -> patch-only (skips the 96 MB wipe, far less USB traffic).
 #   Override the auto choice with -WipeData (force wipe) or -NoWipe (force
 #   patch-only). If state can't be determined (e.g. Loader was already caught,
-#   so there's no Android to probe), the SAFE DEFAULT is to wipe.
+#   so there's no Android to probe), the script ABORTS and asks for an explicit
+#   -WipeData / -NoWipe rather than guessing -- a wrong wipe destroys data AND can
+#   trigger the factory burn-in bootloop. -KeepRoot never implies a wipe.
 #
 # Transport rule (matches FLASH-A-NEW-MABU.md): USB is used ONLY when 100%
 # necessary -- the Loader flash itself and the adb 'reboot loader' calls that
@@ -49,6 +51,9 @@ param(
     [switch] $SkipApps,          # only do Loader-side patches; no F-Droid/Lawnchair
     [switch] $SkipSELinux,       # skip the SELinux policy fix (already applied, or not needed)
     [switch] $KeepRoot,          # persistent uid-0 adbd + permissive shell domain (WiFi /system writes). See ROOT-PATCH.md.
+    [switch] $AllowKnownBrokenRoot, # override the KNOWN-BROKEN -KeepRoot gate (patch-rework re-testing ONLY -- see gate below)
+    [switch] $Branded,           # deploy the GCB boot animation (/system bootanimation.zip via Loader). See BRANDED-EDITION-SPEC.md.
+    [switch] $BrandedPlanOnly,   # -Branded preview: locate + verify + print the write plan, but do NOT write anything
     [string] $WifiIp = '192.168.0.18',  # initial hint only; auto-discovered from the device (wlan0) at runtime
     [string] $UsbSerial,         # if known; else autodetect
     [string] $LawnchairApk = 'apks/Lawnchair.apk',
@@ -195,6 +200,10 @@ function Find-AdbDevice {
             # a scalar string, so $usb[0] would index its first CHARACTER (e.g.
             # '2' of 2022...), producing "device '2' not found".
             $usb = @(& $ADB devices 2>&1 | Where-Object { $_ -match '^\S+\s+device$' -and $_ -notmatch ':\d+\s+device$' })
+            # If a specific USB serial was requested (a multi-tablet bench may have
+            # OTHER adb devices attached), only ever select that one -- never touch
+            # an unrelated device.
+            if ($script:UsbSerial) { $usb = @($usb | Where-Object { ($_ -split '\s+')[0] -eq $script:UsbSerial }) }
             if ($usb.Count -gt 0) {
                 $serial = ($usb[0] -split '\s+')[0]
                 $ok = & $ADB -s $serial shell echo ok 2>&1
@@ -220,6 +229,55 @@ function Get-DeviceWifiIp {
     }
     if ($ip -match '^\d{1,3}(\.\d{1,3}){3}$') { return $ip }
     return $null
+}
+
+function Confirm-RootPatchApplies {
+    # BRICK GUARD for -KeepRoot. The rootdrop patch overwrites adbd's sector 29
+    # (file offset 0x3A00, 512 bytes) with a PRECOMPUTED sector that differs from
+    # the reference by exactly 2 bytes. That is only safe if THIS unit's live adbd
+    # sector 29 is byte-identical to the reference the patch was built against
+    # (firmware/originals/adbd-rootdrop-orig.bin). A different adbd build => the
+    # write clobbers unrelated bytes and corrupts adbd (adb/boot break). If it
+    # doesn't match, abort and tell the operator to rebuild the patch against this
+    # unit (scripts/build_root_patch.py). See ROOT-PATCH.md / ROOT-A-FRESH-MABU.md.
+    param([string] $Dev)
+    Section '-KeepRoot: verifying root patch matches this unit''s adbd'
+    $orig = Join-Path $Root 'firmware/originals/adbd-rootdrop-orig.bin'
+    if (-not (Test-Path $orig)) { Fail "Missing reference $orig -- cannot verify. Aborting -KeepRoot."; exit 1 }
+    if (-not $Dev) {
+        Fail 'No booted adb device to pull the live adbd from. -KeepRoot must verify the patch'
+        Fail 'against the target unit BEFORE flashing. Boot to Android and re-run.'
+        exit 1
+    }
+    $scratch = Join-Path $Root 'firmware/scratch'
+    New-Item -ItemType Directory -Force $scratch | Out-Null
+    $live = Join-Path $scratch 'adbd-live.bin'
+    Remove-Item $live -ErrorAction SilentlyContinue
+    Info "Pulling /system/bin/adbd from $Dev ..."
+    # adb prints its "1 file pulled ..." progress to STDERR; under the script's
+    # $ErrorActionPreference='Stop' a 2>&1 capture turns that benign line into a
+    # terminating NativeCommandError and aborts the run. Drop to Continue around the
+    # pull (same guard the script uses for the adb-server pre-start), then restore.
+    $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    & $ADB -s $Dev pull /system/bin/adbd $live 2>&1 | Out-Null
+    $ErrorActionPreference = $eap
+    if (-not (Test-Path $live)) { Fail 'Could not pull /system/bin/adbd. Aborting -KeepRoot.'; exit 1 }
+    $bytes = [System.IO.File]::ReadAllBytes($live)
+    if ($bytes.Length -lt 0x3C00) { Fail "Live adbd is only $($bytes.Length) bytes -- unexpected. Aborting -KeepRoot."; exit 1 }
+    $origSector = [System.IO.File]::ReadAllBytes($orig)
+    $match = ($origSector.Length -eq 512)
+    if ($match) { for ($i = 0; $i -lt 512; $i++) { if ($bytes[0x3A00 + $i] -ne $origSector[$i]) { $match = $false; break } } }
+    if (-not $match) {
+        Fail 'Live adbd sector 29 does NOT match the reference the root patch was built from.'
+        Fail 'This unit likely ships a different adbd build; writing the precomputed patch would'
+        Fail 'corrupt adbd. Rebuild the patch against THIS unit first:'
+        Fail "  1. adb -s $Dev pull /system/bin/adbd firmware/originals/adbd.bin"
+        Fail '  2. python scripts/build_root_patch.py   (asserts the drop-block entry is a bl,'
+        Fail '     then regenerates firmware/patches/adbd-rootdrop-patched.bin)'
+        Fail '  3. re-run with -KeepRoot once the new patch is confirmed.'
+        exit 1
+    }
+    Ok 'Live adbd sector 29 matches the reference -- root patch will apply cleanly (2-byte edit only).'
 }
 
 function Apply-SELinuxFix {
@@ -403,6 +461,209 @@ function Enable-WifiAdb {
     return $null
 }
 
+function Deploy-BootAnimation {
+    # Replace /system/media/bootanimation.zip with the GCB branded zip via the
+    # Loader same-inode overwrite + i_size patch (assets/bootanimation/DEPLOY.md).
+    # No root: /system is writable on a liberated (verity-off) unit.
+    #
+    # Safety: scripts/stage_bootanim.py locates the file by directory walk and
+    # REFUSES unless the located inode's i_size equals the stock size (proves we
+    # found the real stock file) and metadata_csum is OFF. -PlanOnly stops before
+    # any write so the plan can be eyeballed on the real unit first. Every write is
+    # read-verified afterward. NOT yet hardware-validated -- run -BrandedPlanOnly
+    # first. $Dev = a live adb device (for the verity check + /system start LBA).
+    param([string] $Dev, [switch] $PlanOnly)
+    Section 'Branding: GCB boot animation'
+    $zip = Join-Path $Root 'assets/bootanimation/bootanimation.zip'
+    $py  = Join-Path $Root 'scripts/stage_bootanim.py'
+    if (-not (Test-Path $zip)) { Warn "Branded zip not found: $zip -- skipping."; return }
+    if (-not (Test-Path $py))  { Warn "stage_bootanim.py not found -- skipping."; return }
+    if (-not $Dev) { Warn 'No adb device to read /system start LBA / verity -- skipping branding.'; return }
+
+    # 1. verity must be OFF (liberated) or the kernel won't mount a modified /system
+    $vm = (& $ADB -s $Dev shell 'getprop ro.boot.veritymode' 2>&1) -join ''
+    if ($vm -notmatch 'disabled') { Warn "dm-verity is '$vm' (not disabled) -- refusing to write /system. Liberate first."; return }
+
+    # 1b. inode + size straight from the device (skips the ext4 directory walk, which
+    #     would need directory-data blocks that can sit beyond the dumpable head).
+    # No spaces/quotes in the format string: nested quotes get mangled through
+    # PowerShell -> Windows adb.exe -> device shell (stat then treats %s as a file).
+    $statOut = (& $ADB -s $Dev shell 'stat -c %i:%s /system/media/bootanimation.zip' 2>&1) -join ' '
+    $mi = [regex]::Match($statOut, '(\d+):(\d+)')
+    if (-not $mi.Success) { Warn "Could not stat bootanimation.zip (got '$statOut') -- skipping."; return }
+    $bootInode = [int]$mi.Groups[1].Value
+    $bootSize  = [int64]$mi.Groups[2].Value
+    Info "bootanimation.zip on device: inode=$bootInode size=$bootSize"
+    if ($bootSize -ne 1870133) { Warn "On-device size $bootSize != stock 1,870,133 -- not the stock file (already branded / different build). Skipping."; return }
+
+    # 2. Determine /system's rkdeveloptool (raw eMMC) LBA. IMPORTANT: the kernel's
+    #    /sys .../start is NOT the rl address on this hardware -- rl reads zeros there.
+    #    The real ext4 superblock sits at the parameter file's (system) LBA (0x18A000),
+    #    ~0x2000 sectors BELOW the /sys value (0x18C000). rkdeveloptool has no GPT
+    #    ('ppt' = none), it's pure raw LBA. So gather candidates and (step 4) pick the
+    #    one whose sector actually carries the ext4 superblock.
+    $cands = New-Object System.Collections.Generic.List[uint64]
+    $pf = Join-Path $Root 'firmware/originals/parameter.img'
+    if (Test-Path $pf) {
+        $ptxt = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($pf))
+        $mm = [regex]::Match($ptxt, '@0x([0-9A-Fa-f]+)\(system\)')
+        if ($mm.Success) { $cands.Add([Convert]::ToUInt64($mm.Groups[1].Value, 16)) }
+    }
+    $sysRaw = (& $ADB -s $Dev shell 'cat /sys/class/block/mmcblk1p11/start' 2>&1) -join ''
+    $sysLba = 0; [void][uint64]::TryParse(($sysRaw -replace '\D', ''), [ref]$sysLba)
+    if ($sysLba -gt 0x2000) { $cands.Add([uint64]($sysLba - 0x2000)); $cands.Add([uint64]$sysLba) }
+    $cands = @($cands | Where-Object { $_ -gt 0 } | Select-Object -Unique)
+    if ($cands.Count -eq 0) { Warn 'Could not determine any /system LBA candidate -- skipping.'; return }
+    Info ('/system LBA candidates (rl-space): ' + (($cands | ForEach-Object { '0x{0:X}' -f $_ }) -join ', '))
+
+    # 3. Loader + WinUSB for the dump/writes
+    Info 'Entering Loader for the /system dump...'
+    & $ADB -s $Dev shell reboot loader 2>&1 | Out-Null
+    for ($i = 0; $i -lt 30; $i++) { Start-Sleep -Seconds 1; if (Test-Loader) { break } }
+    if (-not (Test-Loader)) { Warn 'Loader not caught -- skipping branding.'; return }
+    Confirm-LoaderWinUsb
+
+    # 4. Dump /system head in 4 MB chunks. KNOWN read-wedge: a fresh Loader session
+    #    reliably yields ~5-6 4 MB reads (~20-24 MB) before wedging; a single 28 MB
+    #    read trips it on chunk 0 and returns all zeros. So read chunk-by-chunk into
+    #    one file, up to a safe budget, then validate the ext4 superblock (chunk 0).
+    #    ~24 MB covers the file's metadata (the 28 MB head worked for staging).
+    $scratch = Join-Path $Root 'assets/bootanimation/scratch'
+    New-Item -ItemType Directory -Force $scratch | Out-Null
+    $dump = Join-Path $scratch 'system-head.img'
+    Remove-Item $dump -ErrorAction SilentlyContinue
+    & $RK ld 2>&1 | Out-Null; Start-Sleep -Seconds 2
+    $chunkSectors = 8192          # 4 MB
+    $maxChunks    = 6             # ~24 MB, under the ~6-7 wedge ceiling
+    # Temp chunk MUST be a space-free path: Start-Process -ArgumentList (PS 5.1) does
+    # not quote array elements, so a path with a space (our repo lives under
+    # "D:\Claude Projects\...") would be split and rkdeveloptool writes nothing.
+    $tmp = Join-Path $env:TEMP 'rk-bootanim-chunk.bin'
+
+    # Probe each candidate with a cheap 4 KB read; use the one whose sector carries
+    # the ext4 superblock magic (0xEF53 at byte 0x438). This auto-corrects the
+    # /sys-vs-rl LBA discrepancy without hardcoding an offset.
+    $startLba = 0
+    foreach ($c in $cands) {
+        Remove-Item $tmp -ErrorAction SilentlyContinue
+        & $RK rl $c 8 $tmp 2>&1 | Out-Null
+        if (Test-Path $tmp) {
+            $pb = [System.IO.File]::ReadAllBytes($tmp)
+            if ($pb.Length -ge 0x43A -and $pb[0x438] -eq 0x53 -and $pb[0x439] -eq 0xEF) { $startLba = $c; break }
+        }
+        Info ('candidate 0x{0:X}: no ext4 superblock' -f $c)
+    }
+    if ($startLba -eq 0) { Warn 'No /system LBA candidate had an ext4 superblock -- skipping branding.'; & $RK rd 2>&1 | Out-Null; return }
+    $lbaHex = '0x{0:X}' -f $startLba
+    Ok "/system rl-LBA resolved: $startLba ($lbaHex)"
+
+    $stream = [System.IO.File]::Open($dump, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write)
+    $gotChunks = 0
+    try {
+        for ($k = 0; $k -lt $maxChunks; $k++) {
+            $absLba = $startLba + $k * $chunkSectors
+            Remove-Item $tmp -ErrorAction SilentlyContinue
+            $p = Start-Process -FilePath $RK -ArgumentList @('rl', $absLba, $chunkSectors, $tmp) -NoNewWindow -PassThru -RedirectStandardOutput "$tmp.out" -RedirectStandardError "$tmp.err"
+            if (-not $p.WaitForExit(30000)) {
+                try { Stop-Process -Id $p.Id -Force } catch {}
+                Get-Process rkdeveloptool -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+                Warn "chunk $($k+1) wedged (timeout) -- stopping with $gotChunks chunk(s)."; break
+            }
+            # Trust the file SIZE, not rkdeveloptool's exit code (this build returns
+            # nonzero even on a clean read). A full-size chunk = good; a short one = wedge.
+            # Chunk 0's ext4 superblock check below guards against a full-size zero read.
+            $sz = if (Test-Path $tmp) { (Get-Item $tmp).Length } else { 0 }
+            if ($sz -ne ($chunkSectors * 512)) { Warn "chunk $($k+1) short (got $sz B -- wedge) -- stopping with $gotChunks chunk(s)."; break }
+            $b = [System.IO.File]::ReadAllBytes($tmp); $stream.Write($b, 0, $b.Length); $stream.Flush()
+            $gotChunks++
+            Info "dumped chunk $($k+1) (@LBA $absLba, 4 MB) -- total $($gotChunks * 4) MB"
+        }
+    } finally { $stream.Close(); Remove-Item $tmp, "$tmp.out", "$tmp.err" -ErrorAction SilentlyContinue }
+    if ($gotChunks -eq 0) { Warn 'No chunks read -- skipping branding.'; & $RK rd 2>&1 | Out-Null; return }
+    $fs = [System.IO.File]::OpenRead($dump)
+    try { [void]$fs.Seek(0x438, 'Begin'); $m0 = $fs.ReadByte(); $m1 = $fs.ReadByte() } finally { $fs.Close() }
+    if (-not ($m0 -eq 0x53 -and $m1 -eq 0xEF)) { Warn 'chunk 0 has no ext4 superblock -- unexpected; skipping.'; & $RK rd 2>&1 | Out-Null; return }
+    Ok "ext4 superblock present; dumped $($gotChunks * 4) MB in $gotChunks chunk(s)."
+
+    # 5. Plan (locate + verify + emit write plan; never touches the device)
+    $planOut = & python $py $dump $zip $lbaHex $scratch $bootInode 2>&1
+    $rc = $LASTEXITCODE
+    $planOut | ForEach-Object { Info $_ }
+    if ($rc -ne 0) {
+        switch ($rc) {
+            2 { Warn 'metadata_csum ON -> i_size hand-edit unsafe. Use the full-image reflash path (out of scope here).' }
+            3 { Warn 'Located file is NOT the stock bootanimation.zip (already branded, or different build). Not writing.' }
+            4 { Warn 'Branded zip too big for the file''s allocated extents. Not writing.' }
+            default { Warn 'Could not locate bootanimation.zip in the 28 MiB head dump (may need a larger/second dump region). Not writing.' }
+        }
+        Info 'Rebooting out of Loader.'; & $RK rd 2>&1 | Out-Null
+        return
+    }
+    $plan = Get-Content (Join-Path $scratch 'plan.json') -Raw | ConvertFrom-Json
+    Info ("Plan: new_size={0} (was {1}); {2} content write(s), {3} inode sector(s); first content LBA {4}" -f `
+          $plan.new_size, $plan.old_size, $plan.content_writes.Count, $plan.inode_writes.Count, $plan.first_content_lba)
+
+    if ($PlanOnly) {
+        Warn 'PLAN-ONLY: no device writes performed. Review the plan above, then re-run'
+        Warn 'without -BrandedPlanOnly to apply. Rebooting out of Loader.'
+        & $RK rd 2>&1 | Out-Null
+        return
+    }
+
+    # 6. Write content extents, then the patched inode sector(s)
+    foreach ($w in $plan.content_writes) {
+        $r = (& $RK wl $w.lba $w.file 2>&1) -join ' '
+        if ($r -notmatch '100%') { Fail "Content write @LBA $($w.lba) failed: $r"; Fail 'Original may be partially overwritten -- restore stock bootanimation.zip via Loader.'; return }
+        Info "wrote content @LBA $($w.lba) ($($w.nsect) sectors)"
+    }
+    foreach ($w in $plan.inode_writes) {
+        $r = (& $RK wl $w.lba $w.file 2>&1) -join ' '
+        if ($r -notmatch '100%') { Fail "Inode write @LBA $($w.lba) failed: $r"; return }
+        Info "wrote inode sector @LBA $($w.lba) (i_size patched)"
+    }
+
+    # 7. Read-verify: re-read each written sector-0 and confirm it matches what we wrote
+    $okAll = $true
+    $chk = Join-Path $scratch 'verify.bin'
+    foreach ($w in @($plan.inode_writes[0], $plan.content_writes[0])) {
+        & $RK rl $w.lba 1 $chk 2>&1 | Out-Null
+        $a = (Get-FileHash $chk -Algorithm SHA256).Hash
+        # compare against the first 512 bytes of the file we wrote
+        $exp = [System.IO.File]::ReadAllBytes($w.file)[0..511]
+        $tmp = Join-Path $scratch 'exp512.bin'; [System.IO.File]::WriteAllBytes($tmp, [byte[]]$exp)
+        $b = (Get-FileHash $tmp -Algorithm SHA256).Hash
+        if ($a -ne $b) { $okAll = $false; Fail "Verify MISMATCH @LBA $($w.lba)" } else { Ok "verified @LBA $($w.lba)" }
+    }
+    if ($okAll) { Ok 'Boot animation written and verified. It plays on next boot.' }
+    else        { Fail 'Verification failed -- restore stock bootanimation.zip via Loader before booting.' }
+
+    Info 'Rebooting.'; & $RK rd 2>&1 | Out-Null
+}
+
+# --- -KeepRoot safety gate: the rootdrop patch is KNOWN-BROKEN on the H7R build ---
+# PROVEN 2026-07-07 (unit 2022010500003): flashing the rootdrop adbd patch produces
+# an adbd that does NOT come up -- no USB adb gadget, no TCP listener -- so adb is
+# unreachable and root is NOT achieved. The WRITE is correct (sector reads back as the
+# patched sha 7da6ee29); the patched adbd is simply non-functional at runtime. Reverting
+# the single sector to stock (adbd-rootdrop-orig.bin) restores adb. Do NOT flash -KeepRoot
+# until the patch is reworked -- analyze what the keep-root branch (0xBBBE) actually does
+# at runtime, not just that build_root_patch.py found a `bl`. See ROOT-A-FRESH-MABU.md /
+# mabuflash-keeproot-hardening. Override ONLY to re-test a reworked patch.
+if ($KeepRoot -and -not $AllowKnownBrokenRoot) {
+    Section '-KeepRoot refused (known-broken patch)'
+    Fail 'The -KeepRoot rootdrop adbd patch is KNOWN-BROKEN on this H7R build: the patched'
+    Fail 'adbd does not start (no USB adb, no TCP listener), so adb dies and root is NOT'
+    Fail 'achieved. Proven 2026-07-07 on unit 2022010500003; reverting the sector to stock'
+    Fail 'restored adb. Rework the patch before using this (analyze the keep-root path at'
+    Fail '0xBBBE at runtime, not just that it is a bl). To re-test a REWORKED patch anyway,'
+    Fail 're-run with -AllowKnownBrokenRoot.'
+    exit 1
+}
+if ($KeepRoot -and $AllowKnownBrokenRoot) {
+    Warn '-KeepRoot override: proceeding with a patch KNOWN to break adbd on this build.'
+    Warn 'Expect adb to be unreachable after flashing unless the patch has been reworked.'
+}
+
 # --- Phase 1: Catch / verify Loader, auto-detect Esper state ---
 Section 'Loader detection'
 $state = 'Unknown'
@@ -411,6 +672,12 @@ if (Test-Loader) {
     Warn 'Device is in Loader (not Android), so the Esper state cannot be probed.'
     Warn 'State -> Unknown. If you want auto-detect, let the script catch Loader'
     Warn 'from a booted unit instead, or pass -WipeData / -NoWipe explicitly.'
+    if ($KeepRoot) {
+        Fail '-KeepRoot needs a BOOTED unit so the root patch can be verified against this'
+        Fail "build's adbd before flashing (a mismatched build would corrupt adbd). Boot to"
+        Fail 'Android and re-run; do not start a -KeepRoot run from an already-caught Loader.'
+        exit 1
+    }
 } else {
     Info 'Loader not seen. Finding an adb device to detect state and enter Loader.'
     $dev = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 30
@@ -425,7 +692,14 @@ if (Test-Loader) {
         'Liberated' { Ok   "Device already liberated at $dev -- skipping Loader flash." }
         default     { Warn "Could not determine Esper state at $dev (adb may be wedging)." }
     }
-    if ($state -ne 'Liberated') {
+    # -KeepRoot brick guard: verify the precomputed rootdrop patch matches THIS
+    # unit's adbd build before we ever write it (works for A / B / Liberated --
+    # all have a booted $dev here). Aborts on drift.
+    if ($KeepRoot) { Confirm-RootPatchApplies -Dev $dev }
+    # Enter Loader for the patch phase whenever there's Loader work to do: any
+    # not-yet-liberated unit, OR a -KeepRoot run (which must reach Loader to write
+    # the rootdrop patch even on an already-liberated unit).
+    if ($state -ne 'Liberated' -or $KeepRoot) {
         # Switch on WiFi adb NOW, while USB is up. This gives the inter-phase Loader
         # re-catch a reliable transport instead of depending on USB re-enumerating
         # after the reboot (it often doesn't on this hardware). persist.adb.tcp.port
@@ -443,19 +717,53 @@ if (Test-Loader) {
     }
 }
 
-if ($state -eq 'Liberated') {
+if ($state -eq 'Liberated' -and -not $KeepRoot) {
     Info 'Skipping wipe policy, patches, and wipe -- device is already liberated.'
+}
+elseif ($state -eq 'Liberated' -and $KeepRoot) {
+    Info 'Device already liberated; -KeepRoot re-applies the liberation patches (idempotent)'
+    Info 'plus the rootdrop patch, with NO /data wipe.'
 }
 
 # --- Decide wipe policy: explicit flags win, else auto from detected state ---
-if ($state -ne 'Liberated' -and $WipeData -and $NoWipe) { Fail 'Pass only one of -WipeData / -NoWipe.'; exit 1 }
-if ($state -ne 'Liberated') {
-if     ($WipeData) { $doWipe = $true;  $wipeWhy = 'forced by -WipeData' }
-elseif ($NoWipe)   { $doWipe = $false; $wipeWhy = 'forced by -NoWipe' }
+if (($state -ne 'Liberated' -or $KeepRoot) -and $WipeData -and $NoWipe) { Fail 'Pass only one of -WipeData / -NoWipe.'; exit 1 }
+if ($state -ne 'Liberated' -or $KeepRoot) {
+Section 'Wipe policy'
+if     ($WipeData) {
+    $doWipe = $true;  $wipeWhy = 'forced by -WipeData'
+    if ($KeepRoot) {
+        Warn '-WipeData + -KeepRoot: the /data wipe can drop a fresh unit into the factory'
+        Warn 'burn-in state that bootloops (com.cghs.stresstest reboots the device on boot).'
+        Warn 'Watch the first boot; if it loops, disable that package before judging root'
+        Warn '(see ROOT-A-FRESH-MABU.md).'
+    }
+}
+elseif ($NoWipe)        { $doWipe = $false; $wipeWhy = 'forced by -NoWipe' }
+elseif ($KeepRoot) {
+    # -KeepRoot must NEVER imply a wipe: a surprise wipe both destroys /data and can
+    # trigger the burn-in bootloop. Default OFF; the operator can still force one
+    # with an explicit -WipeData above.
+    $doWipe = $false; $wipeWhy = 'auto: -KeepRoot never implies a wipe (pass -WipeData to force one)'
+    if ($state -eq 'A') {
+        Warn 'State A (active Esper DPC in /data) + -KeepRoot with no wipe: liberation may be'
+        Warn 'INCOMPLETE -- the live /data DPC survives the /system patches. For a full de-Esper,'
+        Warn 'either liberate first WITHOUT -KeepRoot (confirm a clean boot) then add root as a'
+        Warn 'standalone step, or pass -WipeData explicitly (mind the burn-in caveat).'
+    }
+}
 elseif ($state -eq 'A') { $doWipe = $true;  $wipeWhy = 'auto: State A (active /data DPC must be wiped)' }
 elseif ($state -eq 'B') { $doWipe = $false; $wipeWhy = 'auto: State B (patches alone suffice)' }
-else                    { $doWipe = $true;  $wipeWhy = 'auto: state undetermined -> safe default = wipe' }
-Section 'Wipe policy'
+else {
+    # Was previously a silent WIPE default. That risks destroying data / triggering the
+    # burn-in loop on a unit we could not classify. Refuse to guess instead.
+    Fail 'Esper state is undetermined -- no Android shell was available to classify it'
+    Fail '(e.g. Loader was already caught, so there was no booted unit to probe).'
+    Fail 'Refusing to guess the /data wipe. Re-run from a BOOTED unit (auto-detects), or'
+    Fail 'pass an explicit choice:'
+    Fail '  -NoWipe    factory-reset / already-liberated unit (patches alone suffice)'
+    Fail '  -WipeData  active Esper unit that must be de-provisioned'
+    exit 1
+}
 if ($doWipe) { Ok  "/data wipe: ON  ($wipeWhy)" }
 else         { Ok  "/data wipe: OFF ($wipeWhy)" }
 
@@ -467,7 +775,8 @@ Confirm-LoaderWinUsb
 # --- Phase 2: Apply patches ---
 Section 'Applying liberation patches'
 if ($KeepRoot) {
-    & (Join-Path $Root 'scripts/liberate-mabu.ps1') -KeepRoot
+    # flash-mabu already passed the known-broken gate above; tell liberate-mabu not to re-block.
+    & (Join-Path $Root 'scripts/liberate-mabu.ps1') -KeepRoot -AllowKnownBrokenRoot
 } else {
     & (Join-Path $Root 'scripts/liberate-mabu.ps1')
 }
@@ -520,11 +829,17 @@ if ($doWipe) {
 Section 'Resetting device'
 & $RK rd 2>&1 | Out-Null
 Ok 'Reset issued.'
-} # end if ($state -ne 'Liberated') -- wipe policy / patches / wipe / Loader reset
+} # end if ($state -ne 'Liberated' -or $KeepRoot) -- wipe policy / patches / wipe / Loader reset
 
 if ($SkipApps) {
     Write-Host ""
     Ok 'Loader-side patches done. SkipApps requested -- no userspace install.'
+    if ($Branded) {
+        # brand-only / patch+brand run: still deploy the boot animation
+        $brandDev = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 120
+        if ($brandDev) { Deploy-BootAnimation -Dev $brandDev -PlanOnly:$BrandedPlanOnly }
+        else { Warn 'Branding skipped: no adb device found.' }
+    }
     exit 0
 }
 
@@ -638,6 +953,13 @@ if (-not $SkipApps) {
         Run-SelfTest -Dev $testDev
     }
     else          { Warn 'Self-test skipped: no adb device found after reboot.' }
+}
+
+# --- Phase 9: Branding (GCB boot animation) ---
+if ($Branded) {
+    $brandDev = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 120
+    if ($brandDev) { Deploy-BootAnimation -Dev $brandDev -PlanOnly:$BrandedPlanOnly }
+    else           { Warn 'Branding skipped: no adb device found for the boot-animation deploy.' }
 }
 
 Section 'Done'

@@ -13,3 +13,8 @@ desktop.ini
 # Scratch / working dumps -- never commit these
 firmware/scratch/
 dumps/**/extracted/
+assets/bootanimation/scratch/
+
+# Python bytecode
+__pycache__/
+*.pyc
