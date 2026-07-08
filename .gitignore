@@ -18,3 +18,7 @@ assets/bootanimation/scratch/
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Wallpaper helper build temp + apksigner v4 sidecar
+assets/wallpaper-helper/build/
+*.idsig

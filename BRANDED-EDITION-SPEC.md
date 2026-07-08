@@ -15,6 +15,16 @@ SCOPE** (would need a `resource` dump + repack tooling we don't have; deferred a
 an optional future spike). So this build touches **only `/system`** — no
 `resource` partition, no root, no new device dump.
 
+**SHIPPED (2026-07-07, HW-validated on unit 2022010500003):** `-Branded` now does
+both the boot animation AND the **home + lock wallpaper**. The wallpaper can't be
+set by a `/system` swap (default is inside `framework-res.apk`) nor a rootless adb
+one-liner (no `cmd wallpaper` on 8.1), so it uses a tiny helper APK
+(`assets/wallpaper-helper/` -> `apks/gcb-wallpaper.apk`, built by its `build.ps1`,
+no Gradle): `WallpaperManager.setBitmap` COPIES the image into the wallpaper store,
+so `Set-BrandWallpaper` installs it, runs it, then uninstalls it -- clean device,
+wallpaper persists. Bundled image = 1024x600 of the style guide's `boot-logo.png`
+on Bluewood (`make_wallpaper.py`).
+
 ## Source of truth — the style guide (read-only)
 `D:\Claude Projects\GitHub-Style-Guide\assets\` (per Motion.md, which explicitly
 says device-specific exports "live with the device project that consumes them,

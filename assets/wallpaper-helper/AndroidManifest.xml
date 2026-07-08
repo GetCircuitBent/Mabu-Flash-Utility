@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- GCB wallpaper helper: a one-shot activity that sets the branded home/lock
+     wallpaper, then finishes. Invoked during the -Branded flash phase via
+     `am start -n com.getcircuitbent.wallpaper/.SetWallpaperActivity`.
+     SET_WALLPAPER is a normal permission (auto-granted at install; no root). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.getcircuitbent.wallpaper"
+    android:versionCode="1"
+    android:versionName="1.0">
+
+    <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="27" />
+    <uses-permission android:name="android.permission.SET_WALLPAPER" />
+
+    <application
+        android:label="GCB Wallpaper"
+        android:allowBackup="false">
+        <!-- exported so `am start -n` can launch it from the flash script -->
+        <activity
+            android:name=".SetWallpaperActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.NoDisplay" />
+    </application>
+</manifest>

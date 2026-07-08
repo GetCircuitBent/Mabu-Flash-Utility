@@ -640,6 +640,42 @@ function Deploy-BootAnimation {
     Info 'Rebooting.'; & $RK rd 2>&1 | Out-Null
 }
 
+function Set-BrandWallpaper {
+    # Set the GCB home + lock wallpaper via the helper APK (no root; SET_WALLPAPER
+    # is auto-granted). The helper uses setBitmap, which COPIES the image into the
+    # wallpaper store, so we uninstall it afterward and the wallpaper persists.
+    # Runs over adb (device booted to Android after the boot-anim reboot).
+    param([string] $Dev)
+    Section 'Branding: home + lock wallpaper'
+    $apk = Join-Path $Root 'apks/gcb-wallpaper.apk'
+    if (-not (Test-Path $apk)) { Warn "Wallpaper helper APK not found: $apk -- skipping wallpaper."; return }
+    if (-not $Dev) { Warn 'No adb device -- skipping wallpaper.'; return }
+    Info 'Installing GCB wallpaper helper...'
+    $r = (& $ADB -s $Dev install -r $apk 2>&1) -join ' '
+    if ($r -notmatch 'Success') { Warn "Wallpaper helper install failed: $r -- skipping."; return }
+    & $ADB -s $Dev logcat -c 2>&1 | Out-Null
+    & $ADB -s $Dev shell am start -n com.getcircuitbent.wallpaper/.SetWallpaperActivity 2>&1 | Out-Null
+    Start-Sleep -Seconds 4
+    $log = (& $ADB -s $Dev logcat -d -s GCBWallpaper 2>&1) -join "`n"
+    if ($log -match 'set OK') { Ok 'GCB wallpaper applied (home + lock).' }
+    else { Warn "Wallpaper helper did not confirm success -- verify on device. (logcat: $log)" }
+    # helper copied the image into the wallpaper store; remove it to leave a clean device
+    & $ADB -s $Dev uninstall com.getcircuitbent.wallpaper 2>&1 | Out-Null
+    Ok 'Wallpaper helper removed (wallpaper persists -- copied, not referenced).'
+}
+
+function Invoke-Branding {
+    # Full -Branded pass: deploy the boot animation (Loader /system write, reboots),
+    # then -- unless plan-only -- re-acquire adb and set the wallpaper.
+    param([string] $Dev)
+    Deploy-BootAnimation -Dev $Dev -PlanOnly:$BrandedPlanOnly
+    if ($BrandedPlanOnly) { return }
+    Info 'Waiting for adb after the boot-animation reboot (for the wallpaper step)...'
+    $wpDev = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 120
+    if ($wpDev) { Set-BrandWallpaper -Dev $wpDev }
+    else        { Warn 'Wallpaper skipped: no adb device came back after the boot-animation reboot.' }
+}
+
 # --- -KeepRoot safety gate: the rootdrop patch is KNOWN-BROKEN on the H7R build ---
 # PROVEN 2026-07-07 (unit 2022010500003): flashing the rootdrop adbd patch produces
 # an adbd that does NOT come up -- no USB adb gadget, no TCP listener -- so adb is
@@ -835,9 +871,9 @@ if ($SkipApps) {
     Write-Host ""
     Ok 'Loader-side patches done. SkipApps requested -- no userspace install.'
     if ($Branded) {
-        # brand-only / patch+brand run: still deploy the boot animation
+        # brand-only / patch+brand run: boot animation + wallpaper
         $brandDev = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 120
-        if ($brandDev) { Deploy-BootAnimation -Dev $brandDev -PlanOnly:$BrandedPlanOnly }
+        if ($brandDev) { Invoke-Branding -Dev $brandDev }
         else { Warn 'Branding skipped: no adb device found.' }
     }
     exit 0
@@ -955,10 +991,10 @@ if (-not $SkipApps) {
     else          { Warn 'Self-test skipped: no adb device found after reboot.' }
 }
 
-# --- Phase 9: Branding (GCB boot animation) ---
+# --- Phase 9: Branding (GCB boot animation + wallpaper) ---
 if ($Branded) {
     $brandDev = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 120
-    if ($brandDev) { Deploy-BootAnimation -Dev $brandDev -PlanOnly:$BrandedPlanOnly }
+    if ($brandDev) { Invoke-Branding -Dev $brandDev }
     else           { Warn 'Branding skipped: no adb device found for the boot-animation deploy.' }
 }
 
