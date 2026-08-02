@@ -3,10 +3,10 @@
 # The one command to flash a Mabu. Liberates the unit from its factory lock,
 # provisions user apps, and opens motor access -- then self-tests the result.
 #
-# This is the merged, canonical flasher. It replaces the older pair:
+# This is the merged, canonical flasher. It supersedes the older pair (now
+# removed; see git history):
 #   - flash-mabu.ps1      (liberation + wipe + apps + on-device magiskpolicy SELinux)
 #   - flash-new-mabu.ps1  (WSL sepolicy-inject SELinux + USB re-enumeration hardening)
-# Both are kept in scripts/ for reference until this is hardware-validated.
 #
 # What it does, in order:
 #   0. (Admin) Release USB + purge stale VID_2207 entries so Windows re-enumerates
