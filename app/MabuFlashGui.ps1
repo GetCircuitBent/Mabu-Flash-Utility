@@ -102,7 +102,7 @@ if (-not $sync.AppDir) {
     <!-- ===================== BRAND HEADER ===================== -->
     <Border Grid.Row="0" Background="#1A242D" BorderBrush="#33454F" BorderThickness="0,0,0,1" Padding="30,16">
       <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-        <Image x:Name="BrandLogo" Width="52" Height="52" Margin="0,0,16,0"
+        <Image x:Name="BrandLogo" Height="50" Margin="0,0,18,0"
                Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
         <StackPanel VerticalAlignment="Center">
           <TextBlock Text="Mabu Flash Utility" FontSize="25" FontWeight="Bold" Foreground="#FFFFFF"/>
@@ -199,20 +199,24 @@ foreach ($n in 'ConnectScreen','ConnectStatus','StartBtn','ProgressScreen','Phas
     $sync[$n] = $Window.FindName($n)
 }
 
-# Brand: load the GCB cat mark from the repo (assets\logos) for the header + the
-# window/taskbar icon. Cosmetic -- degrade silently if the asset isn't found.
+# Brand: the GCB text logo (wordmark) in the header; the cat mark as the square
+# window/taskbar icon. Loaded from assets\logos at runtime -- cosmetic, so
+# degrade silently if an asset isn't found.
+function New-FrozenBitmap([string]$Path) {
+    $b = New-Object Windows.Media.Imaging.BitmapImage
+    $b.BeginInit()
+    $b.CacheOption = [Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+    $b.UriSource   = New-Object System.Uri($Path)
+    $b.EndInit()
+    $b.Freeze()
+    return $b
+}
 try {
-    $logoPath = Join-Path (Split-Path $sync.AppDir -Parent) 'assets\logos\gcb-cat-logo.png'
-    if (Test-Path $logoPath) {
-        $bmp = New-Object Windows.Media.Imaging.BitmapImage
-        $bmp.BeginInit()
-        $bmp.CacheOption = [Windows.Media.Imaging.BitmapCacheOption]::OnLoad
-        $bmp.UriSource   = New-Object System.Uri($logoPath)
-        $bmp.EndInit()
-        $bmp.Freeze()
-        if ($sync.BrandLogo) { $sync.BrandLogo.Source = $bmp }
-        $Window.Icon = $bmp
-    }
+    $logoDir  = Join-Path (Split-Path $sync.AppDir -Parent) 'assets\logos'
+    $textLogo = Join-Path $logoDir 'gcb-text-logo.png'
+    $catLogo  = Join-Path $logoDir 'gcb-cat-logo.png'
+    if ((Test-Path $textLogo) -and $sync.BrandLogo) { $sync.BrandLogo.Source = New-FrozenBitmap $textLogo }
+    if (Test-Path $catLogo) { $Window.Icon = New-FrozenBitmap $catLogo }
 } catch { }
 
 $brush    = New-Object Windows.Media.BrushConverter
