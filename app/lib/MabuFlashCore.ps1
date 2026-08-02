@@ -1,26 +1,31 @@
 <#
-  MabuFlashCore.ps1 -- UI-agnostic copy of scripts/flash-mabu.ps1.
+  MabuFlashCore.ps1 -- UI-agnostic copy of scripts/flash.ps1.
 
   This is a fork of the proven console script, refactored to drive the injected
   UI-provider contract (app/lib/MabuUi.ps1) instead of writing to the host
-  directly. scripts/flash-mabu.ps1 stays frozen as the known-good original;
-  fixes must be mirrored here by hand.
+  directly. scripts/flash.ps1 stays the known-good original; fixes must be
+  mirrored here by hand.
 
-  What changed vs the original (logic body is otherwise byte-identical):
+  What changed vs the original (logic body is otherwise equivalent):
     * Section/Info/Ok/Warn/Fail now route through $script:Ui (Section + Log).
     * `Read-Host` pauses -> $script:Ui.Prompt (blocking, returns a button).
     * `exit 1` -> `throw 'aborted'` (caught -> $Ui.Done $false); `exit 0` -> Done + return.
     * Added $Ui.Flash calls at phase boundaries and $Ui.Validate per self-test check.
     * $RK/$ADB/$Root/$WifiIp are $script: vars set by Invoke-MabuFlash.
 
-  Known gap: liberate-mabu.ps1 / wipe-data-head.ps1 are child scripts; their
-  own console output does not route through $Ui yet (the phase Section + Flash
-  still convey progress). Refactoring those is a later step.
+  Parity with flash.ps1 (merged flasher):
+    * SELinux fix uses on-device magiskpolicy by default; if the patched policy
+      changes size it falls back to a full /vendor reflash via WSL.
+    * Mabu factory mode installs by DEFAULT (skip with -SkipMabu), matching flash.ps1.
+
+  Known gap: liberate-mabu.ps1 / wipe-data-head.ps1 / dump-system-cycled.ps1 are
+  child scripts; their own console output does not route through $Ui yet (the
+  phase Section + Flash still convey progress). Refactoring those is a later step.
 
   Usage:
     . app/lib/MabuFlashCore.ps1
-    Invoke-MabuFlash -RestoreMabu                 # console (default provider)
-    Invoke-MabuFlash -Ui $guiProvider -RestoreMabu  # GUI
+    Invoke-MabuFlash                     # console (default provider); full flow
+    Invoke-MabuFlash -Ui $guiProvider    # GUI
 #>
 
 # ---- Output helpers: route through the injected provider ---------------------
@@ -50,6 +55,38 @@ function Invoke-Child {
 }
 
 function Test-Loader { (& $script:RK ld 2>&1) -match 'Vid=0x2207,Pid=0x320a.*Loader' }
+
+function Wait-Loader([int]$TimeoutSec = 30) {
+    for ($i = 0; $i -lt $TimeoutSec; $i++) {
+        if (Test-Loader) { return $true }
+        Start-Sleep -Seconds 1
+    }
+    return $false
+}
+
+function Test-Admin {
+    ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+# Convert a Windows path (D:\a\b) to its WSL mount path (/mnt/d/a/b), derived
+# from wherever the repo lives. Used only by the SELinux reflash fallback.
+function ConvertTo-WslPath([string]$WinPath) {
+    $full = [System.IO.Path]::GetFullPath($WinPath)
+    if ($full -match '^([A-Za-z]):(.*)$') {
+        $drive = $matches[1].ToLower()
+        $rest  = $matches[2] -replace '\\','/'
+        return "/mnt/$drive$rest"
+    }
+    return ($full -replace '\\','/')
+}
+
+# Name of an installed Ubuntu WSL distro, or $null (the default SELinux path needs no WSL).
+function Get-WslUbuntu {
+    if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) { return $null }
+    $d = (wsl --list --quiet 2>$null) | Where-Object { $_ -match 'Ubuntu' } | Select-Object -First 1
+    if ($d) { return $d.Trim() }
+    return $null
+}
 
 function Get-LoaderDriverService {
     $d = Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
@@ -162,47 +199,134 @@ function Get-DeviceWifiIp {
     return $null
 }
 
+function Write-PolicySurgical {
+    # Fast path: patched policy is the same size as the original, so overwrite
+    # its blocks in place at the known /vendor extent. No WSL, no full reflash.
+    param([string] $Dev, [string] $OutFile)
+    $patchedSha = (Get-FileHash $OutFile -Algorithm SHA256).Hash.ToLower()
+    Info "Patched SHA256: $patchedSha"
+    Info 'Entering Loader to write policy...'
+    & $script:ADB -s $Dev shell reboot loader 2>&1 | Out-Null
+    if (-not (Wait-Loader 30)) { Warn 'Loader not caught for policy write. Fix: rkdeveloptool wl 0x5A8AB8 firmware\scratch\sepolicy.patched'; return $false }
+    Confirm-LoaderWinUsb
+    $wlOut = & $script:RK wl 0x5A8AB8 $OutFile 2>&1
+    $wlOut | ForEach-Object { Info $_ }
+    if (-not ($wlOut -join ' ' -match '100%')) { Warn 'Policy write did not report 100%.'; return $false }
+    Ok 'Policy written to /vendor via Loader (surgical).'
+    & $script:RK rd 2>&1 | Out-Null
+    Ok 'Reset issued -- device reboots with patched SELinux policy.'
+    return $true
+}
+
+function Invoke-WslVendorReflash {
+    # Fallback: the patched policy changed size, so it can't be overwritten in
+    # place. Swap it into a full /vendor image and reflash the whole partition.
+    # Loop-mounting an ext4 image needs WSL2 + Ubuntu.
+    param([string] $Dev, [string] $PatchedPolicy)
+    $ubuntu = Get-WslUbuntu
+    if (-not $ubuntu) {
+        Fail 'The patched policy grew, so the SELinux fix needs the WSL reflash fallback,'
+        Fail 'but WSL2 + Ubuntu is not installed. Install it (run scripts\install-tools.ps1'
+        Fail 'as Administrator, or: wsl --install Ubuntu ; restart), then re-run with -NoWipe.'
+        Fail 'The unit was NOT modified by the SELinux step.'
+        return $false
+    }
+    if ($Dev -notmatch ':5555$') {
+        Warn "Vendor reflash needs WiFi adb for the cycled dump; current device is '$Dev'."
+        $wifi = Enable-WifiAdb -UsbDev $Dev
+        if ($wifi) { $Dev = $wifi } else { Fail 'Could not establish WiFi adb for the reflash fallback.'; return $false }
+    }
+
+    Section 'SELinux fallback: full /vendor reflash (via WSL)'
+    $scratch   = Join-Path $script:Root 'firmware\scratch'
+    New-Item -ItemType Directory -Force -Path $scratch | Out-Null
+    $vendorImg = Join-Path $scratch 'vendor-full.img'
+    Remove-Item $vendorImg, (Join-Path $scratch 'vendor-full.state.json') -ErrorAction SilentlyContinue
+
+    Info 'Dumping /vendor (256 MB) over WiFi adb -- this takes a few minutes...'
+    Invoke-Child 'scripts/dump-system-cycled.ps1' -Named @{ Name = 'vendor-full'; PartitionStartLBA = 0x592000; TotalMB = 256; WifiAdb = $Dev; StartFresh = $true }
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $vendorImg)) { Fail 'Vendor dump failed; SELinux fix not applied.'; return $false }
+    $imgMB = [math]::Round((Get-Item $vendorImg).Length / 1MB, 1)
+    if ($imgMB -lt 255) { Fail "vendor-full.img is only ${imgMB} MB -- dump incomplete."; return $false }
+    Ok "vendor-full.img: ${imgMB} MB"
+
+    $wVendor  = ConvertTo-WslPath $vendorImg
+    $wPatched = ConvertTo-WslPath $PatchedPolicy
+    Info 'Swapping patched policy into the /vendor image (WSL loop-mount)...'
+    $r2 = wsl -d $ubuntu -u root -- bash -c @"
+set -e
+mkdir -p /mnt/vendor
+mount -o loop '$wVendor' /mnt/vendor
+cp '$wPatched' /mnt/vendor/etc/selinux/precompiled_sepolicy
+sync
+umount /mnt/vendor
+echo ROUTE2_OK
+"@ 2>&1
+    $r2 | ForEach-Object { Info $_ }
+    if (-not ($r2 -join ' ' -match 'ROUTE2_OK')) { Fail 'WSL mount/copy failed; /vendor NOT reflashed.'; return $false }
+
+    Info 'Entering Loader to reflash /vendor...'
+    & $script:ADB -s $Dev shell reboot loader 2>&1 | Out-Null
+    if (-not (Wait-Loader 30)) { Fail 'Loader not caught for /vendor reflash.'; return $false }
+    Confirm-LoaderWinUsb
+    Info 'Flashing /vendor (256 MB -- a few minutes)...'
+    $wlOut = & $script:RK wl 0x592000 $vendorImg 2>&1
+    $wlOut | ForEach-Object { Info $_ }
+    if (-not ($wlOut -join ' ' -match '100%')) { Fail 'wl for /vendor did not report 100%. Re-run: rkdeveloptool wl 0x592000 firmware\scratch\vendor-full.img'; return $false }
+    Ok '/vendor reflashed with patched policy.'
+    & $script:RK rd 2>&1 | Out-Null
+    Ok 'Reset issued -- device reboots with patched SELinux policy.'
+    return $true
+}
+
 function Apply-SELinuxFix {
+    # magiskpolicy on-device by default; automatic WSL reflash if the patch changes size.
     param([string] $Dev)
-    Section 'SELinux policy fix'
+    Section 'SELinux policy fix (motor access)'
     $sha = (& $script:ADB -s $Dev shell 'sha256sum /vendor/etc/selinux/precompiled_sepolicy 2>/dev/null' 2>&1) -join ''
     if ($sha -match '03f180a2') { Ok 'SELinux policy already patched (03f180a2) -- skipping.'; return }
     if ($sha -match '7f26df2d') { Info 'Stock policy confirmed (7f26df2d) -- applying fix.' }
     else { Warn "Unexpected policy SHA: $sha -- proceeding anyway." }
 
-    $mp = Join-Path $script:Root 'tools/magiskpolicy/magiskpolicy-armeabi-v7a'
-    if (-not (Test-Path $mp)) { Warn 'tools/magiskpolicy/magiskpolicy-armeabi-v7a not found -- skipping.'; return }
+    $mp = Join-Path $script:Root 'tools\magiskpolicy\magiskpolicy-armeabi-v7a'
+    if (-not (Test-Path $mp)) { Warn 'tools\magiskpolicy\magiskpolicy-armeabi-v7a not found -- skipping SELinux fix.'; return }
+
+    $origSize = 0
+    [int]::TryParse(((& $script:ADB -s $Dev shell 'stat -c %s /vendor/etc/selinux/precompiled_sepolicy 2>/dev/null' 2>&1) -join '').Trim(), [ref]$origSize) | Out-Null
+
     & $script:ADB -s $Dev push $mp /data/local/tmp/magiskpolicy 2>&1 | Out-Null
     & $script:ADB -s $Dev shell 'chmod 755 /data/local/tmp/magiskpolicy' 2>&1 | Out-Null
-
     $r = & $script:ADB -s $Dev shell "cp /vendor/etc/selinux/precompiled_sepolicy /data/local/tmp/sepolicy.in && /data/local/tmp/magiskpolicy --load /data/local/tmp/sepolicy.in --save /data/local/tmp/sepolicy.out 'allow untrusted_app serial_device chr_file { open read write getattr ioctl }' && echo PATCH_OK" 2>&1
     if ($r -notmatch 'PATCH_OK') { Warn "magiskpolicy failed: $($r -join ' ') -- skipping."; return }
-    Ok 'On-device patch succeeded.'
+    Ok 'On-device policy patch succeeded.'
 
     $outFile = Join-Path $script:Root 'firmware\scratch\sepolicy.patched'
+    New-Item -ItemType Directory -Force -Path (Split-Path $outFile) | Out-Null
+    Remove-Item $outFile -ErrorAction SilentlyContinue
     & $script:ADB -s $Dev pull /data/local/tmp/sepolicy.out $outFile 2>&1 | Out-Null
-    if (-not (Test-Path $outFile)) { Warn 'Pull failed -- skipping Loader write.'; return }
-    $patchedSha = (Get-FileHash $outFile -Algorithm SHA256).Hash.ToLower()
-    Info "Patched SHA256: $patchedSha"
-    if ($patchedSha -notmatch '^03f180a2') { Warn "Patched SHA unexpected ($patchedSha) -- aborting Loader write."; return }
+    if (-not (Test-Path $outFile)) { Warn 'Pull of patched policy failed -- skipping Loader write.'; return }
+    $patchedSize = (Get-Item $outFile).Length
+    Info "Policy size -- original: $origSize B   patched: $patchedSize B"
 
-    Info 'Entering Loader for policy write...'
-    & $script:ADB -s $Dev shell reboot loader 2>&1 | Out-Null
-    for ($i = 0; $i -lt 30; $i++) { Start-Sleep -Seconds 1; if (Test-Loader) { Ok "Loader caught after ${i}s."; break } }
-    if (-not (Test-Loader)) { Warn 'Loader not caught. Apply SELinux fix manually (wl 0x5A8AB8 firmware\scratch\sepolicy.patched).'; return }
-    Confirm-LoaderWinUsb
-
-    & $script:RK wl 0x5A8AB8 $outFile 2>&1 | ForEach-Object { Info $_ }
-    Ok 'Policy written to vendor partition.'
-    & $script:RK rd 2>&1 | Out-Null
-    Ok 'Reset issued -- device will reboot with patched SELinux policy.'
+    # Only a CONFIRMED size change triggers the WSL reflash. Same size (validated)
+    # OR unreadable size -> surgical write (exactly what the validated flasher did).
+    if ($origSize -gt 0 -and $patchedSize -ne $origSize) {
+        Warn "Patched policy size changed ($origSize -> $patchedSize B) -- surgical write is unsafe."
+        Warn 'Falling back to a full /vendor reflash (needs WSL).'
+        Invoke-WslVendorReflash -Dev $Dev -PatchedPolicy $outFile | Out-Null
+        return
+    }
+    if ($origSize -le 0) { Info 'Could not read original policy size -- using the validated surgical write.' }
+    else                 { Info 'No size change -> surgical in-place write (no WSL needed).' }
+    Write-PolicySurgical -Dev $Dev -OutFile $outFile | Out-Null
 }
 
 function Run-SelfTest {
-    param([string] $Dev)
+    param([string] $Dev, [switch] $SkipMabu, [switch] $SkipSELinux)
     Section 'Self-test'
     $stP = 0; $stF = 0; $stW = 0
-    $stI = 0; $stN = 11
+    # 11 checks in a full run; the Mabu + SELinux-policy checks drop out when skipped.
+    $stN = 11 - $(if ($SkipMabu) { 1 } else { 0 }) - $(if ($SkipSELinux) { 1 } else { 0 })
     # Advance the Validating bar one notch per completed check.
     function Bump($label) { & $script:Ui.Validate ((++$script:stI) / $stN * 100) $label }
     $script:stI = 0
@@ -242,20 +366,24 @@ function Run-SelfTest {
     else                         { Fail "[FAIL] Lawnchair is home launcher  (got: $v)"; $stF++ }
     Bump 'Lawnchair is home'
 
-    $v = (& $script:ADB -s $Dev shell 'pm list packages com.catalia.factorymode 2>/dev/null' 2>&1) -join ''
-    if ($v -match 'package:')    { Ok  '[PASS] Mabu factory mode installed';           $stP++ }
-    else                         { Fail '[FAIL] Mabu factory mode installed';           $stF++ }
-    Bump 'Factory mode installed'
+    if (-not $SkipMabu) {
+        $v = (& $script:ADB -s $Dev shell 'pm list packages com.catalia.factorymode 2>/dev/null' 2>&1) -join ''
+        if ($v -match 'package:')    { Ok  '[PASS] Mabu factory mode installed';           $stP++ }
+        else                         { Fail '[FAIL] Mabu factory mode installed';           $stF++ }
+        Bump 'Factory mode installed'
+    }
 
     $v = (& $script:ADB -s $Dev shell 'getenforce' 2>&1) -join ''
     if ($v -match 'Enforcing')   { Ok  '[PASS] SELinux enforcing';                     $stP++ }
     else                         { Fail "[FAIL] SELinux enforcing  (got: $v)";          $stF++ }
     Bump 'SELinux enforcing'
 
-    $v = (& $script:ADB -s $Dev shell 'sha256sum /vendor/etc/selinux/precompiled_sepolicy 2>/dev/null' 2>&1) -join ''
-    if ($v -match '03f180a2')    { Ok  '[PASS] SELinux policy patched (03f180a2)';     $stP++ }
-    else                         { Fail "[FAIL] SELinux policy patched  (got: $v)";     $stF++ }
-    Bump 'SELinux policy patched'
+    if (-not $SkipSELinux) {
+        $v = (& $script:ADB -s $Dev shell 'sha256sum /vendor/etc/selinux/precompiled_sepolicy 2>/dev/null' 2>&1) -join ''
+        if ($v -match '03f180a2')    { Ok  '[PASS] SELinux policy patched (03f180a2)';     $stP++ }
+        else                         { Fail "[FAIL] SELinux policy patched  (got: $v)";     $stF++ }
+        Bump 'SELinux policy patched'
+    }
 
     $wlanOut = (& $script:ADB -s $Dev shell 'ip addr show wlan0 2>/dev/null' 2>&1) -join ' '
     $wlanIp  = ([regex]::Match($wlanOut, 'inet\s+(\d{1,3}(?:\.\d{1,3}){3})')).Groups[1].Value
@@ -312,10 +440,10 @@ function Invoke-MabuFlash {
         [switch] $WipeData,
         [switch] $NoWipe,
         [int]    $WipeMB = 96,
-        [switch] $RestoreMabu,
+        [switch] $SkipMabu,                 # skip Mabu factory mode (installed by default)
         [switch] $SkipApps,
         [switch] $SkipSELinux,
-        [string] $WifiIp = '192.168.0.18',
+        [string] $WifiIp = '',              # optional hint; auto-discovered from the device
         [string] $UsbSerial,
         [string] $LawnchairApk = 'apks/Lawnchair.apk',
         [string] $FDroidApk    = 'apks/F-Droid.apk',
@@ -325,7 +453,9 @@ function Invoke-MabuFlash {
 
     if (-not $Ui) { . (Join-Path $PSScriptRoot 'MabuUi.ps1'); $Ui = New-ConsoleUi }
     $script:Ui = $Ui
-    $script:Root = if ($Root) { $Root } else { (Resolve-Path '.').Path }
+    # Default the repo root to two levels up from app/lib, so relative paths work
+    # from any folder the repo lives in (parity with flash.ps1's $RepoRoot).
+    $script:Root = if ($Root) { $Root } else { (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path }
     $script:RK = Join-Path $script:Root 'tools/rkdeveloptool/rkdeveloptool.exe'
     $script:ADB = (Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Google.PlatformTools_*\platform-tools\adb.exe" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
     if (-not $script:ADB) { & $Ui.Done $false 'adb.exe not found (install Google.PlatformTools).'; return }
@@ -338,6 +468,25 @@ function Invoke-MabuFlash {
     $ErrorActionPreference = 'Stop'
 
     try {
+        # --- Phase 0: (Admin) release USB + clear stale VID_2207 entries ---
+        if (Test-Admin) {
+            Section 'Release USB + clear stale VID_2207 entries'
+            & $script:ADB kill-server 2>$null
+            Start-Sleep -Milliseconds 500
+            Get-Process -Name 'rkdeveloptool' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            $stuck = Get-PnpDevice | Where-Object { $_.FriendlyName -match 'Device Descriptor Request Failed' }
+            foreach ($d in $stuck) { Info "Removing stuck device: $($d.InstanceId)"; & pnputil /remove-device $d.InstanceId 2>&1 | Out-Null }
+            $allRk = Get-PnpDevice | Where-Object { $_.InstanceId -match 'VID_2207' }
+            foreach ($d in $allRk) { Info "Removing: $($d.InstanceId) [Present=$($d.Present)]"; & pnputil /remove-device $d.InstanceId 2>&1 | Out-Null }
+            & pnputil /scan-devices 2>&1 | Out-Null
+            Start-Sleep -Seconds 2
+            Ok 'USB bus ready.'
+            & $script:ADB start-server 2>&1 | Out-Null
+        } else {
+            Info 'Not Administrator -- skipping the USB re-enumeration step (only needed to recover a wedged USB bus after many Loader cycles).'
+        }
+        & $Ui.Flash 4 'USB ready'
+
         # --- Phase 1: Catch / verify Loader, auto-detect Esper state ---
         Section 'Loader detection'
         $state = 'Unknown'
@@ -468,7 +617,7 @@ function Invoke-MabuFlash {
         if (-not $acq) {
             Fail 'No adb (USB or WiFi) after reset.'
             Fail 'Re-seat the USB harness (or fix the tablet WiFi), then finish with:'
-            Fail '  Invoke-MabuFlash -RestoreMabu -NoWipe'
+            Fail '  Invoke-MabuFlash -NoWipe'
             Abort 'No adb after reset.'
         }
         if ($acq -match ':5555$') {
@@ -479,7 +628,7 @@ function Invoke-MabuFlash {
             if (-not $dev) {
                 Warn 'WiFi adb unavailable; falling back to USB adb for installs.'
                 Warn 'USB installs can wedge on this hardware -- if one fails, fix WiFi adb'
-                Warn 'and re-run:  Invoke-MabuFlash -RestoreMabu -NoWipe'
+                Warn 'and re-run:  Invoke-MabuFlash -NoWipe'
                 $dev = $acq
             }
         }
@@ -510,16 +659,20 @@ function Invoke-MabuFlash {
         Ok 'Lawnchair set as default launcher.'
         & $Ui.Flash 86 'Apps installed'
 
-        # --- Phase 6: Mabu restore ---
-        if ($RestoreMabu) {
+        # --- Phase 6: Mabu restore (default; skip with -SkipMabu) ---
+        if (-not $SkipMabu) {
             Section 'Restoring Mabu factory mode + assets'
             $installed = (& $script:ADB -s $dev shell 'pm list packages | grep -i catalia') 2>&1
             if ($installed -match 'com.catalia.factorymode') {
                 Info 'com.catalia.factorymode already installed -- skipping APK install.'
             } else {
-                $apk = Join-Path $script:Root "$MabuArchive/apks/com.catalia.factorymode.apk"
-                $r = (& $script:ADB -s $dev install $apk 2>&1) | Where-Object { $_ -notmatch 'RemoteException' } | Select-Object -Last 1
-                Info "factorymode install: $r"
+                $apk = Join-Path $script:Root "$MabuArchive\apks\com.catalia.factorymode.apk"
+                if (Test-Path $apk) {
+                    $r = (& $script:ADB -s $dev install $apk 2>&1) | Where-Object { $_ -notmatch 'RemoteException' } | Select-Object -Last 1
+                    Info "factorymode install: $r"
+                } else {
+                    Warn "Mabu factory APK not found at $apk -- skipping (pass -SkipMabu to silence)."
+                }
             }
             foreach ($p in 'CAMERA','RECORD_AUDIO','READ_PHONE_STATE','READ_EXTERNAL_STORAGE','WRITE_EXTERNAL_STORAGE') {
                 & $script:ADB -s $dev shell pm grant com.catalia.factorymode "android.permission.$p" 2>&1 | Out-Null
@@ -555,7 +708,7 @@ function Invoke-MabuFlash {
             $testDev = Find-AdbDevice -PreferIp $script:WifiIp -TimeoutSec 120
             if ($testDev) {
                 & $script:ADB -s $testDev shell 'cmd package set-home-activity app.lawnchair/.LawnchairLauncher' 2>&1 | Out-Null
-                Run-SelfTest -Dev $testDev
+                Run-SelfTest -Dev $testDev -SkipMabu:$SkipMabu -SkipSELinux:$SkipSELinux
             }
             else          { Warn 'Self-test skipped: no adb device found after reboot.' }
         }
@@ -564,13 +717,14 @@ function Invoke-MabuFlash {
         Ok "Unit at $dev liberated and provisioned. Verify on-device:"
         Info '  - Home screen = Lawnchair (long-press to customize)'
         Info '  - F-Droid available for additional apps'
-        if ($RestoreMabu) {
+        if (-not $SkipMabu) {
             Info '  - Mabu Factory Mode launches motor diagnostics'
             Info '  - Open Trouble Shooting/Motor Debug to recalibrate motors'
         }
         if (-not $SkipSELinux) {
             Info '  - SELinux fix applied: untrusted_app can open serial_device (motors)'
         }
+        Info 'Do NOT run motor tests until the operator confirms the hardware is ready and being watched.'
         & $Ui.Done $true "Unit at $dev liberated, provisioned, and validated."
     }
     catch {

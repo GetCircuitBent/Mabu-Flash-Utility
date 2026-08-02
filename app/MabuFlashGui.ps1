@@ -23,7 +23,7 @@
 [CmdletBinding()]
 param(
     [switch] $Simulate,          # run a fake flow (no hardware/tools required)
-    [switch] $RestoreMabu,       # passed through to the real core (future)
+    [switch] $SkipMabu,          # skip Mabu factory mode (installed by default)
     [switch] $WipeData,
     [switch] $NoWipe
 )
@@ -33,7 +33,7 @@ Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
 # ---- Shared state bag (crosses the UI/worker thread boundary by reference) ----
 $sync = [hashtable]::Synchronized(@{})
 $sync.Simulate = [bool]$Simulate
-$sync.Options  = @{ RestoreMabu = [bool]$RestoreMabu; WipeData = [bool]$WipeData; NoWipe = [bool]$NoWipe }
+$sync.Options  = @{ SkipMabu = [bool]$SkipMabu; WipeData = [bool]$WipeData; NoWipe = [bool]$NoWipe }
 $sync.Queue    = [System.Collections.Queue]::Synchronized([System.Collections.Queue]::new())
 # Where app/lib/* lives, so the worker runspace can dot-source the core.
 # Robust across -File, dot-sourcing, and ps2exe (where $PSScriptRoot may be empty).
@@ -318,7 +318,7 @@ $RealFlow = {
     $repoRoot = Split-Path $sync.AppDir -Parent
     $opt = $sync.Options
     Invoke-MabuFlash -Ui $ui -Root $repoRoot `
-        -RestoreMabu:$opt.RestoreMabu -WipeData:$opt.WipeData -NoWipe:$opt.NoWipe
+        -SkipMabu:$opt.SkipMabu -WipeData:$opt.WipeData -NoWipe:$opt.NoWipe
 }.ToString()
 
 # --------------------- Start the worker in a background runspace ---------------
