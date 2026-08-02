@@ -184,16 +184,32 @@ $SepolicyC   = Join-Path $RepoRoot 'tools\sepolicy-inject.c'
 $SepolicyBin = '/usr/local/bin/sepolicy-inject'
 $WslOk       = $false
 
+# Auto-install WSL2 + Ubuntu. Needs Administrator and a reboot before the
+# distro is usable, so this kicks off the install and tells the user to
+# restart and re-run — it cannot finish sepolicy-inject in the same pass.
+function Install-WslUbuntu {
+    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if (-not $isAdmin) {
+        Write-Warn 'Installing WSL needs Administrator. Re-run this script from an Administrator PowerShell (right-click Start > Terminal (Admin)).'
+        Write-Note 'Or install it yourself:  wsl --install Ubuntu   (then restart the PC).'
+        return
+    }
+    Write-Note 'Installing WSL + Ubuntu (this can take several minutes)...'
+    wsl --install Ubuntu
+    Write-Warn 'WSL + Ubuntu install started. RESTART the PC now, let Ubuntu finish its first-time setup (it will ask you to create a username/password), then re-run:  .\scripts\install-tools.ps1'
+}
+
 $wslCheck = Get-Command wsl -ErrorAction SilentlyContinue
 if (-not $wslCheck) {
-    Write-Warn 'WSL not found. Install WSL2 + Ubuntu, then re-run this script.'
-    Write-Note 'Run:  wsl --install Ubuntu'
+    Write-Warn 'WSL not found.'
+    Install-WslUbuntu
 } else {
     # Detect a runnable Ubuntu distro
     $distros = wsl --list --quiet 2>$null
     $ubuntu  = $distros | Where-Object { $_ -match 'Ubuntu' } | Select-Object -First 1
     if (-not $ubuntu) {
-        Write-Warn 'No Ubuntu WSL distro found. Run:  wsl --install Ubuntu'
+        Write-Warn 'No Ubuntu WSL distro found.'
+        Install-WslUbuntu
     } else {
         $ubuntu = $ubuntu.Trim()
         Write-Note "Using WSL distro: $ubuntu"

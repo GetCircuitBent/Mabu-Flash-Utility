@@ -35,7 +35,8 @@ One command handles the full unit.
 
 ```powershell
 # FLASH (default): from the repo root, with a booted adb-reachable unit.
-.\scripts\flash-mabu.ps1 -RestoreMabu
+# The bare command does the whole job -- liberate, provision apps, motor fix, self-test.
+.\scripts\flash.ps1
 ```
 
 > **State auto-detect:** the script probes the unit over ADB and classifies it:
@@ -50,9 +51,11 @@ One command handles the full unit.
 > probe), state is Unknown and the script wipes.
 
 ### Script Flags
+The bare `flash.ps1` does everything (liberate + apps + Mabu factory mode + motor fix + self-test). The flags below only *subtract* work.
+
 | Flag | Effect |
 |---|---|
-| `-RestoreMabu` | Install Mabu factory mode APK + push animation/voice assets |
+| `-SkipMabu` | Skip the Mabu factory mode APK + assets (they install by default now) |
 | `-WipeData` | Force `/data` wipe regardless of detected state |
 | `-NoWipe` | Force patch-only (skip wipe) regardless of detected state |
 | `-SkipApps` | Loader patches only: no app install, no SELinux fix, no self-test |
@@ -65,8 +68,8 @@ One command handles the full unit.
 3. **Wipe `/data` head** (96 MB) if State A or forced *(skipped for B / Liberated)*
 4. **Reset** to Android
 5. **Install apps**: F-Droid, Lawnchair (set as home)
-6. **Restore Mabu**: factory mode APK + assets *(if `-RestoreMabu`)*
-7. **SELinux fix**: on-device `magiskpolicy` patch → Loader write to `0x5A8AB8` *(skippable with `-SkipSELinux`)*
+6. **Restore Mabu**: factory mode APK + assets *(default; skip with `-SkipMabu`)*
+7. **SELinux fix**: on-device `magiskpolicy` patch → Loader write to `0x5A8AB8`. If the patched policy changes size, it automatically falls back to a full `/vendor` reflash via WSL *(skippable with `-SkipSELinux`)*
 8. **Self-test**: 12 checks: liberation, apps, SELinux policy SHA, AVC denial check, WiFi ADB
 
 ---
@@ -141,7 +144,7 @@ timing, not the host port:
 
 ## 2. Understand the Two Starting States
 A factory unit is in one of two states; they need slightly different handling
-(both are covered by `flash-mabu.ps1`, which **auto-detects which one**; see
+(both are covered by `flash.ps1`, which **auto-detects which one**; see
 below):
 
 | State | What you see | Treatment | Auto-detected by |
@@ -232,7 +235,7 @@ write dies with **`WRITE FAILED: ... creating comm object failed!`** because the
 transfer channel needs WinUSB, not rockusb.sys. So `ld` succeeding is **not**
 proof you're ready to write.
 
-**`flash-mabu.ps1` now auto-handles this.** Before Phase 2 it checks the driver
+**`flash.ps1` now auto-handles this.** Before Phase 2 it checks the driver
 service on PID 320A (`Confirm-LoaderWinUsb`); if it's not WinUSB it **launches
 Zadig for you**, prints the steps below, pauses, then re-verifies the binding and
 that Loader is still visible before continuing. You only do the Zadig clicks:
@@ -251,7 +254,7 @@ put 60 s+), then Zadig as above.
 > port/hub, 320A enumerates at a new instance path (`...&0&2` → `...&0&9`) and
 > Windows binds it back to `rockusb.sys`, so `wl`/`rl` fail again with "creating
 > comm object failed!" Fixes: replug into the **same port** you Zadig'd, or
-> re-run Zadig for the new port. `flash-mabu.ps1`'s `Confirm-LoaderWinUsb` gate
+> re-run Zadig for the new port. `flash.ps1`'s `Confirm-LoaderWinUsb` gate
 > catches this automatically; raw `rkdeveloptool` use does not, so keep to one
 > port.
 
@@ -287,7 +290,7 @@ without wiping first**, capture, *then* wipe.
 **Step 1: apply the patches only (NO wipe).** With Loader caught, from the
 Mabu repo root:
 ```powershell
-.\scripts\flash-mabu.ps1 -SkipApps      # = the 8 patches + reset; no /data wipe, no app install
+.\scripts\flash.ps1 -SkipApps      # = the 8 patches + reset; no /data wipe, no app install
 ```
 (Equivalent: `.\scripts\liberate-mabu.ps1 -Reset`.) This gives unconditional
 ADB while leaving `/data` intact.
@@ -362,7 +365,7 @@ From the repo root, with a **booted, ADB-reachable unit** (so the script can
 detect the state and reboot it into Loader itself):
 
 ```powershell
-.\scripts\flash-mabu.ps1 -RestoreMabu
+.\scripts\flash.ps1
 ```
 
 The script auto-detects State A vs B and wipes `/data` only on State A (see
@@ -370,7 +373,7 @@ Section 2). Add `-WipeData` to force the wipe or `-NoWipe` to force patch-only.
 If you've **already caught Loader** the state can't be probed, so it defaults to
 wiping: pass `-WipeData`/`-NoWipe` explicitly in that case.
 
-What it does, in order (`scripts/flash-mabu.ps1` → `scripts/liberate-mabu.ps1`):
+What it does, in order (`scripts/flash.ps1` → `scripts/liberate-mabu.ps1`):
 
 1. **8 Loader-side raw-eMMC patches** (`liberate-mabu.ps1`):
    - **Parameter @ LBA 0**: kernel cmdline gets
@@ -392,9 +395,9 @@ What it does, in order (`scripts/flash-mabu.ps1` → `scripts/liberate-mabu.ps1`
    WiFi ADB** for everything that follows (see the transport rule below; USB ADB
    on this hardware times out too fast to rely on).
 4. **Install F-Droid + Lawnchair**, set Lawnchair as home.
-5. **(`-RestoreMabu`)** install `com.catalia.factorymode` + push animation/voice
-   assets, grant runtime perms. *(Factory-test app, not the consumer app; the
-   consumer Mabu app was never archived.)*
+5. **(default; skip with `-SkipMabu`)** install `com.catalia.factorymode` + push
+   animation/voice assets, grant runtime perms. *(Factory-test app, not the
+   consumer app; the consumer Mabu app was never archived.)*
 
 After `/data` wipe, **WiFi credentials are gone**. The script pauses and asks
 you to join WiFi on the touch UI before app installs proceed.
@@ -404,7 +407,7 @@ you to join WiFi on the touch UI before app installs proceed.
 > on first use; it goes to **stderr**, and under the script's
 > `$ErrorActionPreference = 'Stop'` the `2>&1` capture turns it into a fatal
 > `NativeCommandError` that kills the run right after the patch phase (patches are
-> already written; nothing is harmed). **Fixed in `flash-mabu.ps1`**: it now
+> already written; nothing is harmed). **Fixed in `flash.ps1`**: it now
 > pre-starts the adb server up front (with errors non-fatal) so no later adb call
 > emits the banner. If you see this on an older copy of the script, just re-run
 > the same command: the patches are idempotent and the server is now running, so
@@ -436,7 +439,7 @@ you to join WiFi on the touch UI before app installs proceed.
 
 > **Headless / non-interactive runs:** the WiFi pause above is a `Read-Host`,
 > which hangs an unattended shell. To stage it: run
-> `.\scripts\flash-mabu.ps1 -WipeData -SkipApps` (does all 8 patches + the
+> `.\scripts\flash.ps1 -WipeData -SkipApps` (does all 8 patches + the
 > inter-phase reset + 96 MB wipe, then exits cleanly **before** the pause), then
 > drive the app installs yourself over ADB. USB ADB comes up authorized right
 > after the wipe (the adbd auth-bypass patch), but it **times out too fast to rely
@@ -475,7 +478,7 @@ adb -s <tablet-ip>:5555 shell "pm list packages | grep -iE 'esper|shoonya'"  # e
 > worked immediately, but on the 2026-06-27 unit adbd was **not** listening on
 > 5555, so the connect silently failed. The fix is the standard one: run
 > **`adb tcpip 5555`** over USB once to put adbd into TCP mode, then
-> `adb connect <ip>:5555`. `flash-mabu.ps1` now does this automatically
+> `adb connect <ip>:5555`. `flash.ps1` now does this automatically
 > (`Enable-WifiAdb`): over USB it reads the device's real `wlan0` IP
 > (`ip addr show wlan0`), runs `tcpip 5555`, sets `persist.adb.tcp.port 5555`
 > (survives a reboot that keeps `/data`), and connects. **Don't trust a hardcoded
@@ -579,9 +582,11 @@ Then launch the app; it connects to the bridge and the robot tracks faces.
 ---
 
 ### Tier 2: Permanent SELinux Policy Patch (Validated; Now Automated)
-> **`flash-mabu.ps1` applies this automatically as Phase 7.** The manual steps
-> below are reference only: follow them if you need to re-apply the fix outside
-> of a full flash run, or if you're debugging the automated path.
+> **`flash.ps1` applies this automatically as its SELinux phase** (on-device
+> `magiskpolicy`, with an automatic full-`/vendor` WSL reflash fallback if the
+> patched policy changes size). The manual steps below are reference only: follow
+> them if you need to re-apply the fix outside of a full flash run, or if you're
+> debugging the automated path.
 >
 > **Known-good hashes (H7R Android 8.1):**
 > - Stock policy: `7f26df2d…`
@@ -739,8 +744,8 @@ Protocol reference (don't hand-compute checksums; use the code):
 
 ## 9. Quick Checklist
 - [ ] Loader caught (PID 320A): `adb reboot loader` if ADB is up, else hold ADKEY (pin 4)→GND through power-on
-- [ ] **PID 320A bound to WinUSB** (not `rockusb.sys`): `flash-mabu.ps1` auto-launches Zadig if not; one-time per PC, then persists. `ld` listing the Loader is *not* proof: a `rockusb.sys` binding writes-fail with "creating comm object failed"
-- [ ] `flash-mabu.ps1 -RestoreMabu` completes: confirm the "Detected State X" / "Wipe policy" line matches the unit (force with `-WipeData`/`-NoWipe` if needed; re-run wipe if it "FAILED at chunk 0")
+- [ ] **PID 320A bound to WinUSB** (not `rockusb.sys`): `flash.ps1` auto-launches Zadig if not; one-time per PC, then persists. `ld` listing the Loader is *not* proof: a `rockusb.sys` binding writes-fail with "creating comm object failed"
+- [ ] `flash.ps1` completes: confirm the "Detected State X" / "Wipe policy" line matches the unit (force with `-WipeData`/`-NoWipe` if needed; re-run wipe if it "FAILED at chunk 0")
 - [ ] Device Owner clear, no esper/shoonya packages
 - [ ] Re-joined WiFi, WiFi ADB on 5555, static lease set (the working transport for all on-device ADB; USB only for the Loader flash + opening ADB)
 - [ ] Launcher + apps installed

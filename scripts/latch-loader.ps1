@@ -83,5 +83,5 @@ if ($rfi -match 'Flash Size|Sectors|LBA') {
 
 Write-Host ""
 Write-Host "  Next step:" -ForegroundColor Cyan
-Write-Host "    .\scripts\flash-mabu.ps1 -WipeData -RestoreMabu" -ForegroundColor White
+Write-Host "    .\scripts\flash.ps1" -ForegroundColor White
 Write-Host ""

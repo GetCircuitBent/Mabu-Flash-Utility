@@ -1,7 +1,8 @@
 ﻿# flash-new-mabu.ps1
 #
 # Full Mabu flash protocol: liberation + SELinux serial-access patch.
-# Runs the complete sequence every time. USB harness only — no WiFi required.
+# Runs the complete sequence every time. Uses the USB harness plus WiFi ADB
+# (USB ADB drops after a few Loader cycles, so the later steps run over WiFi).
 #
 # Protocol:
 #   1. Check prerequisites
@@ -43,6 +44,19 @@ function Banner($msg) { Write-Host "`n====  $msg  ====" -ForegroundColor Cyan }
 function OK($msg)     { Write-Host "  [OK]  $msg" -ForegroundColor Green }
 function Info($msg)   { Write-Host "  [--]  $msg" -ForegroundColor Gray }
 function Fail($msg)   { Write-Host "`n  [FAIL]  $msg" -ForegroundColor Red; exit 1 }
+
+# Convert a Windows path (e.g. D:\a\b) to the WSL mount path (/mnt/d/a/b).
+# Derives everything from wherever the repo actually lives, so the flash
+# works from any folder — do NOT hardcode a specific repo location.
+function ConvertTo-WslPath([string]$WinPath) {
+    $full = [System.IO.Path]::GetFullPath($WinPath)
+    if ($full -match '^([A-Za-z]):(.*)$') {
+        $drive = $matches[1].ToLower()
+        $rest  = $matches[2] -replace '\\','/'
+        return "/mnt/$drive$rest"
+    }
+    return ($full -replace '\\','/')
+}
 
 function Test-Loader {
     (& $RK ld 2>&1) -match 'Vid=0x2207,Pid=0x320a.*Loader'
@@ -229,12 +243,21 @@ foreach ($f in $required) {
     }
 }
 
+# WSL + Ubuntu must exist before we can check for (or build) sepolicy-inject.
+if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) {
+    Fail "WSL is not installed. Run one-time setup first:`n  1. In an Administrator PowerShell:  wsl --install Ubuntu`n  2. RESTART the PC, then let Ubuntu finish its first-time setup.`n  3. Run:  .\scripts\install-tools.ps1`n  Then power off the Mabu and run flash-new-mabu.ps1 again."
+}
+$hasUbuntu = (wsl --list --quiet 2>$null) -join "`n" -match 'Ubuntu'
+if (-not $hasUbuntu) {
+    Fail "No Ubuntu WSL distro found. Run one-time setup first:`n  1. In an Administrator PowerShell:  wsl --install Ubuntu`n  2. RESTART the PC, then let Ubuntu finish its first-time setup.`n  3. Run:  .\scripts\install-tools.ps1`n  Then power off the Mabu and run flash-new-mabu.ps1 again."
+}
+
 $wslCheck = wsl -d Ubuntu -- which sepolicy-inject 2>&1
 if ($wslCheck -notmatch 'sepolicy-inject') {
     Write-Host "  [--]  sepolicy-inject not found in WSL — running install-tools.ps1..." -ForegroundColor Yellow
     & (Join-Path $RepoRoot 'scripts\install-tools.ps1')
     $wslCheck = wsl -d Ubuntu -- which sepolicy-inject 2>&1
-    if ($wslCheck -notmatch 'sepolicy-inject') { Fail "sepolicy-inject still missing after install-tools.ps1. Check WSL/build output above." }
+    if ($wslCheck -notmatch 'sepolicy-inject') { Fail "sepolicy-inject still missing after install-tools.ps1. Re-run '.\scripts\install-tools.ps1' as Administrator and check the WSL/build output above." }
     OK "sepolicy-inject installed."
 }
 
@@ -324,9 +347,14 @@ Write-Host ''
 
 if (-not $wifiIp) {
     Write-Host ''
-    Write-Host '  [!]  No WiFi IP on wlan0. Connect the Mabu to CB Quarantine WiFi now.' -ForegroundColor Yellow
-    Write-Host '       SSID: CB Quarantine   Pass: HereBeDragons' -ForegroundColor Yellow
-    Write-Host '       Waiting up to 3 min for WiFi IP...' -ForegroundColor Yellow
+    Write-Host '  ============================================================' -ForegroundColor Yellow
+    Write-Host '   ACTION REQUIRED: CONNECT THE MABU TO WIFI' -ForegroundColor Yellow
+    Write-Host '  ============================================================' -ForegroundColor Yellow
+    Write-Host '   On the Mabu''s touchscreen, open WiFi settings and join your' -ForegroundColor White
+    Write-Host '   network (the same network this PC is on). The flash finishes' -ForegroundColor White
+    Write-Host '   over WiFi, so the Mabu must be online to continue.' -ForegroundColor White
+    Write-Host '   Waiting up to 3 min for the Mabu to get an IP...' -ForegroundColor White
+    Write-Host '  ============================================================' -ForegroundColor Yellow
     $deadline = (Get-Date).AddSeconds(180)
     while ((Get-Date) -lt $deadline) {
         $ipOut = & $ADB -s $usbSerial shell "ip -f inet addr show wlan0 2>/dev/null" 2>&1
@@ -336,7 +364,7 @@ if (-not $wifiIp) {
         Write-Host '.' -NoNewline
     }
     Write-Host ''
-    if (-not $wifiIp) { Fail "Could not get WiFi IP. Connect to CB Quarantine and re-run." }
+    if (-not $wifiIp) { Fail "Mabu never came online. Join it to your WiFi on its touchscreen, then power off the unit and run flash-new-mabu.ps1 again." }
 }
 
 OK "WiFi IP: $wifiIp"
@@ -375,13 +403,12 @@ OK "vendor-full.img: ${imgMB} MB"
 # ===========================================================================
 Banner '6. Inject SELinux rule'
 
-$locator = Join-Path $RepoRoot 'scripts\locate_vendor_policy.py'
-$wVendor  = '/mnt/c/Claude Projects/mabu-guides/firmware/scratch/vendor-full.img'
-$wScratch = '/mnt/c/Claude Projects/mabu-guides/firmware/scratch'
+$locator  = Join-Path $RepoRoot 'scripts\locate_vendor_policy.py'
+$wVendor  = ConvertTo-WslPath $vendorImg
+$wScratch = ConvertTo-WslPath $scratchDir
+$wLocator = ConvertTo-WslPath $locator
 
-$locOut = wsl -d Ubuntu -- python3 `
-    '/mnt/c/Claude Projects/mabu-guides/scripts/locate_vendor_policy.py' `
-    $wVendor 2>&1
+$locOut = wsl -d Ubuntu -- python3 $wLocator $wVendor 2>&1
 $locOut | ForEach-Object { Info $_ }
 
 $fileLba     = [string]($locOut | Select-String 'FILE_LBA\s*=\s*(\d+)'     | ForEach-Object { $_.Matches[0].Groups[1].Value } | Select-Object -First 1)
@@ -532,4 +559,4 @@ OK "No AVC denials for serial_device. SELinux patch loaded."
 # ===========================================================================
 Banner 'DONE'
 OK "Unit fully flashed. WiFi ADB: adb connect $wifiSerial"
-Info "Do NOT run motor tests until Alex confirms hardware is ready and watching."
+Info "Do NOT run motor tests until the operator confirms the hardware is ready and being watched."

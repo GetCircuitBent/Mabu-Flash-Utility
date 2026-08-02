@@ -110,8 +110,8 @@ recovery: proven twice (`notes/HANDOFF.md` finding #4). This guide never touches
 Clone the repo and run from its root:
 
 ```powershell
-gh repo clone GetCircuitBent/mabu-guides
-cd mabu-guides
+gh repo clone GetCircuitBent/Mabu-Flash-Utility
+cd Mabu-Flash-Utility
 .\scripts\install-tools.ps1
 .\scripts\install-android-driver.ps1
 ```
@@ -122,7 +122,7 @@ cd mabu-guides
 `install-android-driver.ps1` patches the Google Android USB driver INF to recognise
 VID 0x2207 / PID 0x0006 (the Mabu in Android mode), then opens Device Manager and
 walks you through the one manual click. **This step is required**: without it, USB
-ADB won't see the device after liberation and `flash-new-mabu.ps1` will time out
+ADB won't see the device after liberation and `flash.ps1` will time out
 waiting for ADB. After this driver is installed it persists across reboots.
 
 After both scripts succeed:
@@ -143,10 +143,10 @@ After both scripts succeed:
 
 2. **Flash.** Every Mabu, every time, one command:
    ```powershell
-   .\scripts\flash-new-mabu.ps1
+   .\scripts\flash.ps1
    ```
-   The script detects device state via USB PID, runs liberation + SELinux patch
-   end-to-end, and stops with a clear message if anything fails.
+   The script detects device state, runs liberation, app install, and the SELinux
+   motor patch end-to-end, and stops with a clear message if anything fails.
 
 > **Catching the Loader:** power the unit OFF fully (PWRON held >7 s if needed),
 > then power on; within ~10 s run `rkdeveloptool ld`; it should report
@@ -409,8 +409,8 @@ device is fine; see §8 contingency. Re-pull the live policy and confirm your
 write actually changed the on-disk bytes (mount the partition again and
 `sesearch`).
 
-> Per project rules: **do not run any motor-movement test** until Alex confirms
-> the hardware is OK and he is watching. Phase C only opens the port / checks
+> Per project rules: **do not run any motor-movement test** until the operator confirms
+> the hardware is OK and is watching. Phase C only opens the port / checks
 > logs; it does not command motors.
 
 ---
@@ -487,7 +487,7 @@ marks every line with `// TEMP`:
    startup of it. The 5×-power-on cold-boot wake (`MABU_MOTOR_GUIDE.md` §3) still
    applies; keep that in the app's init.
 
-Re-build/deploy per `guides/MABU_BUILD_GUIDE.md`, then (with Alex watching, per
+Re-build/deploy per `guides/MABU_BUILD_GUIDE.md`, then (with the operator watching, per
 project rules) confirm motors move directly with no bridge running.
 
 ---

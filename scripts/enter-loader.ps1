@@ -145,7 +145,7 @@ if ($sawLoader) {
             Write-Host "    $($ld.Trim())" -ForegroundColor DarkGray
             Write-Host ''
             Write-Host '  Next step:' -ForegroundColor Cyan
-            Write-Host '    .\scripts\flash-mabu.ps1' -ForegroundColor White
+            Write-Host '    .\scripts\flash.ps1' -ForegroundColor White
         } else {
             Note 'Loader enumerated on PnP but rkdeveloptool cannot open it yet.'
             Note 'WinUSB is not bound to PID_320A. Fix with Zadig:'
