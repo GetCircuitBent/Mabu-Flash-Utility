@@ -60,7 +60,7 @@ if (-not $sync.AppDir) {
 [xml]$xaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="MabuFlash" Height="620" Width="760"
+        Title="Mabu Flash Utility" Height="680" Width="760"
         WindowStartupLocation="CenterScreen" Background="#1A242D"
         FontFamily="Segoe UI" ResizeMode="CanMinimize">
   <Window.Resources>
@@ -94,13 +94,31 @@ if (-not $sync.AppDir) {
   </Window.Resources>
 
   <Grid Margin="0">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+    </Grid.RowDefinitions>
+
+    <!-- ===================== BRAND HEADER ===================== -->
+    <Border Grid.Row="0" Background="#1A242D" BorderBrush="#33454F" BorderThickness="0,0,0,1" Padding="30,16">
+      <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+        <Image x:Name="BrandLogo" Width="52" Height="52" Margin="0,0,16,0"
+               Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
+        <StackPanel VerticalAlignment="Center">
+          <TextBlock Text="Mabu Flash Utility" FontSize="25" FontWeight="Bold" Foreground="#FFFFFF"/>
+          <TextBlock Text="Welcome to the mabu liberation front!" FontSize="13.5"
+                     Foreground="#FF4F00" Margin="0,3,0,0"/>
+        </StackPanel>
+      </StackPanel>
+    </Border>
+
     <!-- ===================== CONNECT SCREEN ===================== -->
-    <Grid x:Name="ConnectScreen" Margin="34">
+    <Grid x:Name="ConnectScreen" Grid.Row="1" Margin="34">
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
         <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
-      <TextBlock Grid.Row="0" Text="MabuFlash" FontSize="30" FontWeight="Bold" Foreground="#FFFFFF"/>
+      <TextBlock Grid.Row="0" Text="Connect your Mabu" FontSize="22" FontWeight="SemiBold" Foreground="#FFFFFF"/>
       <TextBlock Grid.Row="1" Margin="0,4,0,20" FontSize="14" Foreground="#A5B0B7"
                  Text="Liberate &amp; provision a Mabu tablet."/>
       <Border Grid.Row="2" Background="#283845" CornerRadius="8" Padding="22">
@@ -122,7 +140,7 @@ if (-not $sync.AppDir) {
     </Grid>
 
     <!-- ===================== PROGRESS SCREEN ===================== -->
-    <Grid x:Name="ProgressScreen" Margin="34" Visibility="Collapsed">
+    <Grid x:Name="ProgressScreen" Grid.Row="1" Margin="34" Visibility="Collapsed">
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
         <RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/>
@@ -157,7 +175,7 @@ if (-not $sync.AppDir) {
     </Grid>
 
     <!-- ===================== PROMPT OVERLAY ===================== -->
-    <Grid x:Name="PromptOverlay" Background="#CC0D141B" Visibility="Collapsed">
+    <Grid x:Name="PromptOverlay" Grid.RowSpan="2" Background="#CC0D141B" Visibility="Collapsed">
       <Border Background="#283845" CornerRadius="10" Padding="28" MaxWidth="520"
               VerticalAlignment="Center" HorizontalAlignment="Center">
         <StackPanel>
@@ -177,9 +195,25 @@ $sync.Window = $Window
 
 foreach ($n in 'ConnectScreen','ConnectStatus','StartBtn','ProgressScreen','PhaseTitle',
                 'FlashBar','FlashPctText','FlashLabel','ValidateBar','ValidatePctText','ValidateLabel',
-                'LogScroll','LogText','DoneBanner','PromptOverlay','PromptTitle','PromptBody','PromptButtons') {
+                'LogScroll','LogText','DoneBanner','PromptOverlay','PromptTitle','PromptBody','PromptButtons','BrandLogo') {
     $sync[$n] = $Window.FindName($n)
 }
+
+# Brand: load the GCB cat mark from the repo (assets\logos) for the header + the
+# window/taskbar icon. Cosmetic -- degrade silently if the asset isn't found.
+try {
+    $logoPath = Join-Path (Split-Path $sync.AppDir -Parent) 'assets\logos\gcb-cat-logo.png'
+    if (Test-Path $logoPath) {
+        $bmp = New-Object Windows.Media.Imaging.BitmapImage
+        $bmp.BeginInit()
+        $bmp.CacheOption = [Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+        $bmp.UriSource   = New-Object System.Uri($logoPath)
+        $bmp.EndInit()
+        $bmp.Freeze()
+        if ($sync.BrandLogo) { $sync.BrandLogo.Source = $bmp }
+        $Window.Icon = $bmp
+    }
+} catch { }
 
 $brush    = New-Object Windows.Media.BrushConverter
 $sevColor = @{ info='#C7D0D6'; ok='#61CE70'; warn='#FFB020'; fail='#FF4F00'; section='#FFFFFF' }

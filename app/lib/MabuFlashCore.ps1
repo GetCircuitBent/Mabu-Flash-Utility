@@ -398,6 +398,7 @@ function Run-SelfTest {
     $sev = if ($stF -gt 0) { 'fail' } elseif ($stW -gt 0) { 'warn' } else { 'ok' }
     & $script:Ui.Log $sev "Self-test: $stP passed  $stF failed  $stW warnings"
     if ($stF -gt 0) { Warn 'One or more checks FAILED -- review before deploying this unit.' }
+    $script:LastSelfTestFails = $stF
 }
 
 function Enable-WifiAdb {
@@ -703,6 +704,7 @@ function Invoke-MabuFlash {
         & $Ui.Flash 100 'SELinux fix'
 
         # --- Phase 8: Self-test ---
+        $script:LastSelfTestFails = $null
         if (-not $SkipApps) {
             Info 'Waiting for device to come up for self-test...'
             $testDev = Find-AdbDevice -PreferIp $script:WifiIp -TimeoutSec 120
@@ -725,7 +727,22 @@ function Invoke-MabuFlash {
             Info '  - SELinux fix applied: untrusted_app can open serial_device (motors)'
         }
         Info 'Do NOT run motor tests until the operator confirms the hardware is ready and being watched.'
-        & $Ui.Done $true "Unit at $dev liberated, provisioned, and validated."
+
+        # Reassembly guidance -- only when every self-test check passed.
+        if ($null -ne $script:LastSelfTestFails -and $script:LastSelfTestFails -eq 0) {
+            Section 'All checks passed -- safe to reassemble'
+            Ok 'The flash is complete and fully validated. You can now:'
+            Info '  1. Power OFF the Mabu.'
+            Info '  2. Disconnect the USB harness from the internal header.'
+            Info '  3. Reassemble the robot.'
+            & $Ui.Done $true 'All checks passed. Power off the Mabu, disconnect the harness, and reassemble the robot.'
+        } elseif ($null -eq $script:LastSelfTestFails) {
+            Warn 'Self-test was skipped -- verify the unit manually before powering off and reassembling.'
+            & $Ui.Done $true "Unit at $dev liberated and provisioned (self-test skipped)."
+        } else {
+            Warn "$($script:LastSelfTestFails) self-test check(s) failed -- do NOT reassemble yet. Review the log and re-run."
+            & $Ui.Done $false "Flash finished but $($script:LastSelfTestFails) self-test check(s) failed -- review before reassembling."
+        }
     }
     catch {
         if ($_.Exception -isnot [System.OperationCanceledException]) {

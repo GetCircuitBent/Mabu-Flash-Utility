@@ -99,10 +99,21 @@ $opts = @{
 if (-not $KeepConsole) { $opts.noConsole = $true }
 if ($IconFile)         { $opts.iconFile  = $IconFile }
 
-Remove-Item $OutputFile -ErrorAction SilentlyContinue
+# A running MabuFlash.exe locks the file, so ps2exe can't overwrite it. Detect
+# that up front (a stale success is worse than a clear failure).
+$before = if (Test-Path $OutputFile) { (Get-Item $OutputFile).LastWriteTime } else { [datetime]::MinValue }
+Remove-Item $OutputFile -Force -ErrorAction SilentlyContinue
+if (Test-Path $OutputFile) {
+    $proc = Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($OutputFile)) -ErrorAction SilentlyContinue
+    $hint = if ($proc) { " It is running (PID $($proc.Id -join ', ')) -- close the MabuFlash window, then re-run." }
+            else       { ' Close whatever has it open, then re-run.' }
+    throw "Cannot overwrite $OutputFile -- the file is locked.$hint"
+}
 Info "Compiling -> $OutputFile"
 Invoke-ps2exe @opts
-if (-not (Test-Path $OutputFile)) { throw 'ps2exe did not produce the exe. See the output above.' }
+if (-not (Test-Path $OutputFile) -or (Get-Item $OutputFile).LastWriteTime -le $before) {
+    throw 'ps2exe did not produce a fresh exe (compile failed or the output was locked). See the output above.'
+}
 
 # 5. Optional Authenticode signing ------------------------------------------
 if ($CertThumbprint) {

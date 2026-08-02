@@ -448,6 +448,7 @@ function Run-SelfTest {
     $col = if ($stF -gt 0) { 'Red' } elseif ($stW -gt 0) { 'Yellow' } else { 'Green' }
     Write-Host "  Self-test: $stP passed  $stF failed  $stW warnings" -ForegroundColor $col
     if ($stF -gt 0) { Warn 'One or more checks FAILED -- review before deploying this unit.' }
+    $script:LastSelfTestFails = $stF
 }
 
 # ===========================================================================
@@ -674,6 +675,7 @@ if (-not $SkipSELinux) {
 # Phase 9: Self-test
 # ===========================================================================
 Info 'Waiting for device to come up for self-test...'
+$script:LastSelfTestFails = $null
 $testDev = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 120
 if ($testDev) {
     & $ADB -s $testDev shell 'cmd package set-home-activity app.lawnchair/.LawnchairLauncher' 2>&1 | Out-Null
@@ -687,3 +689,16 @@ Info '  - F-Droid available for additional apps'
 if (-not $SkipMabu)    { Info '  - Mabu Factory Mode launches motor diagnostics' }
 if (-not $SkipSELinux) { Info '  - SELinux fix applied: untrusted_app can open serial_device (motors)' }
 Info 'Do NOT run motor tests until the operator confirms the hardware is ready and being watched.'
+
+# Reassembly guidance -- only when every self-test check passed.
+if ($null -ne $script:LastSelfTestFails -and $script:LastSelfTestFails -eq 0) {
+    Section 'All checks passed -- safe to reassemble'
+    Ok 'The flash is complete and fully validated. You can now:'
+    Info '  1. Power OFF the Mabu.'
+    Info '  2. Disconnect the USB harness from the internal header.'
+    Info '  3. Reassemble the robot.'
+} elseif ($null -eq $script:LastSelfTestFails) {
+    Warn 'Self-test was skipped -- verify the unit manually before powering off and reassembling.'
+} else {
+    Warn "Self-test had $($script:LastSelfTestFails) failed check(s) -- do NOT reassemble yet. Review the failures above and re-run the flash."
+}
