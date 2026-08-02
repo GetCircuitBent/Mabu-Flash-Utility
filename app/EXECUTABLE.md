@@ -53,7 +53,7 @@ Project layout:
 | `app/MabuFlashGui.ps1`      | done   | WPF front-end; `-Simulate` fakes it, else real flash |
 | `app/lib/MabuUi.ps1`        | done   | UI contract + console provider (`New-ConsoleUi`)     |
 | `app/lib/MabuFlashCore.ps1` | done   | UI-agnostic flash logic (`Invoke-MabuFlash`)         |
-| `app/build/build-exe.ps1`   | TODO   | ps2exe packaging + tool bundling                     |
+| `app/build/build-exe.ps1`   | done   | ps2exe packaging (requireAdmin + STA); builds app/MabuFlash.exe |
 | `scripts/flash.ps1`         | source | the merged console flasher the core mirrors          |
 
 ## Threading Model (GUI)
@@ -66,7 +66,7 @@ The plan:
 2. **[done]** Extract `MabuFlashCore.ps1` from the console flasher behind the UI contract. *(Re-based onto the merged `flash.ps1`: on-device magiskpolicy SELinux with WSL reflash fallback, Mabu factory mode on by default via `-SkipMabu`, admin-gated USB purge, repo-relative root.)*
 3. **[done]** Console provider (`New-ConsoleUi`); the core defaults to it. Verify a console `Invoke-MabuFlash` run matches known-good on real hardware.
 4. **[done]** Wire the GUI to the real core (drop `-Simulate` to flash for real). Child-script output now routes to the log via `Invoke-Child`. Needs an on-hardware run to confirm.
-5. **[next]** `build-exe.ps1`: bundle rkdeveloptool/adb/magiskpolicy/APKs, UAC manifest, sign.
+5. **[done]** `build-exe.ps1`: ps2exe with requireAdmin + STA manifest, optional icon/signing. Builds `app/MabuFlash.exe` in place (loads the repo payload from disk at runtime; the exe is gitignored). *Remaining: hardware validation, and optional code-signing cert.*
 
 ## Running the Shell (Today)
 Simulated flow, no hardware or tools needed:
