@@ -2,6 +2,9 @@
 *.log
 *.tmp
 
+# Built GUI executable (regenerate with app/build/build-exe.ps1)
+app/MabuFlash.exe
+
 # Runtime flash logs
 log/
 

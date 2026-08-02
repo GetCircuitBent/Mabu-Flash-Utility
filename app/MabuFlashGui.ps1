@@ -36,10 +36,23 @@ $sync.Simulate = [bool]$Simulate
 $sync.Options  = @{ SkipMabu = [bool]$SkipMabu; WipeData = [bool]$WipeData; NoWipe = [bool]$NoWipe }
 $sync.Queue    = [System.Collections.Queue]::Synchronized([System.Collections.Queue]::new())
 # Where app/lib/* lives, so the worker runspace can dot-source the core.
-# Robust across -File, dot-sourcing, and ps2exe (where $PSScriptRoot may be empty).
-$sync.AppDir   = if ($PSScriptRoot) { $PSScriptRoot }
-                 elseif ($MyInvocation.MyCommand.Path) { Split-Path -Parent $MyInvocation.MyCommand.Path }
-                 else { (Get-Location).Path }
+# Robust across -File, dot-sourcing, and ps2exe (where $PSScriptRoot and
+# $MyInvocation.MyCommand.Path are both empty -- the exe's own folder comes from
+# the entry assembly location instead). Prefer whichever candidate actually
+# contains lib\MabuFlashCore.ps1 so an odd working directory can't fool us.
+$entryDir = try {
+    $asm = [System.Reflection.Assembly]::GetEntryAssembly()
+    if ($asm -and $asm.Location) { Split-Path -Parent $asm.Location } else { $null }
+} catch { $null }
+$appCandidates = @(
+    $PSScriptRoot,
+    $(if ($MyInvocation.MyCommand.Path) { Split-Path -Parent $MyInvocation.MyCommand.Path }),
+    $entryDir
+) | Where-Object { $_ }
+$sync.AppDir = $appCandidates | Where-Object { Test-Path (Join-Path $_ 'lib\MabuFlashCore.ps1') } | Select-Object -First 1
+if (-not $sync.AppDir) {
+    $sync.AppDir = if ($PSScriptRoot) { $PSScriptRoot } elseif ($entryDir) { $entryDir } else { (Get-Location).Path }
+}
 
 # --------------------------------- XAML ---------------------------------------
 # GCB brand: green-forward dark. bg #1A242D, surface #283845, module #384E60,
