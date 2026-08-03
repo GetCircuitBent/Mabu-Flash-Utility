@@ -1,8 +1,8 @@
 <#
-  MabuFlashGui.ps1 -- WPF front-end for the Mabu flash utility.
+  MabuFlashGui.ps1: WPF front-end for the Mabu flash utility.
 
   GUI shell for the `executable` branch: connect screen, two progress bars
-  (Flashing / Validating), a live log, and blocking prompt cards -- all driven
+  (Flashing / Validating), a live log, and blocking prompt cards, all driven
   through the UI-provider contract in app/EXECUTABLE.md. The same window will
   later drive the real flash core; for now `-Simulate` runs a fake flow so the
   UX can be reviewed without hardware.
@@ -13,7 +13,7 @@
   Threading model (the reliable PS 5.1 pattern):
     * WPF pumps on the main thread (ShowDialog).
     * The flow runs in a background runspace and ONLY enqueues plain-data
-      messages onto a synchronized queue -- it never touches WPF directly.
+      messages onto a synchronized queue; it never touches WPF directly.
     * A DispatcherTimer on the UI thread drains the queue and does every UI
       mutation, so there is no cross-runspace scriptblock/affinity hazard.
     * Prompts: the worker enqueues a message carrying a ManualResetEventSlim,
@@ -37,7 +37,7 @@ $sync.Options  = @{ SkipMabu = [bool]$SkipMabu; WipeData = [bool]$WipeData; NoWi
 $sync.Queue    = [System.Collections.Queue]::Synchronized([System.Collections.Queue]::new())
 # Where app/lib/* lives, so the worker runspace can dot-source the core.
 # Robust across -File, dot-sourcing, and ps2exe (where $PSScriptRoot and
-# $MyInvocation.MyCommand.Path are both empty -- the exe's own folder comes from
+# $MyInvocation.MyCommand.Path are both empty; the exe's own folder comes from
 # the entry assembly location instead). Prefer whichever candidate actually
 # contains lib\MabuFlashCore.ps1 so an odd working directory can't fool us.
 $entryDir = try {
@@ -106,7 +106,7 @@ if (-not $sync.AppDir) {
                Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
         <StackPanel VerticalAlignment="Center">
           <TextBlock Text="Mabu Flash Utility" FontSize="25" FontWeight="Bold" Foreground="#FFFFFF"/>
-          <TextBlock Text="Welcome to the mabu liberation front!" FontSize="13.5"
+          <TextBlock Text="Welcome to the Mabu Liberation Front!" FontSize="13.5"
                      Foreground="#FF4F00" Margin="0,3,0,0"/>
         </StackPanel>
       </StackPanel>
@@ -118,16 +118,16 @@ if (-not $sync.AppDir) {
         <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
         <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
-      <TextBlock Grid.Row="0" Text="Connect your Mabu" FontSize="22" FontWeight="SemiBold" Foreground="#FFFFFF"/>
+      <TextBlock Grid.Row="0" Text="Connect Your Mabu" FontSize="22" FontWeight="SemiBold" Foreground="#FFFFFF"/>
       <TextBlock Grid.Row="1" Margin="0,4,0,20" FontSize="14" Foreground="#A5B0B7"
                  Text="Liberate &amp; provision a Mabu tablet."/>
       <Border Grid.Row="2" Background="#283845" CornerRadius="8" Padding="22">
         <StackPanel>
-          <TextBlock Text="Before you start" FontSize="16" FontWeight="SemiBold" Foreground="#61CE70" Margin="0,0,0,12"/>
+          <TextBlock Text="Before You Start" FontSize="16" FontWeight="SemiBold" Foreground="#61CE70" Margin="0,0,0,12"/>
           <TextBlock Foreground="#F1F3F5" FontSize="13.5" TextWrapping="Wrap" Margin="0,0,0,8"
                      Text="1.  Plug the tablet into this PC with the USB harness."/>
           <TextBlock Foreground="#F1F3F5" FontSize="13.5" TextWrapping="Wrap" Margin="0,0,0,8"
-                     Text="2.  Hold the ADKEY, then power the tablet on -- keep holding until this app detects it. (First-flash: catches the Rockchip Loader.)"/>
+                     Text="2.  Hold the ADKEY, then power the tablet on; keep holding until this app detects it. (First flash: catches the Rockchip Loader.)"/>
           <TextBlock Foreground="#F1F3F5" FontSize="13.5" TextWrapping="Wrap" Margin="0,0,0,8"
                      Text="3.  If it boots to Android instead, join it to Wi-Fi, then continue."/>
           <TextBlock x:Name="ConnectStatus" Margin="0,14,0,0" FontSize="13.5" FontWeight="SemiBold"
@@ -135,7 +135,7 @@ if (-not $sync.AppDir) {
         </StackPanel>
       </Border>
       <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
-        <Button x:Name="StartBtn" Content="Start flashing" IsEnabled="False"/>
+        <Button x:Name="StartBtn" Content="Start Flashing" IsEnabled="False"/>
       </StackPanel>
     </Grid>
 
@@ -200,7 +200,7 @@ foreach ($n in 'ConnectScreen','ConnectStatus','StartBtn','ProgressScreen','Phas
 }
 
 # Brand: the GCB text logo (wordmark) in the header; the cat mark as the square
-# window/taskbar icon. Loaded from assets\logos at runtime -- cosmetic, so
+# window/taskbar icon. Loaded from assets\logos at runtime; cosmetic, so
 # degrade silently if an asset isn't found.
 function New-FrozenBitmap([string]$Path) {
     $b = New-Object Windows.Media.Imaging.BitmapImage
@@ -296,7 +296,7 @@ $timer.Start()
 # --------------------- UI-provider contract (built in worker) -----------------
 # Self-contained: references ONLY $sync (shared by reference). Recreated inside
 # the worker runspace from source so its closures belong to that runspace, but
-# it never touches WPF -- it only enqueues plain-data messages.
+# it never touches WPF; it only enqueues plain-data messages.
 $NewWorkerUi = {
     @{
         Section  = { param($name)      $sync.Queue.Enqueue(@{ type='section'; name=$name }) }
@@ -317,10 +317,10 @@ $NewWorkerUi = {
 # ------------------------------ Worker flows ----------------------------------
 $SimulateFlow = {
     $ui = $sync.Ui
-    & $ui.Log 'info' 'SIMULATION MODE -- no device is being touched.'
+    & $ui.Log 'info' 'Simulation mode: no device is being touched.'
     $phases = @(
         @{ name='Loader Detection';                  pct=10;  secs=2; log=@(,@('ok','Detected State A (active Esper DPC) over ADB.'),@('info','Rebooting into Loader...'),@('ok','Loader caught after 6s.')) }
-        @{ name='Loader Driver Binding (WinUSB)';     pct=18;  secs=1; log=@(,@('ok','PID 320A bound to WinUSB -- rkdeveloptool ready.')) }
+        @{ name='Loader Driver Binding (WinUSB)';     pct=18;  secs=1; log=@(,@('ok','PID 320A bound to WinUSB; rkdeveloptool ready.')) }
         @{ name='Applying Liberation Patches';        pct=32;  secs=3; log=@(,@('info','Writing parameter + adbd + 3x EOCD + 2x init...'),@('ok','All 8 patches written.')) }
         @{ name='Resetting Loader between Phases';    pct=40;  secs=2; log=@(,@('info','Booting to Android, re-entering Loader via ADB.'),@('ok','Loader re-caught after 5s.')) }
         @{ name='Wiping Head of /data (96 MB)';       pct=62;  secs=4; log=@(,@('info','Zeroing 96 MB...'),@('ok','/data head zeroed; vold will reformat on boot.')) }
@@ -332,10 +332,10 @@ $SimulateFlow = {
         & $ui.Section $p.name
         foreach ($l in $p.log) { Start-Sleep -Milliseconds 500; & $ui.Log $l[0] $l[1] }
         if ($p.name -like 'Wiping*') {
-            $choice = & $ui.Prompt 'Wi-Fi needed after wipe' `
+            $choice = & $ui.Prompt 'Wi-Fi Needed after Wipe' `
                 "The /data wipe clears the tablet's Wi-Fi credentials. On the tablet, join Wi-Fi, then press Continue." `
                 @('Continue','Cancel')
-            if ($choice -eq 'Cancel') { & $ui.Log 'warn' 'Cancelled by user.'; & $ui.Done $false 'Cancelled.'; return }
+            if ($choice -eq 'Cancel') { & $ui.Log 'warn' 'Canceled by user.'; & $ui.Done $false 'Canceled.'; return }
         }
         Start-Sleep -Seconds $p.secs
         & $ui.Flash $p.pct $p.name
@@ -403,11 +403,11 @@ function Start-Flow {
 $sync.StartBtn.Add_Click({ Start-Flow })
 
 if ($Simulate) {
-    $sync.ConnectStatus.Text = 'Simulation mode -- no device required.'
+    $sync.ConnectStatus.Text = 'Simulation mode: no device required.'
     $sync.ConnectStatus.Foreground = $brush.ConvertFromString('#61CE70')
     $sync.StartBtn.IsEnabled = $true
 } else {
-    $sync.ConnectStatus.Text = 'Plug in the tablet (hold ADKEY through power-on for a first flash, or join Wi-Fi if it boots to Android), then click Start flashing.'
+    $sync.ConnectStatus.Text = 'Plug in the tablet (hold ADKEY through power-on for a first flash, or join Wi-Fi if it boots to Android), then click Start Flashing.'
     $sync.ConnectStatus.Foreground = $brush.ConvertFromString('#FFB020')
     $sync.StartBtn.IsEnabled = $true
 }

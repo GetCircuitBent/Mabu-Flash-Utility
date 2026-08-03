@@ -1,7 +1,7 @@
 # flash.ps1
 #
 # The one command to flash a Mabu. Liberates the unit from its factory lock,
-# provisions user apps, and opens motor access -- then self-tests the result.
+# provisions user apps, and opens motor access; then self-tests the result.
 #
 # This is the merged, canonical flasher. It supersedes the older pair (now
 # removed; see git history):
@@ -13,18 +13,18 @@
 #      clean. Skipped automatically when not run as Administrator.
 #   1. Check prerequisites (rkdeveloptool, adb, patch payloads, magiskpolicy).
 #   2. Detect Rockchip Loader; if absent, find an adb device, AUTO-DETECT the
-#      Esper state (A / B / Liberated), enable WiFi adb, then enter Loader.
+#      Esper state (A / B / Liberated), enable Wi-Fi ADB, then enter Loader.
 #   3. Apply the 8 liberation patches (parameter + adbd + 3x EOCD + 2x init).
 #   4. Wipe the head of /data when the unit is State A (or forced / undetermined).
-#   5. Reset to Android, re-acquire adb over WiFi (installs run over WiFi).
+#   5. Reset to Android, re-acquire adb over Wi-Fi (installs run over Wi-Fi).
 #   6. Install user apps: F-Droid, Lawnchair (set as home).
 #   7. Install Mabu factory mode + push assets (unless -SkipMabu).
-#   8. Motor SELinux fix -- see below.
+#   8. Motor SELinux fix (see below).
 #   9. Self-test (12 checks) and print a pass/fail summary.
 #
 # SELinux motor fix (Phase 8): the patched policy is produced on-device with
 # magiskpolicy (no WSL needed). If the patch does NOT change the policy file's
-# size, it is written surgically to the /vendor policy extent via Loader -- the
+# size, it is written surgically to the /vendor policy extent via Loader: the
 # validated fast path. If magiskpolicy grows the file (it can spill past its
 # allocated blocks), the script automatically FALLS BACK to a full /vendor
 # reflash, which loop-mounts the partition image in WSL to swap the file in.
@@ -39,8 +39,8 @@
 #
 # Transport rule: USB is used ONLY when necessary (the Loader flash and the adb
 # 'reboot loader' calls). USB adb on this hardware times out too fast to rely on,
-# so installs/pulls run over WiFi adb on 5555. A wiped unit loses its WiFi creds;
-# the script pauses and asks you to re-join WiFi on the tablet's touch UI.
+# so installs/pulls run over Wi-Fi ADB on 5555. A wiped unit loses its Wi-Fi creds;
+# the script pauses and asks you to rejoin Wi-Fi on the tablet's touch UI.
 
 [CmdletBinding()]
 param(
@@ -50,7 +50,7 @@ param(
     [switch] $SkipApps,          # only do Loader-side patches; no F-Droid/Lawnchair/Mabu
     [switch] $SkipMabu,          # install F-Droid/Lawnchair but not Mabu factory mode
     [switch] $SkipSELinux,       # skip the motor SELinux fix (already applied, or not needed)
-    [string] $WifiIp,            # optional WiFi IP hint; auto-discovered from the device otherwise
+    [string] $WifiIp,            # optional Wi-Fi IP hint; auto-discovered from the device otherwise
     [string] $LawnchairApk = 'apks/Lawnchair.apk',
     [string] $FDroidApk    = 'apks/F-Droid.apk',
     [string] $MabuArchive  = 'mabu-archive'
@@ -59,7 +59,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # Resolve everything from the repo (via this script's location), NOT the current
-# directory -- so the flash works from any folder the repo is unzipped into.
+# directory, so the flash works from any folder the repo is unzipped into.
 $RepoRoot   = Split-Path -Parent $PSScriptRoot
 $RK         = Join-Path $RepoRoot 'tools\rkdeveloptool\rkdeveloptool.exe'
 $scratchDir = Join-Path $RepoRoot 'firmware\scratch'
@@ -92,7 +92,7 @@ function Test-Admin {
 }
 
 # Convert a Windows path (D:\a\b) to its WSL mount path (/mnt/d/a/b). Derived
-# from wherever the repo lives -- never hardcode a specific location.
+# from wherever the repo lives; never hardcode a specific location.
 function ConvertTo-WslPath([string]$WinPath) {
     $full = [System.IO.Path]::GetFullPath($WinPath)
     if ($full -match '^([A-Za-z]):(.*)$') {
@@ -143,16 +143,16 @@ function Confirm-LoaderWinUsb {
     # Gate before any Loader read/write: ensure PID 320A is bound to WinUSB. If
     # it's on Rockusb (the default after a first-ever Loader catch), auto-launch
     # Zadig so the user can rebind 320A -> WinUSB (one-time per PC), then re-verify.
-    Section 'Loader driver binding (WinUSB)'
+    Section 'Loader Driver Binding (WinUSB)'
     $svc = Get-LoaderDriverService
-    if ($svc -match 'WinUSB|libusb') { Ok "PID 320A bound to '$svc' -- rkdeveloptool can talk to it."; return }
+    if ($svc -match 'WinUSB|libusb') { Ok "PID 320A bound to '$svc'; rkdeveloptool can talk to it."; return }
 
     Warn "PID 320A is bound to '$svc', not WinUSB."
     Warn "rkdeveloptool can SEE Loader but writes fail ('creating comm object failed')."
     Warn 'Launching Zadig to rebind 320A -> WinUSB (one-time per PC; it persists).'
     $zadig = Find-Zadig
     if (-not $zadig) {
-        Warn 'Zadig not found -- installing via winget...'
+        Warn 'Zadig not found: installing via winget...'
         winget install -e --id akeo.ie.Zadig --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
         $zadig = Find-Zadig
     }
@@ -165,7 +165,7 @@ function Confirm-LoaderWinUsb {
         Warn "  2. In the dropdown pick 'Rockusb Device' (USB ID 2207 320A)"
         Warn '  3. Set the target driver to WinUSB, then click Replace Driver'
         Warn "  4. Wait for 'Driver Installed Successfully'"
-        Warn 'Keep the tablet powered / in Loader the whole time -- do NOT power-cycle.'
+        Warn 'Keep the tablet powered / in Loader the whole time; do NOT power-cycle.'
     } else {
         Fail 'Zadig not found and could not be installed. Install it from https://zadig.akeo.ie/'
         Fail 'rebind 320A -> WinUSB manually, then re-run this script.'
@@ -207,7 +207,7 @@ function Get-MabuState {
 }
 
 function Find-AdbDevice {
-    # -WifiOnly: never fall back to USB (installs/pulls need WiFi; USB is only for Loader).
+    # -WifiOnly: never fall back to USB (installs/pulls need Wi-Fi; USB is only for Loader).
     param([string] $PreferIp, [int] $TimeoutSec = 180, [switch] $WifiOnly)
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
     while ((Get-Date) -lt $deadline) {
@@ -245,14 +245,14 @@ function Get-DeviceWifiIp {
 }
 
 function Enable-WifiAdb {
-    # Switch adbd into TCP mode on 5555 and connect over WiFi. The patched adbd
+    # Switch adbd into TCP mode on 5555 and connect over Wi-Fi. The patched adbd
     # does NOT auto-listen on 5555 on every unit, so switch it on explicitly.
-    # persist.adb.tcp.port makes WiFi adb survive a data-preserving reboot.
+    # persist.adb.tcp.port makes Wi-Fi ADB survive a data-preserving reboot.
     param([string] $UsbDev)
     if (-not $UsbDev) { return $null }
     $ip = Get-DeviceWifiIp -Dev $UsbDev
-    if (-not $ip) { Warn 'Could not read tablet WiFi IP (is it associated to WiFi?).'; return $null }
-    Info "Tablet WiFi IP: $ip"
+    if (-not $ip) { Warn 'Could not read tablet Wi-Fi IP (is it associated to Wi-Fi?).'; return $null }
+    Info "Tablet Wi-Fi IP: $ip"
     $r = & $ADB connect "${ip}:5555" 2>&1
     if ($r -match 'connected to|already connected') {
         $ok = & $ADB -s "${ip}:5555" shell echo ok 2>&1
@@ -262,7 +262,7 @@ function Enable-WifiAdb {
     if (-not (Wait-Job $spJob -Timeout 8)) { Stop-Job $spJob }
     Remove-Job $spJob -Force
     $tcpJob = Start-Job { param($adb,$dev) & $adb -s $dev tcpip 5555 2>&1 } -ArgumentList $ADB,$UsbDev
-    if (-not (Wait-Job $tcpJob -Timeout 8)) { Stop-Job $tcpJob; Warn 'adb tcpip timed out (USB adb wedged); trying WiFi anyway.' }
+    if (-not (Wait-Job $tcpJob -Timeout 8)) { Stop-Job $tcpJob; Warn 'adb tcpip timed out (USB ADB wedged); trying Wi-Fi anyway.' }
     Remove-Job $tcpJob -Force
     Start-Sleep -Seconds 3
     for ($i = 0; $i -lt 10; $i++) {
@@ -273,7 +273,7 @@ function Enable-WifiAdb {
         }
         Start-Sleep -Seconds 2
     }
-    Warn "tcpip enabled but ${ip}:5555 unreachable (WiFi client isolation, or different subnet)."
+    Warn "tcpip enabled but ${ip}:5555 unreachable (Wi-Fi client isolation, or different subnet)."
     return $null
 }
 
@@ -295,7 +295,7 @@ function Write-PolicySurgical {
     if (-not ($wlOut -join ' ' -match '100%')) { Warn 'Policy write did not report 100%.'; return $false }
     Ok 'Policy written to /vendor via Loader (surgical).'
     & $RK rd 2>&1 | Out-Null
-    Ok 'Reset issued -- device reboots with patched SELinux policy.'
+    Ok 'Reset issued: device reboots with patched SELinux policy.'
     return $true
 }
 
@@ -313,21 +313,21 @@ function Invoke-WslVendorReflash {
         return $false
     }
     if ($Dev -notmatch ':5555$') {
-        Warn "Vendor reflash needs WiFi adb for the cycled dump; current device is '$Dev'."
+        Warn "Vendor reflash needs Wi-Fi ADB for the cycled dump; current device is '$Dev'."
         $wifi = Enable-WifiAdb -UsbDev $Dev
-        if ($wifi) { $Dev = $wifi } else { Fail 'Could not establish WiFi adb for the reflash fallback.'; return $false }
+        if ($wifi) { $Dev = $wifi } else { Fail 'Could not establish Wi-Fi ADB for the reflash fallback.'; return $false }
     }
 
-    Section 'SELinux fallback: full /vendor reflash (via WSL)'
+    Section 'SELinux Fallback: Full /vendor Reflash (via WSL)'
     $vendorImg = Join-Path $scratchDir 'vendor-full.img'
     Remove-Item $vendorImg, (Join-Path $scratchDir 'vendor-full.state.json') -ErrorAction SilentlyContinue
 
-    Info 'Dumping /vendor (256 MB) over WiFi adb -- this takes a few minutes...'
+    Info 'Dumping /vendor (256 MB) over Wi-Fi ADB; this takes a few minutes...'
     & (Join-Path $RepoRoot 'scripts\dump-system-cycled.ps1') `
         -Name 'vendor-full' -PartitionStartLBA 0x592000 -TotalMB 256 -WifiAdb $Dev -StartFresh
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $vendorImg)) { Fail 'Vendor dump failed; SELinux fix not applied.'; return $false }
     $imgMB = [math]::Round((Get-Item $vendorImg).Length / 1MB, 1)
-    if ($imgMB -lt 255) { Fail "vendor-full.img is only ${imgMB} MB -- dump incomplete."; return $false }
+    if ($imgMB -lt 255) { Fail "vendor-full.img is only ${imgMB} MB: dump incomplete."; return $false }
     Ok "vendor-full.img: ${imgMB} MB"
 
     $wVendor  = ConvertTo-WslPath $vendorImg
@@ -349,13 +349,13 @@ echo ROUTE2_OK
     & $ADB -s $Dev shell reboot loader 2>&1 | Out-Null
     if (-not (Wait-Loader 30)) { Fail 'Loader not caught for /vendor reflash.'; return $false }
     Confirm-LoaderWinUsb
-    Info 'Flashing /vendor (256 MB -- a few minutes)...'
+    Info 'Flashing /vendor (256 MB; a few minutes)...'
     $wlOut = & $RK wl 0x592000 $vendorImg 2>&1
     $wlOut | ForEach-Object { Info $_ }
     if (-not ($wlOut -join ' ' -match '100%')) { Fail 'wl for /vendor did not report 100%. Re-run: rkdeveloptool wl 0x592000 firmware\scratch\vendor-full.img'; return $false }
     Ok '/vendor reflashed with patched policy.'
     & $RK rd 2>&1 | Out-Null
-    Ok 'Reset issued -- device reboots with patched SELinux policy.'
+    Ok 'Reset issued: device reboots with patched SELinux policy.'
     return $true
 }
 
@@ -364,14 +364,14 @@ function Apply-SELinuxFix {
     # serial_device (so the facetrack app can drive the motors). magiskpolicy
     # runs ON the Mabu (ARM); we pull the result and write it back via Loader.
     param([string] $Dev)
-    Section 'SELinux policy fix (motor access)'
+    Section 'SELinux Policy Fix (Motor Access)'
     $sha = (& $ADB -s $Dev shell 'sha256sum /vendor/etc/selinux/precompiled_sepolicy 2>/dev/null' 2>&1) -join ''
-    if ($sha -match '03f180a2') { Ok 'SELinux policy already patched (03f180a2) -- skipping.'; return $true }
-    if ($sha -match '7f26df2d') { Info 'Stock policy confirmed (7f26df2d) -- applying fix.' }
-    else { Warn "Unexpected policy SHA: $sha -- proceeding anyway." }
+    if ($sha -match '03f180a2') { Ok 'SELinux policy already patched (03f180a2): skipping.'; return $true }
+    if ($sha -match '7f26df2d') { Info 'Stock policy confirmed (7f26df2d): applying fix.' }
+    else { Warn "Unexpected policy SHA: $sha. Proceeding anyway." }
 
     $mp = Join-Path $RepoRoot 'tools\magiskpolicy\magiskpolicy-armeabi-v7a'
-    if (-not (Test-Path $mp)) { Warn 'tools\magiskpolicy\magiskpolicy-armeabi-v7a not found -- skipping SELinux fix.'; return $false }
+    if (-not (Test-Path $mp)) { Warn 'tools\magiskpolicy\magiskpolicy-armeabi-v7a not found: skipping SELinux fix.'; return $false }
 
     $origSize = 0
     [int]::TryParse(((& $ADB -s $Dev shell 'stat -c %s /vendor/etc/selinux/precompiled_sepolicy 2>/dev/null' 2>&1) -join '').Trim(), [ref]$origSize) | Out-Null
@@ -379,32 +379,32 @@ function Apply-SELinuxFix {
     & $ADB -s $Dev push $mp /data/local/tmp/magiskpolicy 2>&1 | Out-Null
     & $ADB -s $Dev shell 'chmod 755 /data/local/tmp/magiskpolicy' 2>&1 | Out-Null
     $r = & $ADB -s $Dev shell "cp /vendor/etc/selinux/precompiled_sepolicy /data/local/tmp/sepolicy.in && /data/local/tmp/magiskpolicy --load /data/local/tmp/sepolicy.in --save /data/local/tmp/sepolicy.out 'allow untrusted_app serial_device chr_file { open read write getattr ioctl }' && echo PATCH_OK" 2>&1
-    if ($r -notmatch 'PATCH_OK') { Warn "magiskpolicy failed: $($r -join ' ') -- skipping."; return $false }
+    if ($r -notmatch 'PATCH_OK') { Warn "magiskpolicy failed: $($r -join ' '). Skipping."; return $false }
     Ok 'On-device policy patch succeeded.'
 
     $outFile = Join-Path $scratchDir 'sepolicy.patched'
     Remove-Item $outFile -ErrorAction SilentlyContinue
     & $ADB -s $Dev pull /data/local/tmp/sepolicy.out $outFile 2>&1 | Out-Null
-    if (-not (Test-Path $outFile)) { Warn 'Pull of patched policy failed -- skipping Loader write.'; return $false }
+    if (-not (Test-Path $outFile)) { Warn 'Pull of patched policy failed: skipping Loader write.'; return $false }
     $patchedSize = (Get-Item $outFile).Length
-    Info "Policy size -- original: $origSize B   patched: $patchedSize B"
+    Info "Policy size: original $origSize B, patched $patchedSize B"
 
     # Only a CONFIRMED size change triggers the WSL reflash. If the size matches
     # (the validated case) OR we couldn't read the original size, use the surgical
-    # write -- that is exactly what the validated flasher always did.
+    # write; that is exactly what the validated flasher always did.
     if ($origSize -gt 0 -and $patchedSize -ne $origSize) {
-        Warn "Patched policy size changed ($origSize -> $patchedSize B) -- surgical write is unsafe."
+        Warn "Patched policy size changed ($origSize -> $patchedSize B): surgical write is unsafe."
         Warn 'Falling back to a full /vendor reflash (needs WSL).'
         return (Invoke-WslVendorReflash -Dev $Dev -PatchedPolicy $outFile)
     }
-    if ($origSize -le 0) { Info 'Could not read original policy size -- using the validated surgical write.' }
+    if ($origSize -le 0) { Info 'Could not read original policy size: using the validated surgical write.' }
     else                 { Info 'No size change -> surgical in-place write (no WSL needed).' }
     return (Write-PolicySurgical -Dev $Dev -OutFile $outFile)
 }
 
 function Run-SelfTest {
     param([string] $Dev)
-    Section 'Self-test'
+    Section 'Self-Test'
     $stP = 0; $stF = 0; $stW = 0
 
     $v = (& $ADB -s $Dev shell 'getprop ro.device_owner' 2>&1) -join ''
@@ -441,13 +441,13 @@ function Run-SelfTest {
     if ($wlanIp) {
         $r  = (& $ADB connect "${wlanIp}:5555" 2>&1) -join ''
         $ok = if ($r -match 'connected to|already connected') { (& $ADB -s "${wlanIp}:5555" shell echo ok 2>&1) -join '' } else { '' }
-        if ($ok -match 'ok') { Ok "[PASS] WiFi adb reachable ($wlanIp`:5555)"; $stP++ } else { Warn "[WARN] WiFi adb unreachable ($wlanIp`:5555) -- network isolation?"; $stW++ }
-    } else { Warn '[WARN] WiFi adb: no IP on wlan0'; $stW++ }
+        if ($ok -match 'ok') { Ok "[PASS] Wi-Fi ADB reachable ($wlanIp`:5555)"; $stP++ } else { Warn "[WARN] Wi-Fi ADB unreachable ($wlanIp`:5555): network isolation?"; $stW++ }
+    } else { Warn '[WARN] Wi-Fi ADB: no IP on wlan0'; $stW++ }
 
     Write-Host ''
     $col = if ($stF -gt 0) { 'Red' } elseif ($stW -gt 0) { 'Yellow' } else { 'Green' }
     Write-Host "  Self-test: $stP passed  $stF failed  $stW warnings" -ForegroundColor $col
-    if ($stF -gt 0) { Warn 'One or more checks FAILED -- review before deploying this unit.' }
+    if ($stF -gt 0) { Warn 'One or more checks FAILED: review before deploying this unit.' }
     $script:LastSelfTestFails = $stF
 }
 
@@ -455,7 +455,7 @@ function Run-SelfTest {
 # Phase 0: (Admin) release USB + purge stale VID_2207 entries
 # ===========================================================================
 if (Test-Admin) {
-    Section '0. Release USB + clear stale VID_2207 entries'
+    Section '0. Release USB + Clear Stale VID_2207 Entries'
     & $ADB kill-server 2>$null
     Start-Sleep -Milliseconds 500
     Get-Process -Name 'rkdeveloptool' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
@@ -469,7 +469,7 @@ if (Test-Admin) {
     Ok 'USB bus ready.'
     & $ADB start-server 2>&1 | Out-Null
 } else {
-    Info 'Not running as Administrator -- skipping the USB re-enumeration step (Phase 0).'
+    Info 'Not running as Administrator: skipping the USB re-enumeration step (Phase 0).'
     Info 'That step only helps recover a wedged USB bus after many Loader cycles.'
 }
 
@@ -478,12 +478,12 @@ if (Test-Admin) {
 # ===========================================================================
 Section '1. Prerequisites'
 if (-not (Test-Path $RK)) {
-    Warn 'rkdeveloptool not found -- running install-tools.ps1...'
+    Warn 'rkdeveloptool not found: running install-tools.ps1...'
     & (Join-Path $RepoRoot 'scripts\install-tools.ps1')
     if (-not (Test-Path $RK)) { Fail 'rkdeveloptool still missing after install-tools.ps1.'; exit 1 }
 }
 if (-not $ADB -or -not (Test-Path $ADB)) {
-    Warn 'adb.exe not found -- installing Google.PlatformTools via winget...'
+    Warn 'adb.exe not found: installing Google.PlatformTools via winget...'
     winget install --id Google.PlatformTools --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
     $ADB = (Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Google.PlatformTools_*\platform-tools\adb.exe" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
     if (-not $ADB -or -not (Test-Path $ADB)) { Fail 'adb.exe still not found. Restart PowerShell and re-run.'; exit 1 }
@@ -494,15 +494,15 @@ foreach ($f in @('parameter-patched.img','adbd-authreq-patched.bin','adbd-authin
     if (-not (Test-Path (Join-Path $patchDir $f))) { Fail "Missing patch payload: firmware\patches\$f"; exit 1 }
 }
 if (-not $SkipSELinux -and -not (Test-Path (Join-Path $RepoRoot 'tools\magiskpolicy\magiskpolicy-armeabi-v7a'))) {
-    Warn 'magiskpolicy binary missing -- the SELinux fix will be skipped unless you add it.'
+    Warn 'magiskpolicy binary missing: the SELinux fix will be skipped unless you add it.'
 }
 Ok 'rkdeveloptool, adb, patch payloads present.'
-if (-not (Get-WslUbuntu)) { Info 'WSL/Ubuntu not detected -- fine unless the SELinux fix needs the reflash fallback.' }
+if (-not (Get-WslUbuntu)) { Info 'WSL/Ubuntu not detected: fine unless the SELinux fix needs the reflash fallback.' }
 
 # ===========================================================================
 # Phase 2: Catch / verify Loader, auto-detect Esper state
 # ===========================================================================
-Section '2. Loader detection'
+Section '2. Loader Detection'
 $state = 'Unknown'
 if (Test-Loader) {
     Ok 'Loader already present.'
@@ -517,12 +517,12 @@ if (Test-Loader) {
     switch ($state) {
         'A'         { Ok   "Detected State A (active Esper DPC in /data) at $dev." }
         'B'         { Ok   "Detected State B (factory-reset Esper) at $dev." }
-        'Liberated' { Ok   "Device already liberated at $dev -- skipping Loader flash." }
+        'Liberated' { Ok   "Device already liberated at ${dev}: skipping Loader flash." }
         default     { Warn "Could not determine Esper state at $dev (adb may be wedging)." }
     }
     if ($state -ne 'Liberated') {
         $wifiDev = Enable-WifiAdb -UsbDev $dev
-        if ($wifiDev) { Ok "WiFi adb enabled at $wifiDev"; $dev = $wifiDev } else { Warn 'WiFi adb not established now; inter-phase will retry.' }
+        if ($wifiDev) { Ok "Wi-Fi ADB enabled at $wifiDev"; $dev = $wifiDev } else { Warn 'Wi-Fi ADB not established now; inter-phase will retry.' }
         Info 'Rebooting into Loader.'
         & $ADB -s $dev shell reboot loader 2>&1 | Out-Null
         if (-not (Wait-Loader 30)) { Fail 'Loader did not appear in 30s.'; exit 1 }
@@ -530,7 +530,7 @@ if (Test-Loader) {
     }
 }
 
-if ($state -eq 'Liberated') { Info 'Skipping wipe policy, patches, and wipe -- device is already liberated.' }
+if ($state -eq 'Liberated') { Info 'Skipping wipe policy, patches, and wipe: device is already liberated.' }
 
 # --- Decide wipe policy: explicit flags win, else auto from detected state ---
 if ($state -ne 'Liberated' -and $WipeData -and $NoWipe) { Fail 'Pass only one of -WipeData / -NoWipe.'; exit 1 }
@@ -540,20 +540,20 @@ if ($state -ne 'Liberated') {
     elseif ($state -eq 'A') { $doWipe = $true;  $wipeWhy = 'auto: State A (active /data DPC must be wiped)' }
     elseif ($state -eq 'B') { $doWipe = $false; $wipeWhy = 'auto: State B (patches alone suffice)' }
     else                    { $doWipe = $true;  $wipeWhy = 'auto: state undetermined -> safe default = wipe' }
-    Section 'Wipe policy'
+    Section 'Wipe Policy'
     if ($doWipe) { Ok "/data wipe: ON  ($wipeWhy)" } else { Ok "/data wipe: OFF ($wipeWhy)" }
 
     Confirm-LoaderWinUsb
 
     # --- Phase 3: Apply patches ---
-    Section '3. Applying liberation patches'
+    Section '3. Applying Liberation Patches'
     & (Join-Path $RepoRoot 'scripts\liberate-mabu.ps1')
     if ($LASTEXITCODE -ne 0) { Fail 'liberate-mabu.ps1 failed.'; exit 1 }
     Ok 'All 8 patches written.'
 
     # --- Phase 4: /data wipe (State A / forced / undetermined) ---
     if ($doWipe) {
-        Section 'Resetting Loader between patch and wipe phases'
+        Section 'Resetting Loader between Patch and Wipe Phases'
         Info 'Loader wedges if we do patches + a large write back-to-back. Booting to'
         Info 'Android, then re-entering Loader via adb.'
         & $RK rd 2>&1 | Out-Null
@@ -582,14 +582,14 @@ if ($state -ne 'Liberated') {
     }
 
     # --- Reset back to Android ---
-    Section 'Resetting device'
+    Section 'Resetting Device'
     & $RK rd 2>&1 | Out-Null
     Ok 'Reset issued.'
 }
 
 if ($SkipApps) {
     Write-Host ""
-    Ok 'Loader-side patches done. -SkipApps requested -- no userspace install, no SELinux fix.'
+    Ok 'Loader-side patches done. -SkipApps requested: no userspace install, no SELinux fix.'
     exit 0
 }
 
@@ -597,42 +597,42 @@ if ($SkipApps) {
 $ErrorActionPreference = 'Continue'
 
 # ===========================================================================
-# Phase 5: Re-acquire adb over WiFi for provisioning
+# Phase 5: Re-acquire adb over Wi-Fi for provisioning
 # ===========================================================================
-Section '5. Provisioning transport (WiFi adb)'
-Info 'Installs run over WiFi adb on 5555 (USB adb on this hardware times out too fast).'
+Section '5. Provisioning Transport (Wi-Fi ADB)'
+Info 'Installs run over Wi-Fi ADB on 5555 (USB ADB on this hardware times out too fast).'
 if ($doWipe) {
-    Warn '/data was wiped: WiFi credentials AND the persistent tcpip flag are gone.'
-    Warn 'On the tablet touch UI, join your WiFi network, then come back here.'
-    Read-Host 'Press Enter once WiFi is associated on the tablet'
+    Warn '/data was wiped: Wi-Fi credentials and the persistent tcpip flag are gone.'
+    Warn 'On the tablet touch UI, join your Wi-Fi network, then come back here.'
+    Read-Host 'Press Enter once Wi-Fi is associated on the tablet'
 }
 $acq = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 180
 if (-not $acq) {
-    Fail 'No adb (USB or WiFi) after reset. Re-seat the USB harness (or fix tablet WiFi), then finish with:'
+    Fail 'No adb (USB or Wi-Fi) after reset. Re-seat the USB harness (or fix tablet Wi-Fi), then finish with:'
     Fail '  .\scripts\flash.ps1 -NoWipe'
     exit 1
 }
-if ($acq -match ':5555$') { $dev = $acq; Ok "WiFi adb already up: $dev" }
+if ($acq -match ':5555$') { $dev = $acq; Ok "Wi-Fi ADB already up: $dev" }
 else {
     $dev = Enable-WifiAdb -UsbDev $acq
-    if (-not $dev) { Warn 'WiFi adb unavailable; falling back to USB adb for installs (may wedge).'; $dev = $acq }
+    if (-not $dev) { Warn 'Wi-Fi ADB unavailable; falling back to USB ADB for installs (may wedge).'; $dev = $acq }
 }
 Ok "Provisioning over: $dev"
 
-Section 'Post-boot audit'
+Section 'Post-Boot Audit'
 $audit = & $ADB -s $dev shell 'echo DO=$(getprop ro.device_owner); echo SDOSVC=$(getprop init.svc.set-device-owner); pm list packages 2>/dev/null | grep -iE "esper|shoonya" | head -5' 2>&1
 $audit | ForEach-Object { Info $_ }
 
 # ===========================================================================
 # Phase 6: Install user apps
 # ===========================================================================
-Section '6. Installing user apps'
-if (-not (Test-Path (Join-Path $RepoRoot $FDroidApk))) { Warn "Missing APK: $FDroidApk -- skipping" }
-elseif ((& $ADB -s $dev shell 'pm list packages org.fdroid.fdroid 2>/dev/null' 2>&1) -match 'package:') { Ok 'F-Droid already installed -- skipping.' }
+Section '6. Installing User Apps'
+if (-not (Test-Path (Join-Path $RepoRoot $FDroidApk))) { Warn "Missing APK: $FDroidApk. Skipping." }
+elseif ((& $ADB -s $dev shell 'pm list packages org.fdroid.fdroid 2>/dev/null' 2>&1) -match 'package:') { Ok 'F-Droid already installed. Skipping.' }
 else { $r = (& $ADB -s $dev install (Join-Path $RepoRoot $FDroidApk) 2>&1) | Where-Object { $_ -notmatch 'RemoteException' } | Select-Object -Last 1; Info "$FDroidApk : $r" }
 
-if (-not (Test-Path (Join-Path $RepoRoot $LawnchairApk))) { Warn "Missing APK: $LawnchairApk -- skipping" }
-elseif ((& $ADB -s $dev shell 'pm list packages app.lawnchair 2>/dev/null' 2>&1) -match 'package:') { Ok 'Lawnchair already installed -- skipping.' }
+if (-not (Test-Path (Join-Path $RepoRoot $LawnchairApk))) { Warn "Missing APK: $LawnchairApk. Skipping." }
+elseif ((& $ADB -s $dev shell 'pm list packages app.lawnchair 2>/dev/null' 2>&1) -match 'package:') { Ok 'Lawnchair already installed. Skipping.' }
 else { $r = (& $ADB -s $dev install (Join-Path $RepoRoot $LawnchairApk) 2>&1) | Where-Object { $_ -notmatch 'RemoteException' } | Select-Object -Last 1; Info "$LawnchairApk : $r" }
 & $ADB -s $dev shell 'cmd package set-home-activity app.lawnchair/.LawnchairLauncher' 2>&1 | Out-Null
 Ok 'Lawnchair set as default launcher.'
@@ -641,13 +641,13 @@ Ok 'Lawnchair set as default launcher.'
 # Phase 7: Mabu factory mode + assets
 # ===========================================================================
 if (-not $SkipMabu) {
-    Section '7. Restoring Mabu factory mode + assets'
+    Section '7. Restoring Mabu Factory Mode + Assets'
     $installed = (& $ADB -s $dev shell 'pm list packages | grep -i catalia') 2>&1
-    if ($installed -match 'com.catalia.factorymode') { Info 'com.catalia.factorymode already installed -- skipping APK install.' }
+    if ($installed -match 'com.catalia.factorymode') { Info 'com.catalia.factorymode already installed: skipping APK install.' }
     else {
         $apk = Join-Path $RepoRoot "$MabuArchive\apks\com.catalia.factorymode.apk"
         if (Test-Path $apk) { $r = (& $ADB -s $dev install $apk 2>&1) | Where-Object { $_ -notmatch 'RemoteException' } | Select-Object -Last 1; Info "factorymode install: $r" }
-        else { Warn "Mabu factory APK not found at $apk -- skipping (pass -SkipMabu to silence)." }
+        else { Warn "Mabu factory APK not found at $apk. Skipping (pass -SkipMabu to silence)." }
     }
     foreach ($p in 'CAMERA','RECORD_AUDIO','READ_PHONE_STATE','READ_EXTERNAL_STORAGE','WRITE_EXTERNAL_STORAGE') {
         & $ADB -s $dev shell pm grant com.catalia.factorymode "android.permission.$p" 2>&1 | Out-Null
@@ -690,15 +690,15 @@ if (-not $SkipMabu)    { Info '  - Mabu Factory Mode launches motor diagnostics'
 if (-not $SkipSELinux) { Info '  - SELinux fix applied: untrusted_app can open serial_device (motors)' }
 Info 'Do NOT run motor tests until the operator confirms the hardware is ready and being watched.'
 
-# Reassembly guidance -- only when every self-test check passed.
+# Reassembly guidance: only when every self-test check passed.
 if ($null -ne $script:LastSelfTestFails -and $script:LastSelfTestFails -eq 0) {
-    Section 'All checks passed -- safe to reassemble'
+    Section 'All Checks Passed: Safe to Reassemble'
     Ok 'The flash is complete and fully validated. You can now:'
     Info '  1. Power OFF the Mabu.'
     Info '  2. Disconnect the USB harness from the internal header.'
     Info '  3. Reassemble the robot.'
 } elseif ($null -eq $script:LastSelfTestFails) {
-    Warn 'Self-test was skipped -- verify the unit manually before powering off and reassembling.'
+    Warn 'Self-test was skipped: verify the unit manually before powering off and reassembling.'
 } else {
-    Warn "Self-test had $($script:LastSelfTestFails) failed check(s) -- do NOT reassemble yet. Review the failures above and re-run the flash."
+    Warn "Self-test had $($script:LastSelfTestFails) failed check(s). Do NOT reassemble yet; review the failures above and re-run the flash."
 }

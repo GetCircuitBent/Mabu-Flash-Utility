@@ -5,7 +5,7 @@
 #
 # The exe is a thin launcher: it still loads the repo payload (app\lib\*,
 # scripts\*, tools\*, firmware\*, apks\*, mabu-archive\*) from disk at runtime.
-# So it is built to app\MabuFlash.exe INSIDE the repo and must stay there -- the
+# So it is built to app\MabuFlash.exe INSIDE the repo and must stay there; the
 # GUI resolves the repo root as the parent of the exe's folder. It is not a
 # standalone single-file bundle; ship the whole repo folder with the exe in it.
 #
@@ -43,7 +43,7 @@ if (-not (Test-Path $Gui)) { throw "GUI source not found: $Gui" }
 
 # 1. ps2exe module ----------------------------------------------------------
 if (-not (Get-Module -ListAvailable -Name ps2exe)) {
-    Info 'ps2exe not found -- installing for the current user (needs internet + PSGallery)...'
+    Info 'ps2exe not found: installing for the current user (needs internet + PSGallery)...'
     try {
         if (-not (Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue)) {
             Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Scope CurrentUser -Force | Out-Null
@@ -70,7 +70,7 @@ $payload = @(
 )
 $missing = $payload | Where-Object { -not (Test-Path (Join-Path $RepoRoot $_)) }
 if ($missing) {
-    Warn 'These runtime files are missing from the repo -- the exe needs them when it flashes:'
+    Warn 'These runtime files are missing from the repo; the exe needs them when it flashes:'
     $missing | ForEach-Object { Warn "  - $_" }
     Warn '(Building anyway; fix before a real flash.)'
 } else {
@@ -105,9 +105,9 @@ $before = if (Test-Path $OutputFile) { (Get-Item $OutputFile).LastWriteTime } el
 Remove-Item $OutputFile -Force -ErrorAction SilentlyContinue
 if (Test-Path $OutputFile) {
     $proc = Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($OutputFile)) -ErrorAction SilentlyContinue
-    $hint = if ($proc) { " It is running (PID $($proc.Id -join ', ')) -- close the MabuFlash window, then re-run." }
+    $hint = if ($proc) { " It is running (PID $($proc.Id -join ', ')). Close the MabuFlash window, then re-run." }
             else       { ' Close whatever has it open, then re-run.' }
-    throw "Cannot overwrite $OutputFile -- the file is locked.$hint"
+    throw "Cannot overwrite $OutputFile. The file is locked.$hint"
 }
 Info "Compiling -> $OutputFile"
 Invoke-ps2exe @opts
@@ -130,4 +130,4 @@ Write-Host ""
 Ok "Built: $OutputFile  ($mb MB)"
 Info 'Run it by double-clicking (UAC prompts for admin). Simulated UX preview:'
 Info "  `"$OutputFile`" -Simulate"
-Info 'Keep the exe here inside the repo -- it loads scripts/, tools/, firmware/, apks/ from the repo root.'
+Info 'Keep the exe here inside the repo; it loads scripts/, tools/, firmware/, apks/ from the repo root.'
