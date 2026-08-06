@@ -107,7 +107,7 @@ if (-not $sync.AppDir) {
         <StackPanel VerticalAlignment="Center">
           <TextBlock Text="Mabu Flash Utility" FontSize="25" FontWeight="Bold" Foreground="#FFFFFF"/>
           <TextBlock Text="Welcome to the Mabu Liberation Front!" FontSize="13.5"
-                     Foreground="#FF4F00" Margin="0,3,0,0"/>
+                     Foreground="#FF4F00" Margin="0,3,0,0" TextWrapping="Wrap"/>
         </StackPanel>
       </StackPanel>
     </Border>
@@ -119,8 +119,8 @@ if (-not $sync.AppDir) {
         <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
       <TextBlock Grid.Row="0" Text="Connect Your Mabu" FontSize="22" FontWeight="SemiBold" Foreground="#FFFFFF"/>
-      <TextBlock Grid.Row="1" Margin="0,4,0,20" FontSize="14" Foreground="#A5B0B7"
-                 Text="Liberate &amp; provision a Mabu tablet."/>
+      <TextBlock Grid.Row="1" Margin="0,4,0,20" FontSize="14" Foreground="#A5B0B7" TextWrapping="Wrap"
+                 Text="Liberate &amp; Provision a Mabu Tablet."/>
       <Border Grid.Row="2" Background="#283845" CornerRadius="8" Padding="22">
         <StackPanel>
           <TextBlock Text="Before You Start" FontSize="16" FontWeight="SemiBold" Foreground="#61CE70" Margin="0,0,0,12"/>
@@ -131,7 +131,7 @@ if (-not $sync.AppDir) {
           <TextBlock Foreground="#F1F3F5" FontSize="13.5" TextWrapping="Wrap" Margin="0,0,0,8"
                      Text="3.  If it boots to Android instead, join it to Wi-Fi, then continue."/>
           <TextBlock x:Name="ConnectStatus" Margin="0,14,0,0" FontSize="13.5" FontWeight="SemiBold"
-                     Foreground="#FFB020" Text="Waiting for device..."/>
+                     Foreground="#FFB020" Text="Waiting for device..." TextWrapping="Wrap"/>
         </StackPanel>
       </Border>
       <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
@@ -144,6 +144,7 @@ if (-not $sync.AppDir) {
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
         <RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
       <TextBlock Grid.Row="0" x:Name="PhaseTitle" Text="Flashing..." FontSize="24" FontWeight="Bold" Foreground="#FFFFFF"/>
 
@@ -171,7 +172,11 @@ if (-not $sync.AppDir) {
         </ScrollViewer>
       </Border>
       <TextBlock Grid.Row="4" x:Name="DoneBanner" Visibility="Collapsed" Margin="0,16,0,0"
-                 FontSize="16" FontWeight="Bold"/>
+                 FontSize="16" FontWeight="Bold" TextWrapping="Wrap"/>
+      <StackPanel Grid.Row="5" x:Name="RetryPanel" Orientation="Horizontal" HorizontalAlignment="Right"
+                  Margin="0,16,0,0" Visibility="Collapsed">
+        <Button x:Name="RetryBtn" Content="Retry Flash"/>
+      </StackPanel>
     </Grid>
 
     <!-- ===================== PROMPT OVERLAY ===================== -->
@@ -195,7 +200,8 @@ $sync.Window = $Window
 
 foreach ($n in 'ConnectScreen','ConnectStatus','StartBtn','ProgressScreen','PhaseTitle',
                 'FlashBar','FlashPctText','FlashLabel','ValidateBar','ValidatePctText','ValidateLabel',
-                'LogScroll','LogText','DoneBanner','PromptOverlay','PromptTitle','PromptBody','PromptButtons','BrandLogo') {
+                'LogScroll','LogText','DoneBanner','RetryPanel','RetryBtn',
+                'PromptOverlay','PromptTitle','PromptBody','PromptButtons','BrandLogo') {
     $sync[$n] = $Window.FindName($n)
 }
 
@@ -250,6 +256,7 @@ function Update-FromQueue {
                 $sync.DoneBanner.Foreground = $brush.ConvertFromString($(if ($m.ok) { '#61CE70' } else { '#FF4F00' }))
                 $sync.DoneBanner.Visibility = 'Visible'
                 $sync.PhaseTitle.Text = if ($m.ok) { 'Done' } else { 'Stopped' }
+                $sync.RetryPanel.Visibility = if ($m.ok) { 'Collapsed' } else { 'Visible' }
             }
         }
     }
@@ -372,10 +379,20 @@ $RealFlow = {
         -SkipMabu:$opt.SkipMabu -WipeData:$opt.WipeData -NoWipe:$opt.NoWipe
 }.ToString()
 
-# --------------------- Start the worker in a background runspace ---------------
+# --------------------- Start (or re-fire) the worker runspace ------------------
 function Start-Flow {
+    # Re-entrant: also used by the Retry button after a failed run, so reset
+    # every piece of progress UI and tear down the previous runspace first.
+    if ($sync.PS) { try { $sync.PS.Stop(); $sync.PS.Dispose() } catch {} }
+
     $sync.ConnectScreen.Visibility  = 'Collapsed'
     $sync.ProgressScreen.Visibility = 'Visible'
+    $sync.LogText.Inlines.Clear()
+    $sync.FlashBar.Value = 0;    $sync.FlashPctText.Text = '0%';    $sync.FlashLabel.Text = ''
+    $sync.ValidateBar.Value = 0; $sync.ValidatePctText.Text = '0%'; $sync.ValidateLabel.Text = ''
+    $sync.DoneBanner.Visibility = 'Collapsed'
+    $sync.RetryPanel.Visibility = 'Collapsed'
+    $sync.PhaseTitle.Text = 'Flashing...'
 
     $rs = [runspacefactory]::CreateRunspace()
     $rs.ApartmentState = 'STA'; $rs.ThreadOptions = 'ReuseThread'; $rs.Open()
@@ -401,6 +418,7 @@ function Start-Flow {
 
 # ------------------------------ Wire up events --------------------------------
 $sync.StartBtn.Add_Click({ Start-Flow })
+$sync.RetryBtn.Add_Click({ Start-Flow })
 
 if ($Simulate) {
     $sync.ConnectStatus.Text = 'Simulation mode: no device required.'

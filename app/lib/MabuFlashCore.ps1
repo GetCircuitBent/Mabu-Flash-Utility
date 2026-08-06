@@ -571,7 +571,7 @@ function Invoke-MabuFlash {
                 if (-not (Test-Loader)) { Fail 'Loader not re-caught.'; Abort 'Loader not re-caught.' }
                 & $Ui.Flash 40 'Loader re-caught'
 
-                Section "Wiping head of /data ($WipeMB MB)"
+                Section "Wiping Head of /data ($WipeMB MB)"
                 & $script:RK ld 2>&1 | Out-Null
                 Start-Sleep -Seconds 3
                 $wiped = $false
