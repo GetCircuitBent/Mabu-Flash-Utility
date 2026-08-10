@@ -1,4 +1,14 @@
-﻿# flash-new-mabu.ps1
+﻿# flash-new-mabu.ps1  --  DEPRECATED
+#
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+# !!  THIS SCRIPT IS DEPRECATED. DO NOT USE IT.                          !!
+# !!                                                                      !!
+# !!  Use scripts\flash-mabu.ps1 instead -- it is the current            !!
+# !!  all-in-one script and receives all updates.                         !!
+# !!                                                                      !!
+# !!  This file is kept for historical reference only and will be         !!
+# !!  removed in a future cleanup.                                        !!
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 #
 # Full Mabu flash protocol: liberation + SELinux serial-access patch.
 # Runs the complete sequence every time. USB harness only — no WiFi required.
