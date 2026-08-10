@@ -9,7 +9,7 @@
 #   3. Wipe /data head when the unit is State A (or forced/undetermined).
 #   4. Reset to Android. Wait for WiFi adb (installs/pulls run over WiFi).
 #   5. Install user-facing apps: F-Droid, Lawnchair. Set Lawnchair home.
-#   6. Optionally install Mabu factory mode + push assets (-RestoreMabu).
+#   6. Install Mabu factory mode APK + push animation/voice assets.
 #
 # State auto-detection (the /data wipe is the only thing that differs):
 #   - State A (active Esper): the live DPC io.shoonya.shoonyadpc lives in
@@ -30,25 +30,24 @@
 #
 # Use cases:
 #   - Fresh Esper Mabu (auto-detects A->wipe / B->patch-only):
-#       .\flash-mabu.ps1 -RestoreMabu
+#       .\flash-mabu.ps1
 #   - Force a full wipe regardless of detected state:
-#       .\flash-mabu.ps1 -WipeData -RestoreMabu
+#       .\flash-mabu.ps1 -WipeData
 #   - Force patch-only (skip the wipe) on a known State-B unit:
-#       .\flash-mabu.ps1 -NoWipe -RestoreMabu
+#       .\flash-mabu.ps1 -NoWipe
 #   - Just neutralize the new init.esper.rc + sdo.sh on a previously-patched unit:
 #       .\flash-mabu.ps1 -SkipApps
 #
 # When the unit is wiped, wifi creds are wiped too. The device will need wifi
-# set up via the touch UI before -RestoreMabu / app installs can proceed. The
-# script will pause and ask you to set up wifi when this happens.
+# set up via the touch UI before app installs can proceed. The script will pause
+# and ask you to set up wifi when this happens.
 
 [CmdletBinding()]
 param(
     [switch] $WipeData,          # FORCE the /data wipe regardless of detected state
     [switch] $NoWipe,            # FORCE patch-only (skip the wipe) regardless of detected state
     [int]    $WipeMB = 96,       # 96 MB matches v3 procedure (preserves Dev Options on this build)
-    [switch] $RestoreMabu,       # install factorymode + push animations/voice assets
-    [switch] $SkipApps,          # only do Loader-side patches; no F-Droid/Lawnchair
+    [switch] $SkipApps,          # only do Loader-side patches; no F-Droid/Lawnchair/factorymode
     [switch] $SkipSELinux,       # skip the SELinux policy fix (already applied, or not needed)
     [switch] $KeepRoot,          # persistent uid-0 adbd + permissive shell domain (WiFi /system writes). See ROOT-PATCH.md.
     [switch] $AllowKnownBrokenRoot, # override the KNOWN-BROKEN -KeepRoot gate (patch-rework re-testing ONLY -- see gate below)
@@ -904,7 +903,7 @@ $acq = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 180   # WiFi if already list
 if (-not $acq) {
     Fail 'No adb (USB or WiFi) after reset.'
     Fail 'Re-seat the USB harness (or fix the tablet WiFi), then finish with:'
-    Fail '  .\scripts\flash-mabu.ps1 -RestoreMabu -NoWipe'
+    Fail '  .\scripts\flash-mabu.ps1 -NoWipe'
     exit 1
 }
 if ($acq -match ':5555$') {
@@ -915,7 +914,7 @@ if ($acq -match ':5555$') {
     if (-not $dev) {
         Warn 'WiFi adb unavailable; falling back to USB adb for installs.'
         Warn 'USB installs can wedge on this hardware -- if one fails, fix WiFi adb'
-        Warn 'and re-run:  .\scripts\flash-mabu.ps1 -RestoreMabu -NoWipe'
+        Warn 'and re-run:  .\scripts\flash-mabu.ps1 -NoWipe'
         $dev = $acq
     }
 }
@@ -944,9 +943,9 @@ else {
 & $ADB -s $dev shell 'cmd package set-home-activity app.lawnchair/.LawnchairLauncher' 2>&1 | Out-Null
 Ok 'Lawnchair set as default launcher.'
 
-# --- Phase 6: Mabu restore ---
-if ($RestoreMabu) {
-    Section 'Restoring Mabu factory mode + assets'
+# --- Phase 6: Mabu factory mode + assets ---
+if (-not $SkipApps) {
+    Section 'Installing Mabu factory mode + assets'
     $installed = (& $ADB -s $dev shell 'pm list packages | grep -i catalia') 2>&1
     if ($installed -match 'com.catalia.factorymode') {
         Info 'com.catalia.factorymode already installed -- skipping APK install.'
@@ -1007,7 +1006,7 @@ Section 'Done'
 Ok "Unit at $dev liberated and provisioned. Verify on-device:"
 Info '  - Home screen = Lawnchair (long-press to customize)'
 Info '  - F-Droid available for additional apps'
-if ($RestoreMabu) {
+if (-not $SkipApps) {
     Info '  - Mabu Factory Mode launches motor diagnostics'
     Info '  - Open Trouble Shooting/Motor Debug to recalibrate motors'
 }

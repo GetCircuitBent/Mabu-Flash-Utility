@@ -67,7 +67,7 @@ Two things can happen:
 From the repo root in your Administrator PowerShell window:
 
 ```powershell
-.\scripts\flash-mabu.ps1 -RestoreMabu
+.\scripts\flash-mabu.ps1
 ```
 
 The script handles everything from here:

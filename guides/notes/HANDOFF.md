@@ -109,7 +109,7 @@ fixed by factory reset, so it's not a /data-state issue: it's deeper, in
 - Unit 3: active Esper Mabu, wipe + 8 patches + reinstall apps.
 
 Added `scripts/flash-mabu.ps1`: single command for fresh-Esper units:
-  `.\scripts\flash-mabu.ps1 -WipeData -RestoreMabu`
+  `.\scripts\flash-mabu.ps1 -WipeData`
 
 ## Earlier in This Session (2026-05-27)
 

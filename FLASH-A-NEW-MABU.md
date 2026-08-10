@@ -34,8 +34,8 @@ One command handles the full unit.
 >   still being finalized; skip it for a plain flash).
 
 ```powershell
-# FLASH (default): from the repo root, with a booted adb-reachable unit.
-.\scripts\flash-mabu.ps1 -RestoreMabu
+# FLASH: from the repo root, with a booted adb-reachable unit.
+.\scripts\flash-mabu.ps1
 ```
 
 > **State auto-detect:** the script probes the unit over ADB and classifies it:
@@ -52,7 +52,6 @@ One command handles the full unit.
 ### Script Flags
 | Flag | Effect |
 |---|---|
-| `-RestoreMabu` | Install Mabu factory mode APK + push animation/voice assets |
 | `-WipeData` | Force `/data` wipe regardless of detected state |
 | `-NoWipe` | Force patch-only (skip wipe) regardless of detected state |
 | `-SkipApps` | Loader patches only: no app install, no SELinux fix, no self-test |
@@ -65,7 +64,7 @@ One command handles the full unit.
 3. **Wipe `/data` head** (96 MB) if State A or forced *(skipped for B / Liberated)*
 4. **Reset** to Android
 5. **Install apps**: F-Droid, Lawnchair (set as home)
-6. **Restore Mabu**: factory mode APK + assets *(if `-RestoreMabu`)*
+6. **Mabu factory mode + assets**: install `com.catalia.factorymode` APK + push animation/voice assets
 7. **SELinux fix**: on-device `magiskpolicy` patch → Loader write to `0x5A8AB8` *(skippable with `-SkipSELinux`)*
 8. **Self-test**: 12 checks: liberation, apps, SELinux policy SHA, AVC denial check, WiFi ADB
 
@@ -362,7 +361,7 @@ From the repo root, with a **booted, ADB-reachable unit** (so the script can
 detect the state and reboot it into Loader itself):
 
 ```powershell
-.\scripts\flash-mabu.ps1 -RestoreMabu
+.\scripts\flash-mabu.ps1
 ```
 
 The script auto-detects State A vs B and wipes `/data` only on State A (see
@@ -392,9 +391,9 @@ What it does, in order (`scripts/flash-mabu.ps1` → `scripts/liberate-mabu.ps1`
    WiFi ADB** for everything that follows (see the transport rule below; USB ADB
    on this hardware times out too fast to rely on).
 4. **Install F-Droid + Lawnchair**, set Lawnchair as home.
-5. **(`-RestoreMabu`)** install `com.catalia.factorymode` + push animation/voice
-   assets, grant runtime perms. *(Factory-test app, not the consumer app; the
-   consumer Mabu app was never archived.)*
+5. **Install `com.catalia.factorymode`** + push animation/voice assets, grant
+   runtime perms. *(Factory-test app, not the consumer app; the consumer Mabu
+   app was never archived.)*
 
 After `/data` wipe, **WiFi credentials are gone**. The script pauses and asks
 you to join WiFi on the touch UI before app installs proceed.
@@ -827,7 +826,7 @@ Protocol reference (don't hand-compute checksums; use the code):
 ## 9. Quick Checklist
 - [ ] Loader caught (PID 320A): `adb reboot loader` if ADB is up, else hold ADKEY (pin 4)→GND through power-on
 - [ ] **PID 320A bound to WinUSB** (not `rockusb.sys`): `flash-mabu.ps1` auto-launches Zadig if not; one-time per PC, then persists. `ld` listing the Loader is *not* proof: a `rockusb.sys` binding writes-fail with "creating comm object failed"
-- [ ] `flash-mabu.ps1 -RestoreMabu` completes: confirm the "Detected State X" / "Wipe policy" line matches the unit (force with `-WipeData`/`-NoWipe` if needed; re-run wipe if it "FAILED at chunk 0")
+- [ ] `flash-mabu.ps1` completes: confirm the "Detected State X" / "Wipe policy" line matches the unit (force with `-WipeData`/`-NoWipe` if needed; re-run wipe if it "FAILED at chunk 0")
 - [ ] Device Owner clear, no esper/shoonya packages
 - [ ] Re-joined WiFi, WiFi ADB on 5555, static lease set (the working transport for all on-device ADB; USB only for the Loader flash + opening ADB)
 - [ ] Launcher + apps installed

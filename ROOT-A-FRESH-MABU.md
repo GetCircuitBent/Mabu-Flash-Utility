@@ -42,11 +42,11 @@ Do this FIRST, without root, so you know the unit is healthy before adding root.
 
 - **State B (factory-reset Esper)** — no `/data` wipe needed:
   ```
-  .\scripts\flash-mabu.ps1 -RestoreMabu -NoWipe
+  .\scripts\flash-mabu.ps1 -NoWipe
   ```
 - **State A (active Esper)** — needs the `/data` wipe to drop the live DPC:
   ```
-  .\scripts\flash-mabu.ps1 -RestoreMabu -WipeData
+  .\scripts\flash-mabu.ps1 -WipeData
   ```
   (The script auto-detects A vs B from a booted unit; the explicit flag just
   removes ambiguity. It will no longer *silently* wipe on an undetermined state.)
@@ -93,7 +93,7 @@ on a mismatch or from a cold Loader. It never implies a wipe.
   ```
 - **Fresh not-yet-liberated** unit → liberates + roots in one go (State B example):
   ```
-  .\scripts\flash-mabu.ps1 -RestoreMabu -NoWipe -KeepRoot
+  .\scripts\flash-mabu.ps1 -NoWipe -KeepRoot
   ```
 - Manual equivalent, if you'd rather do it by hand (any liberated unit):
   ```
