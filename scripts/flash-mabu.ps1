@@ -97,18 +97,28 @@ function Get-LoaderDriverService {
 }
 
 function Find-Zadig {
-    # Locate a Zadig exe: winget package dir first, then Program Files.
+    # Locate a Zadig exe: repo tools\ first, then winget package dir, then Program Files.
     $c = @()
+    $c += Get-ChildItem (Join-Path $Root 'tools') -Filter 'zadig*.exe' -Recurse -ErrorAction SilentlyContinue
     $c += Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\akeo.ie.Zadig_*" -Filter 'zadig*.exe' -Recurse -ErrorAction SilentlyContinue
     $c += Get-ChildItem "$env:ProgramFiles","${env:ProgramFiles(x86)}" -Filter 'zadig*.exe' -Recurse -ErrorAction SilentlyContinue
     return ($c | Select-Object -First 1).FullName
 }
 
+function Install-Zadig {
+    Info 'Zadig not found -- installing via winget (one-time)...'
+    winget install -e --id akeo.ie.Zadig --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+    $path = Find-Zadig
+    if (-not $path) { Fail 'Zadig install failed. Install it manually (https://zadig.akeo.ie/) and re-run.'; exit 1 }
+    Ok "Zadig installed: $path"
+    return $path
+}
+
 function Confirm-LoaderWinUsb {
     # Gate before any Loader read/write: ensure PID 320A is bound to WinUSB.
     # If it's on Rockusb (the default after a first-ever Loader catch on a PC),
-    # auto-launch Zadig so the user can rebind 320A -> WinUSB (one-time; persists),
-    # then re-verify. Returns once WinUSB is confirmed; exits on failure.
+    # auto-install + launch Zadig so the user can rebind 320A -> WinUSB (one-time;
+    # persists), then re-verify. Returns once WinUSB is confirmed; exits on failure.
     Section 'Loader driver binding (WinUSB)'
     $svc = Get-LoaderDriverService
     if ($svc -match 'WinUSB|libusb') { Ok "PID 320A bound to '$svc' -- rkdeveloptool can talk to it."; return }
@@ -117,21 +127,16 @@ function Confirm-LoaderWinUsb {
     Warn "rkdeveloptool can SEE Loader but writes fail ('creating comm object failed')."
     Warn 'Launching Zadig to rebind 320A -> WinUSB (one-time per PC; it persists).'
     $zadig = Find-Zadig
-    if ($zadig) {
-        Info "Zadig: $zadig"
-        Start-Process $zadig
-        Write-Host ""
-        Warn 'In Zadig:'
-        Warn '  1. Options -> List All Devices'
-        Warn "  2. In the dropdown pick 'Rockusb Device' (USB ID 2207 320A)"
-        Warn '  3. Set the target driver to WinUSB, then click Replace Driver'
-        Warn "  4. Wait for 'Driver Installed Successfully'"
-        Warn 'Keep the tablet powered / in Loader the whole time -- do NOT power-cycle.'
-    } else {
-        Fail 'Zadig not found. Install it (winget install -e --id akeo.ie.Zadig)'
-        Fail 'and rebind 320A -> WinUSB manually, then re-run this script.'
-        exit 1
-    }
+    if (-not $zadig) { $zadig = Install-Zadig }
+    Info "Zadig: $zadig"
+    Start-Process $zadig
+    Write-Host ""
+    Warn 'In Zadig:'
+    Warn '  1. Options -> List All Devices'
+    Warn "  2. In the dropdown pick 'Rockusb Device' (USB ID 2207 320A)"
+    Warn '  3. Set the target driver to WinUSB, then click Replace Driver'
+    Warn "  4. Wait for 'Driver Installed Successfully'"
+    Warn 'Keep the tablet powered / in Loader the whole time -- do NOT power-cycle.'
     Read-Host 'Press Enter after Zadig reports the WinUSB driver is installed'
 
     # Re-verify the binding (device re-enumerates on rebind; allow a moment).
