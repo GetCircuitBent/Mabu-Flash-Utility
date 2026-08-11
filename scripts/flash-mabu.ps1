@@ -1,4 +1,4 @@
-﻿# flash-mabu.ps1
+# flash-mabu.ps1
 #
 # Unified Mabu liberation + restore script.
 #

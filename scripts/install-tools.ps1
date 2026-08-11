@@ -267,8 +267,14 @@ if (-not $zadig) {
     Write-Host '  Install adb (see notes above), then re-run.' -ForegroundColor White
 } else {
     Write-Host '  All tools ready. To flash a Mabu:' -ForegroundColor Green
-    Write-Host '  1. Power on Mabu with USB harness connected (Loader window ~10s on boot).' -ForegroundColor White
-    Write-Host '  2. Run scripts\bind-winusb.ps1 to bind WinUSB to the Loader device (PID 320A).' -ForegroundColor White
-    Write-Host '  3. Confirm: tools\rkdeveloptool\rkdeveloptool.exe ld' -ForegroundColor White
-    Write-Host '  4. Follow guides\MABU_FLASH_GUIDE.md Phase B onward.' -ForegroundColor White
+    Write-Host '  1. Connect the USB harness and power the unit on.' -ForegroundColor White
+    Write-Host '     (Hold ADKEY through power-on to catch Loader; or just let Android boot -' -ForegroundColor White
+    Write-Host '      the script enters Loader itself.)' -ForegroundColor White
+    Write-Host '  2. From the repo root, in this Administrator PowerShell, run:' -ForegroundColor White
+    Write-Host '       .\scripts\flash-mabu.ps1' -ForegroundColor Cyan
+    Write-Host '' -ForegroundColor White
+    Write-Host '  That single command does everything: liberation, wipe (only if needed),' -ForegroundColor White
+    Write-Host '  app install, SELinux patch, and a self-test. It will launch Zadig on its' -ForegroundColor White
+    Write-Host '  own the first time, to bind the Loader driver.' -ForegroundColor White
+    Write-Host '  Reference: FLASH-A-NEW-MABU.md' -ForegroundColor White
 }

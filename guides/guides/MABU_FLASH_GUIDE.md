@@ -116,37 +116,50 @@ cd mabu-guides
 .\scripts\install-android-driver.ps1
 ```
 
-`install-tools.ps1` handles: rkdeveloptool (hash-pinned download), Zadig, WSL
-`sepolicy-inject` build, and setools. Run it once; it's idempotent.
+`install-tools.ps1` handles: adb (Google platform-tools), rkdeveloptool
+(hash-pinned download), and Zadig. Run it once; it's idempotent.
 
 `install-android-driver.ps1` patches the Google Android USB driver INF to recognise
 VID 0x2207 / PID 0x0006 (the Mabu in Android mode), then opens Device Manager and
 walks you through the one manual click. **This step is required**: without it, USB
-ADB won't see the device after liberation and `flash-new-mabu.ps1` will time out
+ADB won't see the device after liberation and the flash script will time out
 waiting for ADB. After this driver is installed it persists across reboots.
 
-After both scripts succeed:
+After both scripts succeed, **flash**. Every Mabu, every time, one command:
 
-1. **Bind WinUSB to the Loader (first Mabu only).** Get the device into Loader
-   mode (power-cycle and catch the ~10 s window, OR `adb shell reboot loader` if
-   ADB is already working), then open Zadig:
-   ```powershell
-   .\scripts\bind-winusb.ps1   # launches Zadig with instructions
-   ```
-   In Zadig: **Options → List All Devices** (check), **Options → Ignore Hubs or
-   Composite Parents** (uncheck). In the dropdown, find the entry whose USB ID is
-   **`2207 320A`**; it will appear as **"Unknown Device"** (no name) because no
-   driver is bound yet. Confirm the USB ID matches before clicking **Install
-   Driver** (target: WinUSB). Windows remembers this binding; only needed once
-   per PC. If ADB is working, the device stays in Loader indefinitely so there is
-   no time pressure.
+```powershell
+.\scripts\flash-mabu.ps1
+```
 
-2. **Flash.** Every Mabu, every time, one command:
-   ```powershell
-   .\scripts\flash-new-mabu.ps1
-   ```
-   The script detects device state via USB PID, runs liberation + SELinux patch
-   end-to-end, and stops with a clear message if anything fails.
+The script auto-detects the Esper state, runs liberation, the /data wipe (only if
+needed), app install, the SELinux patch, and a self-test end-to-end, stopping with
+a clear message if anything fails. Run it from the repo root in an **Administrator**
+PowerShell.
+
+> **`flash-new-mabu.ps1` is deprecated — do not use it.** `flash-mabu.ps1` is the
+> current all-in-one script and the only one that receives updates.
+
+**Binding WinUSB to the Loader (first Mabu on a given PC).** `flash-mabu.ps1` does
+this for you: it detects that PID `2207 320A` is bound to `rockusb.sys` instead of
+WinUSB, installs Zadig if needed, launches it, and waits. You only need the manual
+route below if you want to do it ahead of time.
+
+<details>
+<summary>Manual WinUSB bind (optional)</summary>
+
+Get the device into Loader mode (power-cycle and catch the ~10 s window, OR
+`adb shell reboot loader` if ADB is already working), then:
+```powershell
+.\scripts\bind-winusb.ps1   # launches Zadig with instructions
+```
+In Zadig: **Options → List All Devices** (check), **Options → Ignore Hubs or
+Composite Parents** (uncheck). In the dropdown, find the entry whose USB ID is
+**`2207 320A`**; it will appear as **"Unknown Device"** (no name) because no
+driver is bound yet. Confirm the USB ID matches before clicking **Install
+Driver** (target: WinUSB). Windows remembers this binding; only needed once
+per PC. If ADB is working, the device stays in Loader indefinitely so there is
+no time pressure.
+</details>
 
 > **Catching the Loader:** power the unit OFF fully (PWRON held >7 s if needed),
 > then power on; within ~10 s run `rkdeveloptool ld`; it should report
