@@ -248,13 +248,59 @@ if (-not $wslCheck) {
 }
 
 # ---------------------------------------------------------------------------
-# 4. Android USB driver (VID 0x2207 / PID 0x0006 -> ADB after liberation)
+# 4. adb (Android platform-tools)
+# ---------------------------------------------------------------------------
+# flash.ps1 / MabuFlashCore.ps1 drive the whole provisioning phase over adb, so
+# this is a hard requirement. It was missing from this script entirely -- adb
+# had to already be on the machine some other way, or the flash script died at
+# startup with an unguarded WinGet-path lookup.
+Write-Step 'adb (Android platform-tools)'
+
+function Get-AdbPath {
+    $cmd = Get-Command adb -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $sdk = Join-Path $env:LOCALAPPDATA 'Android\Sdk\platform-tools\adb.exe'
+    if (Test-Path $sdk) { return $sdk }
+    $wgBase = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
+    if (Test-Path $wgBase) {
+        $hit = Get-ChildItem "$wgBase\Google.PlatformTools_*\platform-tools\adb.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($hit) { return $hit.FullName }
+    }
+    return $null
+}
+
+$AdbOk   = $false
+$adbPath = Get-AdbPath
+if ($adbPath) {
+    Write-OK "adb already installed: $adbPath"
+    $AdbOk = $true
+} elseif (Get-Command winget -ErrorAction SilentlyContinue) {
+    Write-Note 'Installing Google platform-tools via winget...'
+    $p = Start-Process winget `
+        -ArgumentList 'install','--id','Google.PlatformTools','-e','--accept-source-agreements','--accept-package-agreements' `
+        -NoNewWindow -Wait -PassThru
+    $adbPath = Get-AdbPath
+    if ($adbPath) {
+        Write-OK "adb installed: $adbPath"
+        $AdbOk = $true
+    } else {
+        Write-Warn "winget finished (exit $($p.ExitCode)) but adb was not found. Reopen PowerShell so PATH refreshes, then re-run."
+    }
+} else {
+    Write-Warn 'adb not found and winget is unavailable on this machine.'
+    Write-Note 'Download platform-tools manually and add it to PATH:'
+    Write-Note '  https://developer.android.com/tools/releases/platform-tools'
+    Write-Note "Or unzip it to: $env:LOCALAPPDATA\Android\Sdk\platform-tools\"
+}
+
+# ---------------------------------------------------------------------------
+# 5. Android USB driver (VID 0x2207 / PID 0x0006 -> ADB after liberation)
 # ---------------------------------------------------------------------------
 Write-Step 'Android ADB driver (PID 0x0006)'
 & (Join-Path $PSScriptRoot 'install-android-driver.ps1')
 
 # ---------------------------------------------------------------------------
-# 5. Device check
+# 6. Device check
 # ---------------------------------------------------------------------------
 Write-Step 'Device state'
 
@@ -283,12 +329,21 @@ if (-not $zadig) {
     Write-Host '  Install Zadig (see notes above).' -ForegroundColor White
 } elseif (-not (Test-Path $RkExe)) {
     Write-Host '  rkdeveloptool.exe missing - check download errors above and re-run.' -ForegroundColor White
+} elseif (-not $AdbOk) {
+    Write-Host '  Install adb (see notes above), then re-run.' -ForegroundColor White
 } elseif (-not $WslOk) {
     Write-Host '  Fix WSL / sepolicy-inject issues above, then re-run.' -ForegroundColor White
+    Write-Note 'This only blocks the SELinux-patch reflash fallback (spilled policy size);'
+    Write-Note 'a normal flash usually does not need it.'
 } else {
     Write-Host '  All tools ready. To flash a Mabu:' -ForegroundColor Green
-    Write-Host '  1. Power on Mabu with USB harness connected (Loader window ~10s on boot).' -ForegroundColor White
-    Write-Host '  2. Run scripts\bind-winusb.ps1 to bind WinUSB to the Loader device (PID 320A).' -ForegroundColor White
-    Write-Host '  3. Confirm: tools\rkdeveloptool\rkdeveloptool.exe ld' -ForegroundColor White
-    Write-Host '  4. Follow guides\MABU_FLASH_GUIDE.md Phase B onward.' -ForegroundColor White
+    Write-Host '  1. Connect the USB harness and power the unit on.' -ForegroundColor White
+    Write-Host '     (Hold ADKEY through power-on to catch Loader; or just let Android boot -' -ForegroundColor White
+    Write-Host '      flash.ps1 enters Loader itself.)' -ForegroundColor White
+    Write-Host '  2. From the repo root, in an Administrator PowerShell, run:' -ForegroundColor White
+    Write-Host '       .\scripts\flash.ps1' -ForegroundColor Cyan
+    Write-Host '' -ForegroundColor White
+    Write-Host '  That single command does everything: liberation, wipe (only if needed),' -ForegroundColor White
+    Write-Host '  app install, SELinux patch, and a self-test. It will launch Zadig on its' -ForegroundColor White
+    Write-Host '  own the first time, to bind the Loader driver.' -ForegroundColor White
 }

@@ -65,11 +65,31 @@ $RK         = Join-Path $RepoRoot 'tools\rkdeveloptool\rkdeveloptool.exe'
 $scratchDir = Join-Path $RepoRoot 'firmware\scratch'
 New-Item -ItemType Directory -Force -Path $scratchDir | Out-Null
 
-$ADB = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
-if (-not (Test-Path $ADB)) {
-    $ADB = (Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Google.PlatformTools_*\platform-tools\adb.exe" `
-            -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+function Test-Winget {
+    # winget is absent on Win10 LTSC / Server and on machines where App Installer
+    # has never been provisioned. Calling it blind is a terminating
+    # CommandNotFoundException under ErrorActionPreference='Stop', so every
+    # auto-install path checks this first.
+    return [bool](Get-Command winget -ErrorAction SilentlyContinue)
 }
+
+function Find-Adb {
+    # PATH first (covers scoop/choco/manual installs), then the Android SDK, then
+    # the winget package dir. The winget parent may not exist on a fresh machine,
+    # so it is Test-Path'd before the wildcard Get-ChildItem.
+    $cmd = Get-Command adb -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $sdk = Join-Path $env:LOCALAPPDATA 'Android\Sdk\platform-tools\adb.exe'
+    if (Test-Path $sdk) { return $sdk }
+    $wgBase = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
+    if (Test-Path $wgBase) {
+        $hit = Get-ChildItem "$wgBase\Google.PlatformTools_*\platform-tools\adb.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($hit) { return $hit.FullName }
+    }
+    return $null
+}
+
+$ADB = Find-Adb
 
 # Pre-start the adb server NOW, while errors are non-fatal. The first adb call
 # otherwise prints "* daemon not running; starting now..." to stderr, and with
@@ -86,9 +106,35 @@ function Info($msg)    { Write-Host "  $msg" -ForegroundColor Gray }
 function Ok($msg)      { Write-Host "  $msg" -ForegroundColor Green }
 function Warn($msg)    { Write-Host "  $msg" -ForegroundColor Yellow }
 function Fail($msg)    { Write-Host "  $msg" -ForegroundColor Red }
+function Die {
+    # Print one or more red lines, then abort. Use this in place of a Fail call
+    # followed by a separate exit, so an aborting path can never silently fall
+    # through when someone forgets the exit -- Fail on its own only prints.
+    # (MabuFlashCore.ps1 has the same idea as Abort(), which throws instead of
+    # exiting because the GUI cannot exit the host process.)
+    param([Parameter(ValueFromRemainingArguments = $true)][string[]] $Lines)
+    foreach ($l in $Lines) { Fail $l }
+    exit 1
+}
 
 function Test-Admin {
     ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+# Elevation is required, not just nice-to-have: un-elevated, Get-PnpDevice returns
+# nothing, so Confirm-LoaderWinUsb's WinUSB check silently reports "not bound" even
+# when it is, and Zadig cannot replace the driver. Phase 0's USB purge below stays
+# opportunistic (it's a recovery nicety, not required for a normal flash), but the
+# script as a whole cannot do its job without elevation, so it refuses up front with
+# an actionable message rather than failing confusingly mid-flash. (The packaged
+# .exe already carries a requireAdministrator manifest, so this only matters when
+# running flash.ps1 directly.)
+if (-not (Test-Admin)) {
+    Die 'This script must run as Administrator (USB driver binding and PnP queries require it).' `
+        'Close this window, then:' `
+        '  1. Right-click the Start menu -> "Windows PowerShell (Admin)" / "Terminal (Admin)"' `
+        "  2. cd `"$RepoRoot`"" `
+        '  3. Re-run this script.'
 }
 
 # Convert a Windows path (D:\a\b) to its WSL mount path (/mnt/d/a/b). Derived
@@ -133,10 +179,25 @@ function Get-LoaderDriverService {
 }
 
 function Find-Zadig {
-    $c = @()
-    $c += Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\akeo.ie.Zadig_*" -Filter 'zadig*.exe' -Recurse -ErrorAction SilentlyContinue
-    $c += Get-ChildItem "$env:ProgramFiles","${env:ProgramFiles(x86)}" -Filter 'zadig*.exe' -Recurse -ErrorAction SilentlyContinue
-    return ($c | Select-Object -First 1).FullName
+    # Explicit candidate paths only. Recursing all of Program Files measured ~6s on
+    # a clean machine (far worse on a loaded one) and this sits on the hot path.
+    $candidates = @(
+        (Join-Path $RepoRoot 'tools\zadig.exe'),
+        (Join-Path $RepoRoot 'tools\zadig\zadig*.exe'),
+        "$env:USERPROFILE\scoop\apps\zadig\current\zadig.exe",
+        "$env:USERPROFILE\scoop\shims\zadig.exe",
+        "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\akeo.ie.Zadig*\zadig*.exe",
+        "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Akeo.Zadig*\zadig*.exe",
+        "$env:ProgramFiles\Zadig\zadig.exe",
+        "${env:ProgramFiles(x86)}\Zadig\zadig.exe"
+    )
+    foreach ($pat in $candidates) {
+        $hit = Get-ChildItem -Path $pat -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($hit) { return $hit.FullName }
+    }
+    $cmd = Get-Command zadig -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    return $null
 }
 
 function Confirm-LoaderWinUsb {
@@ -152,9 +213,15 @@ function Confirm-LoaderWinUsb {
     Warn 'Launching Zadig to rebind 320A -> WinUSB (one-time per PC; it persists).'
     $zadig = Find-Zadig
     if (-not $zadig) {
-        Warn 'Zadig not found: installing via winget...'
-        winget install -e --id akeo.ie.Zadig --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
-        $zadig = Find-Zadig
+        if (Test-Winget) {
+            Warn 'Zadig not found: installing via winget...'
+            winget install -e --id akeo.ie.Zadig --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+            $zadig = Find-Zadig
+        } else {
+            Warn 'Zadig not found and winget is unavailable on this machine.'
+            Warn 'Download it from https://zadig.akeo.ie/ and place zadig.exe at:'
+            Warn "  $(Join-Path $RepoRoot 'tools\zadig.exe')"
+        }
     }
     if ($zadig) {
         Info "Zadig: $zadig"
@@ -167,9 +234,8 @@ function Confirm-LoaderWinUsb {
         Warn "  4. Wait for 'Driver Installed Successfully'"
         Warn 'Keep the tablet powered / in Loader the whole time; do NOT power-cycle.'
     } else {
-        Fail 'Zadig not found and could not be installed. Install it from https://zadig.akeo.ie/'
-        Fail 'rebind 320A -> WinUSB manually, then re-run this script.'
-        exit 1
+        Die 'Zadig not found and could not be installed. Install it from https://zadig.akeo.ie/' `
+            'rebind 320A -> WinUSB manually, then re-run this script.'
     }
     Read-Host 'Press Enter after Zadig reports the WinUSB driver is installed'
 
@@ -179,16 +245,14 @@ function Confirm-LoaderWinUsb {
         Start-Sleep -Seconds 1
     }
     if ($svc -notmatch 'WinUSB|libusb') {
-        Fail "PID 320A still bound to '$svc'. Re-run Zadig (target WinUSB), then re-run this script."
-        exit 1
+        Die "PID 320A still bound to '$svc'. Re-run Zadig (target WinUSB), then re-run this script."
     }
     if (-not (Test-Loader)) {
         Warn 'Loader not visible right after rebind; waiting for re-enumeration...'
         for ($i = 0; $i -lt 15; $i++) { Start-Sleep -Seconds 1; if (Test-Loader) { break } }
     }
     if (-not (Test-Loader)) {
-        Fail 'Loader gone after rebind. Re-catch Loader (hold ADKEY through power-on) and re-run.'
-        exit 1
+        Die 'Loader gone after rebind. Re-catch Loader (hold ADKEY through power-on) and re-run.'
     }
     Ok "PID 320A now bound to WinUSB. rkdeveloptool ready."
 }
@@ -480,18 +544,32 @@ Section '1. Prerequisites'
 if (-not (Test-Path $RK)) {
     Warn 'rkdeveloptool not found: running install-tools.ps1...'
     & (Join-Path $RepoRoot 'scripts\install-tools.ps1')
-    if (-not (Test-Path $RK)) { Fail 'rkdeveloptool still missing after install-tools.ps1.'; exit 1 }
+    if (-not (Test-Path $RK)) {
+        Die 'rkdeveloptool still missing after install-tools.ps1.' `
+            'If you downloaded the ZIP, make sure the WHOLE archive was extracted and' `
+            'that you are running from the folder containing scripts\, tools\ and firmware\.'
+    }
 }
 if (-not $ADB -or -not (Test-Path $ADB)) {
+    if (-not (Test-Winget)) {
+        Die 'adb (Android platform-tools) was not found, and winget is unavailable to install it.' `
+            'Install platform-tools manually, then re-run:' `
+            '  https://developer.android.com/tools/releases/platform-tools' `
+            'Unzip it and either add the folder to PATH or place it at:' `
+            "  $env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
+    }
     Warn 'adb.exe not found: installing Google.PlatformTools via winget...'
-    winget install --id Google.PlatformTools --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
-    $ADB = (Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Google.PlatformTools_*\platform-tools\adb.exe" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
-    if (-not $ADB -or -not (Test-Path $ADB)) { Fail 'adb.exe still not found. Restart PowerShell and re-run.'; exit 1 }
+    winget install -e --id Google.PlatformTools --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+    $ADB = Find-Adb
+    if (-not $ADB -or -not (Test-Path $ADB)) {
+        Die 'adb.exe still not found after the winget install.' `
+            'Close and reopen PowerShell (so PATH refreshes), then re-run this script.'
+    }
     & $ADB start-server 2>&1 | Out-Null
 }
 $patchDir = Join-Path $RepoRoot 'firmware\patches'
 foreach ($f in @('parameter-patched.img','adbd-authreq-patched.bin','adbd-authinit-patched.bin','espersupervisor-apk-eocd-patched.bin','esperdpc-apk-eocd-patched.bin','esperhelper-apk-eocd-patched.bin','zeros-4k.bin')) {
-    if (-not (Test-Path (Join-Path $patchDir $f))) { Fail "Missing patch payload: firmware\patches\$f"; exit 1 }
+    if (-not (Test-Path (Join-Path $patchDir $f))) { Die "Missing patch payload: firmware\patches\$f" }
 }
 if (-not $SkipSELinux -and -not (Test-Path (Join-Path $RepoRoot 'tools\magiskpolicy\magiskpolicy-armeabi-v7a'))) {
     Warn 'magiskpolicy binary missing: the SELinux fix will be skipped unless you add it.'
@@ -512,7 +590,12 @@ if (Test-Loader) {
 } else {
     Info 'Loader not seen. Finding an adb device to detect state and enter Loader.'
     $dev = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 30
-    if (-not $dev) { Fail 'No adb device and no Loader. Power-cycle the tablet to catch Loader, then re-run.'; exit 1 }
+    if (-not $dev) {
+        Die 'No adb device and no Loader.' `
+            'Power-cycle the tablet (hold ADKEY through power-on) to catch Loader, then re-run.' `
+            'If the PC never sees the device at all, run the read-only USB diagnostic:' `
+            '  .\scripts\diagnose-usb.ps1 -Watch'
+    }
     $state = Get-MabuState -Dev $dev
     switch ($state) {
         'A'         { Ok   "Detected State A (active Esper DPC in /data) at $dev." }
@@ -525,7 +608,7 @@ if (Test-Loader) {
         if ($wifiDev) { Ok "Wi-Fi ADB enabled at $wifiDev"; $dev = $wifiDev } else { Warn 'Wi-Fi ADB not established now; inter-phase will retry.' }
         Info 'Rebooting into Loader.'
         & $ADB -s $dev shell reboot loader 2>&1 | Out-Null
-        if (-not (Wait-Loader 30)) { Fail 'Loader did not appear in 30s.'; exit 1 }
+        if (-not (Wait-Loader 30)) { Die 'Loader did not appear in 30s.' }
         Ok 'Loader caught.'
     }
 }
@@ -533,7 +616,7 @@ if (Test-Loader) {
 if ($state -eq 'Liberated') { Info 'Skipping wipe policy, patches, and wipe: device is already liberated.' }
 
 # --- Decide wipe policy: explicit flags win, else auto from detected state ---
-if ($state -ne 'Liberated' -and $WipeData -and $NoWipe) { Fail 'Pass only one of -WipeData / -NoWipe.'; exit 1 }
+if ($state -ne 'Liberated' -and $WipeData -and $NoWipe) { Die 'Pass only one of -WipeData / -NoWipe.' }
 if ($state -ne 'Liberated') {
     if     ($WipeData)      { $doWipe = $true;  $wipeWhy = 'forced by -WipeData' }
     elseif ($NoWipe)        { $doWipe = $false; $wipeWhy = 'forced by -NoWipe' }
@@ -548,7 +631,7 @@ if ($state -ne 'Liberated') {
     # --- Phase 3: Apply patches ---
     Section '3. Applying Liberation Patches'
     & (Join-Path $RepoRoot 'scripts\liberate-mabu.ps1')
-    if ($LASTEXITCODE -ne 0) { Fail 'liberate-mabu.ps1 failed.'; exit 1 }
+    if ($LASTEXITCODE -ne 0) { Die 'liberate-mabu.ps1 failed.' }
     Ok 'All 8 patches written.'
 
     # --- Phase 4: /data wipe (State A / forced / undetermined) ---
@@ -559,10 +642,10 @@ if ($state -ne 'Liberated') {
         & $RK rd 2>&1 | Out-Null
         Start-Sleep -Seconds 4
         $bootDev = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 120
-        if (-not $bootDev) { Fail 'No adb after inter-phase reset. Power-cycle and retry.'; exit 1 }
+        if (-not $bootDev) { Die 'No adb after inter-phase reset. Power-cycle and retry.' }
         Ok "adb up at $bootDev"
         & $ADB -s $bootDev shell reboot loader 2>&1 | Out-Null
-        if (-not (Wait-Loader 30)) { Fail 'Loader not re-caught.'; exit 1 }
+        if (-not (Wait-Loader 30)) { Die 'Loader not re-caught.' }
         Ok 'Loader re-caught.'
 
         Section "Wiping head of /data ($WipeMB MB)"
@@ -572,12 +655,12 @@ if ($state -ne 'Liberated') {
         for ($attempt = 1; $attempt -le 4; $attempt++) {
             & (Join-Path $RepoRoot 'scripts\wipe-data-head.ps1') -SizeMB $WipeMB
             if ($LASTEXITCODE -eq 0) { $wiped = $true; break }
-            if (-not (Test-Loader)) { Fail "Loader dropped during wipe (attempt $attempt). Power-cycle into Loader and re-run."; exit 1 }
+            if (-not (Test-Loader)) { Die "Loader dropped during wipe (attempt $attempt). Power-cycle into Loader and re-run." }
             Warn "Wipe attempt $attempt wedged (cold Loader); warming and retrying..."
             & $RK ld 2>&1 | Out-Null
             Start-Sleep -Seconds 3
         }
-        if (-not $wiped) { Fail '/data head wipe failed after 4 attempts.'; exit 1 }
+        if (-not $wiped) { Die '/data head wipe failed after 4 attempts.' }
         Ok '/data head zeroed; vold will reformat on boot.'
     }
 
@@ -608,9 +691,9 @@ if ($doWipe) {
 }
 $acq = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 180
 if (-not $acq) {
-    Fail 'No adb (USB or Wi-Fi) after reset. Re-seat the USB harness (or fix tablet Wi-Fi), then finish with:'
-    Fail '  .\scripts\flash.ps1 -NoWipe'
-    exit 1
+    Die 'No adb (USB or Wi-Fi) after reset.' `
+        'Re-seat the USB harness (or fix tablet Wi-Fi), then finish with:' `
+        '  .\scripts\flash.ps1 -NoWipe'
 }
 if ($acq -match ':5555$') { $dev = $acq; Ok "Wi-Fi ADB already up: $dev" }
 else {

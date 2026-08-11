@@ -37,6 +37,15 @@ function Fail($msg)    { & $script:Ui.Log 'fail' $msg }
 # Abort: log the reason (already done by the caller's Fail) and unwind to the
 # top-level catch, which reports Done $false. Replaces the original `exit 1`.
 function Abort($msg)   { if (-not $msg) { $msg = 'aborted' }; throw [System.OperationCanceledException]::new($msg) }
+# Die: this core's equivalent of flash.ps1's Die -- print one or more red lines,
+# then Abort. Existing call sites use the Fail-then-Abort pair directly (kept, to
+# minimize churn on working code); use Die for anything new so a forgotten Abort
+# can never leave an aborting path silently continuing.
+function Die {
+    param([Parameter(ValueFromRemainingArguments = $true)][string[]] $Lines)
+    foreach ($l in $Lines) { Fail $l }
+    Abort ($Lines -join ' ')
+}
 
 function Invoke-Child {
     # Run a child .ps1 (which uses Write-Host) and forward each output line to the
@@ -95,11 +104,49 @@ function Get-LoaderDriverService {
     return (Get-PnpDeviceProperty -InstanceId $d.InstanceId -KeyName 'DEVPKEY_Device_Service' -ErrorAction SilentlyContinue).Data
 }
 
+function Test-Winget {
+    # winget is absent on Win10 LTSC / Server and unprovisioned machines; calling
+    # it blind is a terminating CommandNotFoundException under EAP='Stop'.
+    return [bool](Get-Command winget -ErrorAction SilentlyContinue)
+}
+
+function Find-Adb {
+    # PATH first, then the Android SDK, then the winget package dir. The winget
+    # parent may not exist on a fresh machine, so it's Test-Path'd before the
+    # wildcard Get-ChildItem (that wildcard on a missing parent throws under
+    # EAP='Stop', which is what originally crashed flash-mabu.ps1 on a clean PC).
+    $cmd = Get-Command adb -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $sdk = Join-Path $env:LOCALAPPDATA 'Android\Sdk\platform-tools\adb.exe'
+    if (Test-Path $sdk) { return $sdk }
+    $wgBase = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
+    if (Test-Path $wgBase) {
+        $hit = Get-ChildItem "$wgBase\Google.PlatformTools_*\platform-tools\adb.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($hit) { return $hit.FullName }
+    }
+    return $null
+}
+
 function Find-Zadig {
-    $c = @()
-    $c += Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\akeo.ie.Zadig_*" -Filter 'zadig*.exe' -Recurse -ErrorAction SilentlyContinue
-    $c += Get-ChildItem "$env:ProgramFiles","${env:ProgramFiles(x86)}" -Filter 'zadig*.exe' -Recurse -ErrorAction SilentlyContinue
-    return ($c | Select-Object -First 1).FullName
+    # Explicit candidate paths only. Recursing all of Program Files measured ~6s
+    # on a clean machine (worse on a loaded one) and this sits on the hot path.
+    $candidates = @(
+        (Join-Path $script:Root 'tools\zadig.exe'),
+        (Join-Path $script:Root 'tools\zadig\zadig*.exe'),
+        "$env:USERPROFILE\scoop\apps\zadig\current\zadig.exe",
+        "$env:USERPROFILE\scoop\shims\zadig.exe",
+        "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\akeo.ie.Zadig*\zadig*.exe",
+        "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Akeo.Zadig*\zadig*.exe",
+        "$env:ProgramFiles\Zadig\zadig.exe",
+        "${env:ProgramFiles(x86)}\Zadig\zadig.exe"
+    )
+    foreach ($pat in $candidates) {
+        $hit = Get-ChildItem -Path $pat -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($hit) { return $hit.FullName }
+    }
+    $cmd = Get-Command zadig -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    return $null
 }
 
 function Confirm-LoaderWinUsb {
@@ -112,19 +159,25 @@ function Confirm-LoaderWinUsb {
     Warn "rkdeveloptool can SEE Loader but writes fail ('creating comm object failed')."
     Warn 'Launching Zadig to rebind 320A -> WinUSB (one-time per PC; it persists).'
     $zadig = Find-Zadig
+    if (-not $zadig -and (Test-Winget)) {
+        Warn 'Zadig not found: installing via winget...'
+        winget install -e --id akeo.ie.Zadig --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+        $zadig = Find-Zadig
+    }
     if ($zadig) {
         Info "Zadig: $zadig"
         Start-Process $zadig
         Warn 'In Zadig:'
         Warn '  1. Options -> List All Devices'
-        Warn "  2. In the dropdown pick 'Rockusb Device' (USB ID 2207 320A)"
-        Warn '  3. Set the target driver to WinUSB, then click Replace Driver'
-        Warn "  4. Wait for 'Driver Installed Successfully'"
+        Warn '  2. Options -> uncheck "Ignore Hubs or Composite Parents"'
+        Warn "  3. In the dropdown pick the device whose USB ID is 2207 320A"
+        Warn '     (it may show as "Unknown Device" -- match on the USB ID, not the name)'
+        Warn '  4. Set the target driver to WinUSB, then click Replace Driver'
+        Warn "  5. Wait for 'Driver Installed Successfully' (~30s; Windows re-enumerates)"
         Warn 'Keep the tablet powered / in Loader the whole time; do NOT power-cycle.'
     } else {
-        Fail 'Zadig not found. Install it (winget install -e --id akeo.ie.Zadig)'
-        Fail 'and rebind 320A -> WinUSB manually, then re-run.'
-        Abort 'Zadig not found.'
+        Die 'Zadig not found and could not be installed. Install it from https://zadig.akeo.ie/' `
+            'and rebind 320A -> WinUSB manually, then re-run.'
     }
     & $script:Ui.Prompt 'Rebind PID 320A to WinUSB in Zadig' `
         'In Zadig: Options -> List All Devices, pick Rockusb Device (USB ID 2207 320A), set target WinUSB, click Replace Driver. Keep the tablet in Loader. Click Continue once it reports success.' `
@@ -136,16 +189,14 @@ function Confirm-LoaderWinUsb {
         Start-Sleep -Seconds 1
     }
     if ($svc -notmatch 'WinUSB|libusb') {
-        Fail "PID 320A still bound to '$svc'. Re-run Zadig (target WinUSB), then re-run."
-        Abort 'WinUSB binding failed.'
+        Die "PID 320A still bound to '$svc'. Re-run Zadig (target WinUSB), then re-run."
     }
     if (-not (Test-Loader)) {
         Warn 'Loader not visible right after rebind; waiting for re-enumeration...'
         for ($i = 0; $i -lt 15; $i++) { Start-Sleep -Seconds 1; if (Test-Loader) { break } }
     }
     if (-not (Test-Loader)) {
-        Fail 'Loader gone after rebind. Re-catch Loader (hold ADKEY through power-on) and re-run.'
-        Abort 'Loader gone after rebind.'
+        Die 'Loader gone after rebind. Re-catch Loader (hold ADKEY through power-on) and re-run.'
     }
     Ok "PID 320A now bound to '$svc'. rkdeveloptool ready."
 }
@@ -458,8 +509,35 @@ function Invoke-MabuFlash {
     # from any folder the repo lives in (parity with flash.ps1's $RepoRoot).
     $script:Root = if ($Root) { $Root } else { (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path }
     $script:RK = Join-Path $script:Root 'tools/rkdeveloptool/rkdeveloptool.exe'
-    $script:ADB = (Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Google.PlatformTools_*\platform-tools\adb.exe" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
-    if (-not $script:ADB) { & $Ui.Done $false 'adb.exe not found (install Google.PlatformTools).'; return }
+
+    # Elevation is required, not optional: un-elevated, Get-PnpDevice returns
+    # nothing, so Confirm-LoaderWinUsb's WinUSB check silently reports "not bound"
+    # even when it is, and Zadig cannot replace the driver. The packaged .exe
+    # already carries a requireAdministrator manifest, so this only fires if this
+    # file is dot-sourced directly from a non-elevated console -- but it's cheap
+    # insurance against a confusing silent-failure mode later in the flow.
+    if (-not (Test-Admin)) {
+        & $Ui.Done $false 'Must run as Administrator (USB driver binding and PnP queries require it).'
+        return
+    }
+
+    if (-not (Test-Path $script:RK)) {
+        & $Ui.Done $false "rkdeveloptool.exe not found at: $script:RK (run scripts\install-tools.ps1, or check the install is complete)."
+        return
+    }
+
+    $script:ADB = Find-Adb
+    if (-not $script:ADB) {
+        if (Test-Winget) {
+            & $Ui.Log 'warn' 'adb not found: installing Google Platform Tools via winget...'
+            winget install -e --id Google.PlatformTools --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+            $script:ADB = Find-Adb
+        }
+        if (-not $script:ADB) {
+            & $Ui.Done $false 'adb.exe not found, and could not be auto-installed. Install Google Platform Tools (https://developer.android.com/tools/releases/platform-tools) and re-run.'
+            return
+        }
+    }
     $script:WifiIp = $WifiIp
 
     # Pre-start the adb server while errors are non-fatal (avoids a stderr banner
@@ -500,8 +578,10 @@ function Invoke-MabuFlash {
             Info 'Loader not seen. Finding an adb device to detect state and enter Loader.'
             $dev = Find-AdbDevice -PreferIp $script:WifiIp -TimeoutSec 30
             if (-not $dev) {
-                Fail 'No adb device and no Loader. Power-cycle the tablet to catch Loader, then re-run.'
-                Abort 'No adb device and no Loader.'
+                Die 'No adb device and no Loader.' `
+                    'Power-cycle the tablet (hold ADKEY through power-on) to catch Loader, then re-run.' `
+                    'If the PC never sees the device at all, run the read-only USB diagnostic:' `
+                    '  .\scripts\diagnose-usb.ps1 -Watch'
             }
             $state = Get-MabuState -Dev $dev
             switch ($state) {
@@ -616,10 +696,9 @@ function Invoke-MabuFlash {
         Info 'Acquiring adb after reset (USB to switch on Wi-Fi, or Wi-Fi if already up)...'
         $acq = Find-AdbDevice -PreferIp $script:WifiIp -TimeoutSec 180
         if (-not $acq) {
-            Fail 'No adb (USB or Wi-Fi) after reset.'
-            Fail 'Re-seat the USB harness (or fix the tablet Wi-Fi), then finish with:'
-            Fail '  Invoke-MabuFlash -NoWipe'
-            Abort 'No adb after reset.'
+            Die 'No adb (USB or Wi-Fi) after reset.' `
+                'Re-seat the USB harness (or fix the tablet Wi-Fi), then finish with:' `
+                '  Invoke-MabuFlash -NoWipe'
         }
         if ($acq -match ':5555$') {
             $dev = $acq
