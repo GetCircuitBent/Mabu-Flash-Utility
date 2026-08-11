@@ -136,8 +136,9 @@ needed), app install, the SELinux patch, and a self-test end-to-end, stopping wi
 a clear message if anything fails. Run it from the repo root in an **Administrator**
 PowerShell.
 
-> **`flash-new-mabu.ps1` is deprecated — do not use it.** `flash-mabu.ps1` is the
-> current all-in-one script and the only one that receives updates.
+> **Working from an older clone or ZIP?** It may still contain `flash-new-mabu.ps1`.
+> That script has been removed — `flash-mabu.ps1` is the only flash script. Pull the
+> latest before flashing.
 
 **Binding WinUSB to the Loader (first Mabu on a given PC).** `flash-mabu.ps1` does
 this for you: it detects that PID `2207 320A` is bound to `rockusb.sys` instead of

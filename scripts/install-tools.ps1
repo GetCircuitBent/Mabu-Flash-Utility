@@ -186,8 +186,8 @@ if (Test-Path $RkExe) {
 # flash-mabu.ps1 applies the SELinux rule with on-device magiskpolicy (ARM,
 # shipped in tools\magiskpolicy\) and never shells out to WSL. Installing WSL2 +
 # Ubuntu and compiling sepolicy-inject added ~20 minutes of fresh-machine setup
-# for a dependency the flash path does not use. Only the deprecated
-# flash-new-mabu.ps1 ever needed it.
+# for a dependency the flash path does not use -- it was only ever needed by the
+# old flash-new-mabu.ps1, which has since been removed.
 Write-Step 'adb (Android platform-tools)'
 
 function Get-AdbPath {
