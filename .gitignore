@@ -17,6 +17,7 @@ firmware/scratch/
 # and scripts\install-android-driver.ps1. Re-downloadable, so never commit them.
 tools/zadig.exe
 tools/platform-tools.zip
+tools/platform-tools/
 tools/google-usb-driver-source.zip
 tools/google-usb-driver/
 dumps/**/extracted/

@@ -165,6 +165,22 @@ Write-Host ''
 Write-Host '  Patched driver is ready at:' -ForegroundColor White
 Write-Host "    $DriverDir" -ForegroundColor Cyan
 Write-Host ''
+
+# Everything above this point -- download, extract, INF patch -- works fine
+# un-elevated. Installing the driver does not: Windows requires Administrator to
+# replace a device driver, and this INF is deliberately unsigned (patching it
+# invalidates the catalog). Say so plainly rather than letting the user walk the
+# nine steps below and hit a read-only Device Manager at step 3.
+$IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+    ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $IsAdmin) {
+    Write-Warn 'Not running as Administrator -- the driver install itself will not go through.'
+    Write-Note 'The download, extract and INF patch above are done and will be reused.'
+    Write-Note 'To finish, re-run this from an Administrator PowerShell (right-click Start >'
+    Write-Note 'Terminal (Admin)), or open Device Manager elevated and follow the steps below.'
+    Write-Host ''
+}
+
 Write-Host '  Steps:' -ForegroundColor White
 Write-Host '    1. Open Device Manager (devmgmt.msc).'
 Write-Host '    2. Find "H7R" under "Universal Serial Bus devices" (currently bound to WinUSB by Zadig).'
@@ -184,12 +200,19 @@ Write-Host '  (if unauthorized, accept the host RSA key prompt on the tablet its
 Write-Host ''
 
 # Offer to open Device Manager. Tolerate non-interactive sessions.
-try {
-    $open = Read-Host 'Open Device Manager now? [Y/n]'
-    if ($open -notmatch '^[nN]') {
-        Start-Process devmgmt.msc
+# Only offered when elevated: devmgmt.msc launched from a non-elevated shell
+# inherits that token and cannot install a driver, so opening it would just walk
+# the user into a dead end.
+if (-not $IsAdmin) {
+    Write-Note 'Skipping the Device Manager launch (needs Administrator, see above).'
+} else {
+    try {
+        $open = Read-Host 'Open Device Manager now? [Y/n]'
+        if ($open -notmatch '^[nN]') {
+            Start-Process devmgmt.msc
+        }
+    } catch {
+        Write-Note 'Non-interactive session - skipping Device Manager launch.'
+        Write-Note 'Run "devmgmt.msc" yourself when ready.'
     }
-} catch {
-    Write-Note 'Non-interactive session - skipping Device Manager launch.'
-    Write-Note 'Run "devmgmt.msc" yourself when ready.'
 }

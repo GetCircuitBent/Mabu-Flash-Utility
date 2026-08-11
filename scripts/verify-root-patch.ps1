@@ -29,7 +29,24 @@ param(
 
 $ErrorActionPreference = 'Continue'
 $Root = Split-Path -Parent $PSScriptRoot
-$ADB  = (Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Google.PlatformTools_*\platform-tools\adb.exe" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+# Same candidate order as Find-Adb in the flashers -- keep them in step. This
+# used to check only the winget package dir, so on a winget-less PC $ADB was
+# silently $null and the start-server call below failed obscurely.
+function Find-Adb {
+    $repo = Join-Path $Root 'tools\platform-tools\adb.exe'
+    if (Test-Path $repo) { return $repo }
+    $cmd = Get-Command adb -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $sdk = Join-Path $env:LOCALAPPDATA 'Android\Sdk\platform-tools\adb.exe'
+    if (Test-Path $sdk) { return $sdk }
+    $wgBase = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
+    if (Test-Path $wgBase) {
+        $hit = Get-ChildItem "$wgBase\Google.PlatformTools_*\platform-tools\adb.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($hit) { return $hit.FullName }
+    }
+    return $null
+}
+$ADB  = Find-Adb
 $orig = Join-Path $Root 'firmware/originals/adbd-rootdrop-orig.bin'
 
 function Ok($m)   { Write-Host "  [OK]    $m" -ForegroundColor Green }

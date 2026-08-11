@@ -87,12 +87,14 @@ function Die {
     exit 1
 }
 
-# --- Elevation: driver binding + PnP queries need Administrator ---
-# Un-elevated, Get-PnpDevice returns nothing, so the WinUSB check silently reports
-# "not bound" even when it is, and Zadig cannot replace the driver. Refuse up front
-# with an actionable message rather than self-elevating: this script is interactive
-# (Read-Host prompts, long live output) and re-launching would move all of that into
-# a new window.
+# --- Elevation: driver binding needs Administrator ---
+# Zadig cannot replace the Loader's driver without it, and pnputil device removal
+# is likewise admin-only. Note that PnP *queries* are NOT the reason: Get-PnpDevice,
+# Get-PnpDeviceProperty (DEVPKEY_Device_Service) and `pnputil /enum-drivers` all
+# work fine un-elevated -- an earlier version of this comment claimed otherwise.
+# Refuse up front with an actionable message rather than self-elevating: this
+# script is interactive (Read-Host prompts, long live output) and re-launching
+# would move all of that into a new window.
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()
         ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Die 'This script must run as Administrator (USB driver binding and PnP queries require it).' `
@@ -110,6 +112,18 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
 # pointed at nothing.
 $Root = Split-Path -Parent $PSScriptRoot
 
+# Mapped network drives are per-logon-session: a drive letter mapped by the
+# interactive user is NOT visible in an elevated session unless
+# EnableLinkedConnections is set. Since this script forces elevation, a repo on
+# a mapped drive would vanish right here with a confusing "not found".
+if ($Root -match '^\\\\' -or ($Root -match '^([A-Za-z]):' -and
+        (Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$($Matches[1]):'" -ErrorAction SilentlyContinue).DriveType -eq 4)) {
+    Warn "The repo is on a network location ($Root)."
+    Warn 'Elevated sessions do not inherit the interactive user''s drive mappings,'
+    Warn 'so paths here may fail. Copy the repo to a local disk if anything below'
+    Warn 'reports a missing file.'
+}
+
 $RK = Join-Path $Root 'tools/rkdeveloptool/rkdeveloptool.exe'
 if (-not (Test-Path $RK)) {
     Die "rkdeveloptool.exe not found at: $RK" `
@@ -126,8 +140,15 @@ function Test-Winget {
     return [bool](Get-Command winget -ErrorAction SilentlyContinue)
 }
 
-# Locate adb.exe: PATH first, then common install locations, then winget install.
+# Locate adb.exe. Candidate order is shared with Get-AdbPath in install-tools.ps1
+# and the helper scripts -- keep them in step.
 function Find-Adb {
+    # Repo-relative copy, installed by install-tools.ps1. Checked FIRST because
+    # it is the only location that survives an elevation which switches user
+    # accounts: this script forces admin, and if the signed-in user is not an
+    # admin then %LOCALAPPDATA% below points at a different profile entirely.
+    $repo = Join-Path $Root 'tools\platform-tools\adb.exe'
+    if (Test-Path $repo) { return $repo }
     # PATH
     $cmd = Get-Command adb -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd.Source }
@@ -147,10 +168,12 @@ $ADB = Find-Adb
 if (-not $ADB) {
     if (-not (Test-Winget)) {
         Die 'adb (Android platform-tools) was not found, and winget is unavailable to install it.' `
-            'Install platform-tools manually, then re-run:' `
+            'Run the one-time setup, which downloads it directly (no winget needed):' `
+            '  .\scripts\install-tools.ps1' `
+            'Or install it by hand from:' `
             '  https://developer.android.com/tools/releases/platform-tools' `
-            'Unzip it and either add the folder to PATH or place it at:' `
-            "  $env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
+            'and unzip it to:' `
+            "  $(Join-Path $Root 'tools\platform-tools\')"
     }
     Warn 'adb not found -- installing Google Platform Tools via winget (one-time)...'
     winget install -e --id Google.PlatformTools --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
@@ -326,6 +349,21 @@ function Find-AdbDevice {
                 $serial = ($usb[0] -split '\s+')[0]
                 $ok = & $ADB -s $serial shell echo ok 2>&1
                 if ($ok -match '^ok') { return $serial }
+            }
+            # An 'unauthorized' device never matches the 'device' pattern above,
+            # so without this the loop just spins to the full timeout with no
+            # explanation. Warn once, then keep waiting in case they approve it.
+            if (-not $script:WarnedUnauthorized) {
+                $unauth = @(& $ADB devices 2>&1 | Where-Object { $_ -match '^\S+\s+unauthorized$' })
+                if ($unauth.Count -gt 0) {
+                    $script:WarnedUnauthorized = $true
+                    Warn 'A tablet is attached but reports "unauthorized".'
+                    Warn 'Accept the "Allow USB debugging?" prompt on the tablet screen.'
+                    Warn 'Note: adb host keys live in %USERPROFILE%\.android and the adb SERVER'
+                    Warn 'owns them, so a key approved under a different account (or a server'
+                    Warn 'started by one) will not carry over. If no prompt appears, run'
+                    Warn '"adb kill-server" and re-plug so the server restarts under this account.'
+                }
             }
         }
         Start-Sleep -Seconds 3
