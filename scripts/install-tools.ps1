@@ -181,13 +181,6 @@ if (Test-Path $RkExe) {
 # flash-mabu.ps1 drives the whole provisioning phase over adb, so this is a hard
 # requirement -- it used to be missing here entirely, and the flash script would
 # die at startup on a fresh PC.
-#
-# NOTE: the old WSL / sepolicy-inject step lived here. It is GONE on purpose:
-# flash-mabu.ps1 applies the SELinux rule with on-device magiskpolicy (ARM,
-# shipped in tools\magiskpolicy\) and never shells out to WSL. Installing WSL2 +
-# Ubuntu and compiling sepolicy-inject added ~20 minutes of fresh-machine setup
-# for a dependency the flash path does not use -- it was only ever needed by the
-# old flash-new-mabu.ps1, which has since been removed.
 Write-Step 'adb (Android platform-tools)'
 
 function Get-AdbPath {
@@ -228,13 +221,55 @@ if ($adbPath) {
 }
 
 # ---------------------------------------------------------------------------
-# 4. Android USB driver (VID 0x2207 / PID 0x0006 -> ADB after liberation)
+# 4. WSL2 + Ubuntu (SELinux reflash fallback only)
+# ---------------------------------------------------------------------------
+# flash-mabu.ps1's SELinux motor fix runs on-device magiskpolicy by default and
+# never touches WSL. WSL2 + Ubuntu is ONLY needed for the automatic fallback that
+# fires if the patched policy changes size (Invoke-WslVendorReflash): it loop-
+# mounts a /vendor dump to swap the policy file in, then reflashes the whole
+# partition. That's a rare path -- the common motor-only patch is a validated
+# same-size bit-flip -- so this step warns rather than blocking on failure.
+# Note: this does NOT build sepolicy-inject; that was a dependency of the old,
+# removed flash-new-mabu.ps1 and nothing here uses it.
+Write-Step 'WSL2 + Ubuntu (SELinux reflash fallback)'
+
+function Install-WslUbuntu {
+    # Needs Administrator and a reboot before the distro is usable, so this
+    # kicks off the install and tells the user to restart and re-run.
+    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if (-not $isAdmin) {
+        Write-Warn 'Installing WSL needs Administrator. Re-run this script from an Administrator PowerShell (right-click Start > Terminal (Admin)).'
+        Write-Note 'Or install it yourself:  wsl --install Ubuntu   (then restart the PC).'
+        return
+    }
+    Write-Note 'Installing WSL + Ubuntu (this can take several minutes)...'
+    wsl --install Ubuntu
+    Write-Warn 'WSL + Ubuntu install started. RESTART the PC, let Ubuntu finish its first-time setup (username/password prompt), then re-run:  .\scripts\install-tools.ps1'
+}
+
+$WslOk = $false
+if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) {
+    Write-Warn 'WSL not found.'
+    Install-WslUbuntu
+} else {
+    $ubuntu = (wsl --list --quiet 2>$null) | Where-Object { $_ -match 'Ubuntu' } | Select-Object -First 1
+    if (-not $ubuntu) {
+        Write-Warn 'No Ubuntu WSL distro found.'
+        Install-WslUbuntu
+    } else {
+        Write-OK "WSL Ubuntu distro present: $($ubuntu.Trim())"
+        $WslOk = $true
+    }
+}
+
+# ---------------------------------------------------------------------------
+# 5. Android USB driver (VID 0x2207 / PID 0x0006 -> ADB after liberation)
 # ---------------------------------------------------------------------------
 Write-Step 'Android ADB driver (PID 0x0006)'
 & (Join-Path $PSScriptRoot 'install-android-driver.ps1')
 
 # ---------------------------------------------------------------------------
-# 5. Device check
+# 6. Device check
 # ---------------------------------------------------------------------------
 Write-Step 'Device state'
 
@@ -277,4 +312,10 @@ if (-not $zadig) {
     Write-Host '  app install, SELinux patch, and a self-test. It will launch Zadig on its' -ForegroundColor White
     Write-Host '  own the first time, to bind the Loader driver.' -ForegroundColor White
     Write-Host '  Reference: FLASH-A-NEW-MABU.md' -ForegroundColor White
+    if (-not $WslOk) {
+        Write-Host '' -ForegroundColor White
+        Write-Note 'WSL/Ubuntu is not set up. A normal flash does not need it -- it only matters'
+        Write-Note 'if the SELinux motor patch happens to change size, which is rare. Fix WSL'
+        Write-Note '(see above) if you ever see "SELinux fallback: full /vendor reflash" fail.'
+    }
 }

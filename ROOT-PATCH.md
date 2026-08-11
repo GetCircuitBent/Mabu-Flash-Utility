@@ -89,21 +89,22 @@ delivers "WiFi /system writes."
 **Size guard — the reason this isn't a fully hands-off step.** The motor rule
 was a same-size bit-flip (299,979 B), so the raw Loader overwrite (`wl` at the
 policy's data blocks) was block-safe with no inode change. `permissive shell`
-may *grow* the binary policy. Phase 7 measures `sepolicy.out` on-device and:
-- **same size** → writes it (safe, as before);
-- **grew but ≤ 303,104 B** (still 74 blocks) → **stops** and points here,
-  because the inode `i_size` must also be patched to the new size (same class
-  of fix as the boot animation) or the kernel loads a truncated policy and the
-  device may not boot cleanly — Phase 7 does not do i_size patching inline;
-- **grew past 74 blocks** → **stops**, use the full `/vendor` reflash path.
+may *grow* the binary policy. Phase 7 measures `sepolicy.out` on-device and
+picks one of two paths, decisively, based on that measurement — no partial
+"does it still fit the allocated blocks" case:
+- **same size** → surgical write, as before (no WSL needed);
+- **any size change at all** → automatic fallback to a full `/vendor` reflash:
+  dumps the 256 MB `/vendor` partition over WiFi ADB (`dump-system-cycled.ps1`),
+  loop-mounts it in WSL2 + Ubuntu, swaps in the patched policy file, then
+  reflashes the whole partition via Loader. This sidesteps the inode `i_size`
+  problem entirely — a full-partition reflash carries its own filesystem
+  metadata, so there's nothing to hand-patch.
 
-If Phase 7 stops on a grown policy, patch `i_size` the same way
-`assets/bootanimation/DEPLOY.md` step 5 describes, using
-`scripts/locate_vendor_policy.py <vendor-dump> 0x592000` to get the sepolicy
-inode's `INODE_LBA`/`INODE_OFFSET`, then write the data blocks + patched inode
-via Loader. (The `permissive`-ebitmap growth is often zero or a few bytes, so
-the same-size fast path frequently applies — but it's measured live, not
-assumed.)
+The reflash fallback requires WSL2 + Ubuntu (`scripts\install-tools.ps1`
+installs it). If it isn't available, Phase 7 warns and leaves the unit
+unmodified rather than writing a truncated policy — it will not guess.
+(The `permissive`-ebitmap growth is often zero or a few bytes, so the
+same-size fast path frequently applies — but it's measured live, not assumed.)
 
 Until the pair is flashed, `/system` changes (like the boot animation) still
 go through the Loader harness path in `assets/bootanimation/DEPLOY.md`.

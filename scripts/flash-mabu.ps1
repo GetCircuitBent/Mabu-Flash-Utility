@@ -11,6 +11,15 @@
 #   5. Install user-facing apps: F-Droid, Lawnchair. Set Lawnchair home.
 #   6. Install Mabu factory mode APK + push animation/voice assets.
 #
+# SELinux motor fix (Phase 7, Apply-SELinuxFix): the patched policy is produced
+# on-device with magiskpolicy (no WSL needed). If the patch does NOT change the
+# policy file's size, it is written surgically to the /vendor policy extent via
+# Loader: the validated fast path. If it grows (e.g. -KeepRoot's permissive-shell
+# rule can), the script automatically FALLS BACK to a full /vendor reflash, which
+# loop-mounts the partition image in WSL to swap the file in -- no manual i_size
+# patching. The fallback needs WSL2 + Ubuntu (scripts\install-tools.ps1 sets it
+# up); if that isn't installed the script warns and leaves the unit unmodified.
+#
 # State auto-detection (the /data wipe is the only thing that differs):
 #   - State A (active Esper): the live DPC io.shoonya.shoonyadpc lives in
 #     /data/app and survives the /system patches, so it MUST be wiped. Detected
@@ -386,6 +395,116 @@ function Confirm-RootPatchApplies {
     Ok 'Live adbd sector 29 matches the reference -- root patch will apply cleanly (2-byte edit only).'
 }
 
+# ---------------------------------------------------------------------------
+# SELinux fix support: surgical write (fast path) + WSL /vendor reflash
+# (fallback for when the patched policy changes size). Ported from the
+# gui-executable branch's flash.ps1, which validated this as strictly better
+# than the old behavior of warning and refusing to write on any size change.
+# ---------------------------------------------------------------------------
+
+# Name of an installed Ubuntu WSL distro, or $null (the surgical path needs no WSL).
+function Get-WslUbuntu {
+    if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) { return $null }
+    $d = (wsl --list --quiet 2>$null) | Where-Object { $_ -match 'Ubuntu' } | Select-Object -First 1
+    if ($d) { return $d.Trim() }
+    return $null
+}
+
+# Convert a Windows path (D:\a\b) to its WSL mount path (/mnt/d/a/b), derived
+# from wherever the repo lives. Used only by the reflash fallback.
+function ConvertTo-WslPath([string]$WinPath) {
+    $full = [System.IO.Path]::GetFullPath($WinPath)
+    if ($full -match '^([A-Za-z]):(.*)$') {
+        $drive = $matches[1].ToLower()
+        $rest  = $matches[2] -replace '\\','/'
+        return "/mnt/$drive$rest"
+    }
+    return ($full -replace '\\','/')
+}
+
+function Write-PolicySurgical {
+    # Fast path: patched policy is the same size as the original, so overwrite
+    # its blocks in place at the known /vendor extent. No WSL, no full reflash.
+    param([string] $Dev, [string] $OutFile)
+    Info 'Entering Loader for policy write...'
+    & $ADB -s $Dev shell reboot loader 2>&1 | Out-Null
+    for ($i = 0; $i -lt 30; $i++) { Start-Sleep -Seconds 1; if (Test-Loader) { Ok "Loader caught after ${i}s."; break } }
+    if (-not (Test-Loader)) { Warn 'Loader not caught. Apply SELinux fix manually (wl 0x5A8AB8 firmware\scratch\sepolicy.patched).'; return $false }
+    Confirm-LoaderWinUsb
+    $wlOut = & $RK wl 0x5A8AB8 $OutFile 2>&1
+    $wlOut | ForEach-Object { Info $_ }
+    if (-not ($wlOut -join ' ' -match '100%')) { Warn 'Policy write did not report 100%.'; return $false }
+    Ok 'Policy written to vendor partition (surgical).'
+    & $RK rd 2>&1 | Out-Null
+    Ok 'Reset issued -- device will reboot with patched SELinux policy.'
+    return $true
+}
+
+function Invoke-WslVendorReflash {
+    # Fallback: the patched policy changed size, so it can't be overwritten in
+    # place (the raw Loader write is block-safe only at a fixed size; there is
+    # no i_size-patching path implemented here). Swap it into a full /vendor
+    # image and reflash the whole partition. Loop-mounting an ext4 image needs
+    # WSL2 + Ubuntu.
+    param([string] $Dev, [string] $PatchedPolicy)
+    $ubuntu = Get-WslUbuntu
+    if (-not $ubuntu) {
+        Warn 'The patched policy changed size, so the SELinux fix needs the WSL reflash fallback,'
+        Warn 'but WSL2 + Ubuntu is not installed. Install it (run scripts\install-tools.ps1'
+        Warn 'as Administrator, or: wsl --install Ubuntu ; restart), then re-run.'
+        Warn 'The unit was NOT modified by the SELinux step.'
+        return $false
+    }
+    if ($Dev -notmatch ':5555$') {
+        Warn "Vendor reflash needs WiFi ADB for the cycled dump; current device is '$Dev'."
+        $wifi = Enable-WifiAdb -UsbDev $Dev
+        if ($wifi) { $Dev = $wifi } else { Warn 'Could not establish WiFi ADB for the reflash fallback.'; return $false }
+    }
+
+    Section 'SELinux fallback: full /vendor reflash (via WSL)'
+    $scratch = Join-Path $Root 'firmware/scratch'
+    New-Item -ItemType Directory -Force $scratch | Out-Null
+    $vendorImg = Join-Path $scratch 'vendor-full.img'
+    Remove-Item $vendorImg, (Join-Path $scratch 'vendor-full.state.json') -ErrorAction SilentlyContinue
+
+    Info 'Dumping /vendor (256 MB) over WiFi ADB; this takes a few minutes...'
+    & (Join-Path $Root 'scripts/dump-system-cycled.ps1') `
+        -Name 'vendor-full' -PartitionStartLBA 0x592000 -TotalMB 256 -WifiAdb $Dev -StartFresh
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $vendorImg)) { Warn 'Vendor dump failed; SELinux fix not applied.'; return $false }
+    $imgMB = [math]::Round((Get-Item $vendorImg).Length / 1MB, 1)
+    if ($imgMB -lt 255) { Warn "vendor-full.img is only ${imgMB} MB -- dump incomplete."; return $false }
+    Ok "vendor-full.img: ${imgMB} MB"
+
+    $wVendor  = ConvertTo-WslPath $vendorImg
+    $wPatched = ConvertTo-WslPath $PatchedPolicy
+    Info 'Swapping patched policy into the /vendor image (WSL loop-mount)...'
+    $r2 = wsl -d $ubuntu -u root -- bash -c @"
+set -e
+mkdir -p /mnt/vendor
+mount -o loop '$wVendor' /mnt/vendor
+cp '$wPatched' /mnt/vendor/etc/selinux/precompiled_sepolicy
+sync
+umount /mnt/vendor
+echo ROUTE2_OK
+"@ 2>&1
+    $r2 | ForEach-Object { Info $_ }
+    if (-not ($r2 -join ' ' -match 'ROUTE2_OK')) { Warn 'WSL mount/copy failed; /vendor NOT reflashed.'; return $false }
+
+    Info 'Entering Loader to reflash /vendor...'
+    & $ADB -s $Dev shell reboot loader 2>&1 | Out-Null
+    for ($i = 0; $i -lt 30; $i++) { Start-Sleep -Seconds 1; if (Test-Loader) { break } }
+    if (-not (Test-Loader)) { Warn 'Loader not caught for /vendor reflash.'; return $false }
+    Confirm-LoaderWinUsb
+    Info 'Flashing /vendor (256 MB; a few minutes)...'
+    $wlOut = & $RK wl 0x592000 $vendorImg 2>&1
+    $wlOut | ForEach-Object { Info $_ }
+    if (-not ($wlOut -join ' ' -match '100%')) { Warn 'wl for /vendor did not report 100%. Re-run: rkdeveloptool wl 0x592000 firmware\scratch\vendor-full.img'; return $false }
+    Ok '/vendor reflashed with patched policy.'
+    & $RK rd 2>&1 | Out-Null
+    Ok 'Reset issued -- device will reboot with patched SELinux policy.'
+    return $true
+}
+
 function Apply-SELinuxFix {
     # Patch /vendor/etc/selinux/precompiled_sepolicy to allow untrusted_app to
     # open/write serial_device (needed for the facetrack app to drive the motors).
@@ -394,8 +513,8 @@ function Apply-SELinuxFix {
     # Uses on-device magiskpolicy (ARM), pulls the result, then writes it via Loader.
     #   Stock SHA:        7f26df2d...
     #   Motor-only SHA:   03f180a2... (299,979 B, same-size bit-flip -> raw overwrite safe)
-    #   +permissive shell: size/SHA measured live (permissive may GROW the policy;
-    #                      guarded below -- see ROOT-PATCH.md "SELinux caveat").
+    #   +permissive shell: size/SHA measured live -- may grow the policy, in which
+    #                      case Invoke-WslVendorReflash handles it automatically.
     param([string] $Dev, [switch] $PermissiveShell)
     Section 'SELinux policy fix'
     $sha = (& $ADB -s $Dev shell 'sha256sum /vendor/etc/selinux/precompiled_sepolicy 2>/dev/null' 2>&1) -join ''
@@ -418,12 +537,9 @@ function Apply-SELinuxFix {
     if ($r -notmatch 'PATCH_OK') { Warn "magiskpolicy failed: $($r -join ' ') -- skipping."; return }
     Ok 'On-device patch succeeded.'
 
-    # Size guard: the raw Loader overwrite (wl at the file's data blocks) is only
-    # block-safe if the patched policy still fits the original's allocated blocks.
-    # The motor bit-flip kept 299,979 B exactly. `permissive shell` may grow it.
     $inSize  = [int]((& $ADB -s $Dev shell 'stat -c %s /data/local/tmp/sepolicy.in'  2>&1) -join '').Trim()
     $outSize = [int]((& $ADB -s $Dev shell 'stat -c %s /data/local/tmp/sepolicy.out' 2>&1) -join '').Trim()
-    Info "sepolicy size: in=$inSize out=$outSize bytes (74 blocks = 303,104 B allocated)"
+    Info "sepolicy size: in=$inSize out=$outSize bytes"
 
     $outFile = Join-Path $Root 'firmware\scratch\sepolicy.patched'
     & $ADB -s $Dev pull /data/local/tmp/sepolicy.out $outFile 2>&1 | Out-Null
@@ -431,31 +547,24 @@ function Apply-SELinuxFix {
     $patchedSha = (Get-FileHash $outFile -Algorithm SHA256).Hash.ToLower()
     Info "Patched SHA256: $patchedSha"
 
-    if (-not $PermissiveShell) {
-        # Motor-only path: unchanged, expect the known same-size result.
-        if ($patchedSha -notmatch '^03f180a2') { Warn "Patched SHA unexpected ($patchedSha) -- aborting Loader write."; return }
-    } else {
-        if ($outSize -eq $inSize) {
-            Ok "permissive-shell policy is same size ($outSize B) -> raw overwrite is block-safe, no i_size patch needed."
-        } elseif ($outSize -le 303104) {
-            Warn "permissive-shell policy GREW to $outSize B (was $inSize). Still <= 74 blocks, but the inode i_size MUST be patched to $outSize or the kernel reads a truncated policy. Phase 7 does NOT do i_size patching -- STOP and follow ROOT-PATCH.md 'SELinux caveat' (locate_vendor_policy.py -> patch i_size -> write blocks). Not writing automatically."
-            return
-        } else {
-            Warn "permissive-shell policy is $outSize B > 303,104 B (74 blocks) -- does NOT fit a raw overwrite. Use the full /vendor reflash path. Not writing."
-            return
-        }
+    if (-not $PermissiveShell -and $patchedSha -notmatch '^03f180a2') {
+        Warn "Patched SHA unexpected ($patchedSha) for the motor-only rule -- proceeding on size comparison anyway."
     }
 
-    Info 'Entering Loader for policy write...'
-    & $ADB -s $Dev shell reboot loader 2>&1 | Out-Null
-    for ($i = 0; $i -lt 30; $i++) { Start-Sleep -Seconds 1; if (Test-Loader) { Ok "Loader caught after ${i}s."; break } }
-    if (-not (Test-Loader)) { Warn 'Loader not caught. Apply SELinux fix manually (wl 0x5A8AB8 firmware\scratch\sepolicy.patched).'; return }
-    Confirm-LoaderWinUsb
-
-    & $RK wl 0x5A8AB8 $outFile 2>&1 | ForEach-Object { Info $_ }
-    Ok 'Policy written to vendor partition.'
-    & $RK rd 2>&1 | Out-Null
-    Ok 'Reset issued -- device will reboot with patched SELinux policy.'
+    # The raw Loader overwrite (wl at the file's data blocks) is only block-safe
+    # when the patched policy is EXACTLY the same size as the original -- decisive
+    # branch, no partial "does it still fit the allocated blocks" heuristic: any
+    # size change routes to the WSL reflash fallback, which does not have that
+    # constraint (it reflashes the whole partition).
+    if ($inSize -gt 0 -and $outSize -ne $inSize) {
+        Warn "Patched policy size changed ($inSize -> $outSize B): surgical write is unsafe."
+        Warn 'Falling back to a full /vendor reflash (needs WSL).'
+        Invoke-WslVendorReflash -Dev $Dev -PatchedPolicy $outFile | Out-Null
+        return
+    }
+    if ($inSize -le 0) { Info 'Could not read original policy size -- using the validated surgical write.' }
+    else               { Info 'No size change -> surgical in-place write (no WSL needed).' }
+    Write-PolicySurgical -Dev $Dev -OutFile $outFile | Out-Null
 }
 
 function Run-SelfTest {
