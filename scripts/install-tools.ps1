@@ -20,6 +20,19 @@
 #     you exactly which device to pick.
 #
 # Idempotent: re-running is safe and just verifies state.
+#
+# Elevation: a plain run behaves identically elevated or not. Nothing here
+# requires Administrator, and no step is allowed to abort the run just because
+# an optional component is missing -- it warns and carries on.
+
+[CmdletBinding()]
+param(
+    # Install WSL2 + Ubuntu. Off by default: WSL is only used by the flasher's
+    # rare SELinux /vendor reflash fallback, and installing it costs several
+    # minutes plus a full reboot. Opting in keeps the default run fast and keeps
+    # it from behaving differently depending on elevation. Needs Administrator.
+    [switch]$InstallWsl
+)
 
 $ErrorActionPreference = 'Stop'
 
@@ -27,6 +40,14 @@ $RepoRoot   = Split-Path -Parent $PSScriptRoot
 $ToolsDir   = Join-Path $RepoRoot 'tools'
 $RkDir      = Join-Path $ToolsDir 'rkdeveloptool'
 $RkExe      = Join-Path $RkDir   'rkdeveloptool.exe'
+
+# This script is shared verbatim between the two editions, which ship different
+# flasher entry points (flash-mabu.ps1 on main, flash.ps1 alongside the WPF app).
+# Detect which one this copy has so the guidance below names the right command
+# without the file itself having to diverge.
+$FlashScript = if     (Test-Path (Join-Path $PSScriptRoot 'flash-mabu.ps1')) { '.\scripts\flash-mabu.ps1' }
+               elseif (Test-Path (Join-Path $PSScriptRoot 'flash.ps1'))      { '.\scripts\flash.ps1' }
+               else                                                          { '.\scripts\flash.ps1' }
 
 function Write-Step($msg)  { Write-Host "`n=== $msg ===" -ForegroundColor Cyan }
 function Write-OK($msg)    { Write-Host "  [OK]   $msg"  -ForegroundColor Green }
@@ -176,84 +197,11 @@ if (Test-Path $RkExe) {
 }
 
 # ---------------------------------------------------------------------------
-# 3. WSL sepolicy-inject (needed for Phase A/B of the flash guide)
+# 3. adb (Android platform-tools)
 # ---------------------------------------------------------------------------
-Write-Step 'WSL: sepolicy-inject'
-
-$SepolicyC   = Join-Path $RepoRoot 'tools\sepolicy-inject.c'
-$SepolicyBin = '/usr/local/bin/sepolicy-inject'
-$WslOk       = $false
-
-# Auto-install WSL2 + Ubuntu. Needs Administrator and a reboot before the
-# distro is usable, so this kicks off the install and tells the user to
-# restart and re-run — it cannot finish sepolicy-inject in the same pass.
-function Install-WslUbuntu {
-    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-    if (-not $isAdmin) {
-        Write-Warn 'Installing WSL needs Administrator. Re-run this script from an Administrator PowerShell (right-click Start > Terminal (Admin)).'
-        Write-Note 'Or install it yourself:  wsl --install Ubuntu   (then restart the PC).'
-        return
-    }
-    Write-Note 'Installing WSL + Ubuntu (this can take several minutes)...'
-    wsl --install Ubuntu
-    Write-Warn 'WSL + Ubuntu install started. RESTART the PC now, let Ubuntu finish its first-time setup (it will ask you to create a username/password), then re-run:  .\scripts\install-tools.ps1'
-}
-
-$wslCheck = Get-Command wsl -ErrorAction SilentlyContinue
-if (-not $wslCheck) {
-    Write-Warn 'WSL not found.'
-    Install-WslUbuntu
-} else {
-    # Detect a runnable Ubuntu distro
-    $distros = wsl --list --quiet 2>$null
-    $ubuntu  = $distros | Where-Object { $_ -match 'Ubuntu' } | Select-Object -First 1
-    if (-not $ubuntu) {
-        Write-Warn 'No Ubuntu WSL distro found.'
-        Install-WslUbuntu
-    } else {
-        $ubuntu = $ubuntu.Trim()
-        Write-Note "Using WSL distro: $ubuntu"
-
-        # Check if already built
-        $existing = wsl -d $ubuntu -- test -x $SepolicyBin '&&' echo yes 2>$null
-        if ($existing -match 'yes') {
-            Write-OK "sepolicy-inject already at $SepolicyBin"
-            $WslOk = $true
-        } else {
-            Write-Note 'Building sepolicy-inject in WSL...'
-            # Install build deps (run as root to avoid sudo password prompt)
-            $apt = wsl -d $ubuntu -u root -- apt-get install -y libsepol-dev build-essential setools 2>&1 | Select-Object -Last 3
-            $apt | ForEach-Object { Write-Note $_ }
-
-            # Compile — source is in tools/sepolicy-inject.c (accessible from WSL as /mnt/c/...)
-            $wsrc = ($SepolicyC -replace '\\','/') -replace '^([A-Za-z]):',{ '/mnt/' + $args[0].Value.ToLower() }
-            $compile = wsl -d $ubuntu -u root -- gcc -o $SepolicyBin $wsrc /usr/lib/x86_64-linux-gnu/libsepol.a 2>&1
-            if ($LASTEXITCODE -eq 0) {
-                Write-OK "sepolicy-inject compiled and installed at $SepolicyBin"
-                $WslOk = $true
-            } else {
-                Write-Warn "Compile failed: $compile"
-                Write-Note "Manual fix: in WSL run: gcc -o $SepolicyBin '<path-to-tools/sepolicy-inject.c>' /usr/lib/x86_64-linux-gnu/libsepol.a"
-            }
-        }
-
-        # Verify sesearch (used in Phase A3 verification)
-        $ss = wsl -d $ubuntu -- sesearch --version 2>$null
-        if ($ss -match '\d') {
-            Write-OK "sesearch $($ss.Trim()) available"
-        } else {
-            Write-Warn "sesearch not found — run: wsl -d $ubuntu -u root -- apt-get install -y setools"
-        }
-    }
-}
-
-# ---------------------------------------------------------------------------
-# 4. adb (Android platform-tools)
-# ---------------------------------------------------------------------------
-# flash.ps1 / MabuFlashCore.ps1 drive the whole provisioning phase over adb, so
-# this is a hard requirement. It was missing from this script entirely -- adb
-# had to already be on the machine some other way, or the flash script died at
-# startup with an unguarded WinGet-path lookup.
+# The flasher drives the whole provisioning phase over adb, so this is a hard
+# requirement -- it used to be missing here entirely, and the flash script would
+# die at startup on a fresh PC with an unguarded WinGet-path lookup.
 Write-Step 'adb (Android platform-tools)'
 
 function Get-AdbPath {
@@ -294,6 +242,97 @@ if ($adbPath) {
 }
 
 # ---------------------------------------------------------------------------
+# 4. WSL2 + Ubuntu (SELinux reflash fallback only)
+# ---------------------------------------------------------------------------
+# The flasher's SELinux motor fix runs on-device magiskpolicy by default and
+# never touches WSL. WSL2 + Ubuntu is ONLY needed for the automatic fallback that
+# fires if the patched policy changes size (Invoke-WslVendorReflash): it loop-
+# mounts a /vendor dump to swap the policy file in, then reflashes the whole
+# partition. That's a rare path -- the common motor-only patch is a validated
+# same-size bit-flip -- so this whole section is ADVISORY: it reports what it
+# finds, never installs anything unless asked with -InstallWsl, and is not
+# allowed to abort the run. Everything is wrapped accordingly.
+# Note: this does NOT build sepolicy-inject; that was a dependency of the old,
+# removed flash-new-mabu.ps1 and nothing here uses it.
+Write-Step 'WSL2 + Ubuntu (SELinux reflash fallback)'
+
+function Get-WslExe {
+    # Get-Command is not sufficient on its own. On Windows 10 images where the
+    # "Windows Subsystem for Linux" optional feature was never enabled there is
+    # no wsl.exe at all -- and calling a bare `wsl` under
+    # ErrorActionPreference=Stop throws CommandNotFoundException, which used to
+    # abort this entire script partway through (taking the Android driver step,
+    # the device check and the summary with it). Resolve the real binary first
+    # and only ever invoke it through this path.
+    $sys = Join-Path $env:WINDIR 'System32\wsl.exe'
+    if (Test-Path -LiteralPath $sys) { return $sys }
+    $cmd = Get-Command wsl.exe -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    return $null
+}
+
+function Get-WslDistros($wslExe) {
+    # `wsl --list` emits UTF-16LE. PowerShell 5.1 decodes it as ANSI unless the
+    # console encoding is switched first, which turns "Ubuntu" into "U.b.u.n.t.u"
+    # and made machines that DO have Ubuntu report as having none. Switch the
+    # encoding, capture, restore. Null-strip covers the older builds too.
+    $prev = [Console]::OutputEncoding
+    try {
+        [Console]::OutputEncoding = [Text.Encoding]::Unicode
+        $raw = & $wslExe --list --quiet 2>$null
+    } catch {
+        return @()
+    } finally {
+        [Console]::OutputEncoding = $prev
+    }
+    if (-not $raw) { return @() }
+    return @($raw | ForEach-Object { ($_ -replace "`0", '').Trim() } | Where-Object { $_ })
+}
+
+$WslOk = $false
+try {
+    $wslExe = Get-WslExe
+    if (-not $wslExe) {
+        Write-Warn 'WSL is not installed on this PC. This is optional -- continuing.'
+        Write-Note 'A normal flash never uses WSL. It only matters if the SELinux motor patch'
+        Write-Note 'changes size, which is the rare case that triggers the /vendor reflash fallback.'
+        Write-Note 'To add it later, from an Administrator PowerShell:  wsl --install Ubuntu'
+        Write-Note 'If that command does not exist, enable the feature first, then restart:'
+        Write-Note '  dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart'
+    } else {
+        $ubuntu = Get-WslDistros $wslExe | Where-Object { $_ -match 'Ubuntu' } | Select-Object -First 1
+        if ($ubuntu) {
+            Write-OK "WSL Ubuntu distro present: $ubuntu"
+            $WslOk = $true
+        } elseif ($InstallWsl) {
+            # Opt-in only: this takes several minutes and needs a reboot before the
+            # distro is usable, so it can never finish in the same pass.
+            $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+            if (-not $isAdmin) {
+                Write-Warn '-InstallWsl needs Administrator. Re-run from an Administrator PowerShell (right-click Start > Terminal (Admin)).'
+            } else {
+                Write-Note 'Installing WSL + Ubuntu (this can take several minutes)...'
+                & $wslExe --install Ubuntu
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Warn "wsl --install exited $LASTEXITCODE. Install it by hand:  wsl --install Ubuntu"
+                } else {
+                    Write-Warn 'WSL + Ubuntu install started. RESTART the PC, let Ubuntu finish its first-time setup (username/password prompt), then re-run this script.'
+                }
+            }
+        } else {
+            Write-Warn 'WSL is present but has no Ubuntu distro. This is optional -- continuing.'
+            Write-Note 'Add it with:  .\scripts\install-tools.ps1 -InstallWsl   (Administrator; several minutes + a restart)'
+            Write-Note 'or by hand:   wsl --install Ubuntu'
+        }
+    }
+} catch {
+    # Belt and braces. Nothing about an optional fallback justifies killing the
+    # run, so any surprise in here degrades to a warning.
+    Write-Warn "WSL check failed: $($_.Exception.Message)"
+    Write-Note 'Skipping -- WSL is optional and a normal flash does not use it.'
+}
+
+# ---------------------------------------------------------------------------
 # 5. Android USB driver (VID 0x2207 / PID 0x0006 -> ADB after liberation)
 # ---------------------------------------------------------------------------
 Write-Step 'Android ADB driver (PID 0x0006)'
@@ -315,7 +354,7 @@ if (-not $rk) {
         # If it's still bound to a Microsoft USB driver (Class=USBDevice/USB), Zadig hasn't run yet.
         if ($d.Class -in @('USB','USBDevice','Unknown') -or -not $d.Class) {
             Write-Note 'Driver looks like the default Windows USB stack - libusb-based tools will fail to open the device.'
-            Write-Note 'Run Zadig and replace the driver for this device with WinUSB. See scripts\bind-winusb.ps1.'
+            Write-Note "$FlashScript will launch Zadig and walk you through this automatically."
         } elseif ($d.Class -eq 'libusb-win32 devices' -or $d.Class -match 'WinUSB') {
             Write-OK 'Driver looks like a libusb/WinUSB binding - rkdeveloptool should be able to open it.'
         } else {
@@ -331,19 +370,23 @@ if (-not $zadig) {
     Write-Host '  rkdeveloptool.exe missing - check download errors above and re-run.' -ForegroundColor White
 } elseif (-not $AdbOk) {
     Write-Host '  Install adb (see notes above), then re-run.' -ForegroundColor White
-} elseif (-not $WslOk) {
-    Write-Host '  Fix WSL / sepolicy-inject issues above, then re-run.' -ForegroundColor White
-    Write-Note 'This only blocks the SELinux-patch reflash fallback (spilled policy size);'
-    Write-Note 'a normal flash usually does not need it.'
 } else {
     Write-Host '  All tools ready. To flash a Mabu:' -ForegroundColor Green
     Write-Host '  1. Connect the USB harness and power the unit on.' -ForegroundColor White
     Write-Host '     (Hold ADKEY through power-on to catch Loader; or just let Android boot -' -ForegroundColor White
-    Write-Host '      flash.ps1 enters Loader itself.)' -ForegroundColor White
+    Write-Host '      the script enters Loader itself.)' -ForegroundColor White
     Write-Host '  2. From the repo root, in an Administrator PowerShell, run:' -ForegroundColor White
-    Write-Host '       .\scripts\flash.ps1' -ForegroundColor Cyan
+    Write-Host "       $FlashScript" -ForegroundColor Cyan
     Write-Host '' -ForegroundColor White
     Write-Host '  That single command does everything: liberation, wipe (only if needed),' -ForegroundColor White
     Write-Host '  app install, SELinux patch, and a self-test. It will launch Zadig on its' -ForegroundColor White
     Write-Host '  own the first time, to bind the Loader driver.' -ForegroundColor White
+    Write-Host '  Reference: FLASH-A-NEW-MABU.md' -ForegroundColor White
+    if (-not $WslOk) {
+        Write-Host '' -ForegroundColor White
+        Write-Note 'WSL/Ubuntu is not set up. A normal flash does not need it -- it only matters'
+        Write-Note 'if the SELinux motor patch happens to change size, which is rare. Set it up'
+        Write-Note 'with  .\scripts\install-tools.ps1 -InstallWsl  if you ever see'
+        Write-Note '"SELinux fallback: full /vendor reflash" fail.'
+    }
 }

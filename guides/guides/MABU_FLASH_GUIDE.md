@@ -127,12 +127,13 @@ waiting for ADB. After this driver is installed it persists across reboots.
 
 After both scripts succeed:
 
-1. **Bind WinUSB to the Loader (first Mabu only).** Get the device into Loader
-   mode (power-cycle and catch the ~10 s window, OR `adb shell reboot loader` if
-   ADB is already working), then open Zadig:
-   ```powershell
-   .\scripts\bind-winusb.ps1   # launches Zadig with instructions
-   ```
+1. **Bind WinUSB to the Loader (first Mabu only).** `flash.ps1` does this for you:
+   it detects that PID `2207 320A` is bound to `rockusb.sys` instead of WinUSB,
+   installs Zadig if needed, launches it, and waits. You only need the manual route
+   below if you want to do it ahead of time. Get the device into Loader mode
+   (power-cycle and catch the ~10 s window, OR `adb shell reboot loader` if ADB is
+   already working), then launch Zadig yourself.
+
    In Zadig: **Options → List All Devices** (check), **Options → Ignore Hubs or
    Composite Parents** (uncheck). In the dropdown, find the entry whose USB ID is
    **`2207 320A`**; it will appear as **"Unknown Device"** (no name) because no
@@ -459,7 +460,7 @@ clears `misc` if anything ever affects boot (it should not; we never touch boot)
 |---|---|---|
 | After reboot, app still gets `avc: denied ... serial_device` | init recompiled policy from CIL and ignored our precompiled file | **Not a brick**: device boots normally. The hash check in §1 should prevent this; if it happens, re-verify the on-disk write, or escalate (patch the CIL inputs + their hash, or use Route 2). |
 | Boot loops / no Android | policy file truncated or corrupt | Restore originals (§7). This is why we capture originals **before** writing and why Route 1 requires the size to fit existing blocks. |
-| `rkdeveloptool` can't see device | Loader window missed, or WinUSB not bound | Power-cycle, re-catch within ~10 s; re-run `bind-winusb.ps1` / Zadig. |
+| `rkdeveloptool` can't see device | Loader window missed, or WinUSB not bound | Power-cycle, re-catch within ~10 s; re-run `flash.ps1` (it re-binds via Zadig) or run Zadig by hand. |
 | `wl` reports not-100% | partial write | Re-run the `wl`; never leave a partial policy write; restore + retry. |
 | Read wedge during `/vendor` dump | known Loader limit (~28 MB/session) | The cycled dumper handles it; just let it cycle, or power-cycle and resume. |
 

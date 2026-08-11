@@ -372,7 +372,8 @@ function Invoke-WslVendorReflash {
     if (-not $ubuntu) {
         Fail 'The patched policy grew, so the SELinux fix needs the WSL reflash fallback,'
         Fail 'but WSL2 + Ubuntu is not installed. Install it (run scripts\install-tools.ps1'
-        Fail 'as Administrator, or: wsl --install Ubuntu ; restart), then re-run with -NoWipe.'
+        Fail '-InstallWsl as Administrator, or: wsl --install Ubuntu ; restart), then re-run'
+        Fail 'with -NoWipe.'
         Fail 'The unit was NOT modified by the SELinux step.'
         return $false
     }
