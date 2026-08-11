@@ -28,9 +28,12 @@
 #
 # Idempotent: re-running is safe and just verifies state.
 #
-# Elevation: a plain run behaves identically elevated or not. Nothing here
-# requires Administrator, and no step is allowed to abort the run just because
-# an optional component is missing -- it warns and carries on.
+# Elevation: run this at whatever elevation you like -- no step aborts the run,
+# and everything it installs lands in the repo, so it stays visible to the
+# elevated flasher even if UAC elevates into a different account. The ONE part
+# that genuinely needs Administrator is the Android USB driver install in
+# section 5, which hands off to Device Manager; that step says so itself and
+# skips cleanly otherwise. Everything else works un-elevated.
 
 [CmdletBinding()]
 param(
@@ -315,13 +318,24 @@ Write-Step 'adb (Android platform-tools)'
 # up the guarantee this whole mechanism exists to provide.
 $PtUrl    = 'https://dl.google.com/android/repository/platform-tools_r37.0.1-win.zip'
 $PtSha256 = '45f4d63113e895ebde0c90f194099a4676b6ac653bd28d54314a9e022bbc1a99'
-# The zip contains a top-level platform-tools\ folder, so unpacking it here
-# yields ...\Android\Sdk\platform-tools\adb.exe -- the canonical SDK location
-# that Get-AdbPath below and the flash script's Find-Adb both already probe.
-# Nothing else has to change, and it needs no PATH edit and no elevation.
-$PtSdkDir = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
+# The zip contains a top-level platform-tools\ folder, so unpacking it into
+# tools\ yields tools\platform-tools\adb.exe.
+#
+# Deliberately repo-relative, NOT %LOCALAPPDATA%\Android\Sdk. This script does
+# not need Administrator, but every flasher does, and if the signed-in user is
+# not a local admin then UAC elevates to a DIFFERENT account with a different
+# %LOCALAPPDATA%. adb installed here would then be invisible to the flash --
+# "adb installed" followed by "adb not found" on the same machine. A path under
+# the repo is the same for both accounts, needs no PATH edit and no elevation.
+$PtDir = $ToolsDir
 
 function Get-AdbPath {
+    # Candidate order is shared with Find-Adb in the flashers and the helper
+    # scripts -- keep them in step. The repo-relative copy is checked FIRST
+    # precisely because it is the one location that survives an elevation that
+    # switches user accounts.
+    $repo = Join-Path $ToolsDir 'platform-tools\adb.exe'
+    if (Test-Path $repo) { return $repo }
     $cmd = Get-Command adb -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd.Source }
     $sdk = Join-Path $env:LOCALAPPDATA 'Android\Sdk\platform-tools\adb.exe'
@@ -362,14 +376,14 @@ if (-not $AdbOk) {
     $ptZip = Join-Path $ToolsDir 'platform-tools.zip'
     if (Get-PinnedFile -Url $PtUrl -Path $ptZip -Sha256 $PtSha256 -Label 'platform-tools.zip') {
         try {
-            if (-not (Test-Path $PtSdkDir)) { New-Item -ItemType Directory -Path $PtSdkDir -Force | Out-Null }
-            Expand-Archive -Path $ptZip -DestinationPath $PtSdkDir -Force
+            if (-not (Test-Path $PtDir)) { New-Item -ItemType Directory -Path $PtDir -Force | Out-Null }
+            Expand-Archive -Path $ptZip -DestinationPath $PtDir -Force
             $adbPath = Get-AdbPath
             if ($adbPath) {
                 Write-OK "adb installed: $adbPath"
                 $AdbOk = $true
             } else {
-                Write-Warn "Unpacked platform-tools but no adb.exe under $PtSdkDir."
+                Write-Warn "Unpacked platform-tools but no adb.exe under $PtDir."
             }
         } catch {
             Write-Warn "Unpacking platform-tools failed: $($_.Exception.Message)"
@@ -381,7 +395,7 @@ if (-not $AdbOk) {
     Write-Warn 'Could not obtain adb.'
     Write-Note 'Download platform-tools manually and add it to PATH:'
     Write-Note '  https://developer.android.com/tools/releases/platform-tools'
-    Write-Note "Or unzip it to: $PtSdkDir\platform-tools\"
+    Write-Note "Or unzip it to: $PtDir\platform-tools\"
 }
 
 # ---------------------------------------------------------------------------

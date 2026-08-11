@@ -37,8 +37,27 @@ param(
 $ErrorActionPreference = 'Stop'
 $Root    = Split-Path -Parent $PSScriptRoot
 $RK      = Join-Path $Root 'tools\rkdeveloptool\rkdeveloptool.exe'
-$ADB     = (Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Google.PlatformTools_*\platform-tools\adb.exe" | Select-Object -First 1).FullName
-if (-not $ADB) { throw "adb.exe not found" }
+# Same candidate order as Find-Adb in the flashers -- keep them in step. This
+# used to check only the winget package dir, with no -ErrorAction: under
+# $ErrorActionPreference='Stop' the wildcard on a missing parent threw a raw
+# terminating error, so the friendly message below never printed, and adb
+# installed by install-tools.ps1 was never found at all on a winget-less PC.
+function Find-Adb {
+    $repo = Join-Path $Root 'tools\platform-tools\adb.exe'
+    if (Test-Path $repo) { return $repo }
+    $cmd = Get-Command adb -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $sdk = Join-Path $env:LOCALAPPDATA 'Android\Sdk\platform-tools\adb.exe'
+    if (Test-Path $sdk) { return $sdk }
+    $wgBase = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
+    if (Test-Path $wgBase) {
+        $hit = Get-ChildItem "$wgBase\Google.PlatformTools_*\platform-tools\adb.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($hit) { return $hit.FullName }
+    }
+    return $null
+}
+$ADB = Find-Adb
+if (-not $ADB) { throw "adb.exe not found. Run .\scripts\install-tools.ps1 first." }
 
 $DumpDir = Join-Path $Root 'firmware\scratch'
 $OutFile = Join-Path $DumpDir "$Name.img"

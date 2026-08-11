@@ -111,10 +111,19 @@ function Test-Winget {
 }
 
 function Find-Adb {
-    # PATH first, then the Android SDK, then the winget package dir. The winget
-    # parent may not exist on a fresh machine, so it's Test-Path'd before the
-    # wildcard Get-ChildItem (that wildcard on a missing parent throws under
-    # EAP='Stop', which is what originally crashed flash-mabu.ps1 on a clean PC).
+    # Candidate order is shared with Get-AdbPath in install-tools.ps1 and the
+    # helper scripts -- keep them in step. The repo-relative copy installed by
+    # install-tools.ps1 is checked FIRST because it is the only location that
+    # survives an elevation which switches user accounts: the packaged .exe
+    # always runs elevated, and if the signed-in user is not an admin then
+    # %LOCALAPPDATA% below points at a different profile entirely.
+    $root = if ($script:Root) { $script:Root } else { (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path }
+    $repo = Join-Path $root 'tools\platform-tools\adb.exe'
+    if (Test-Path $repo) { return $repo }
+    # PATH, then the Android SDK, then the winget package dir. The winget parent
+    # may not exist on a fresh machine, so it's Test-Path'd before the wildcard
+    # Get-ChildItem (that wildcard on a missing parent throws under EAP='Stop',
+    # which is what originally crashed flash-mabu.ps1 on a clean PC).
     $cmd = Get-Command adb -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd.Source }
     $sdk = Join-Path $env:LOCALAPPDATA 'Android\Sdk\platform-tools\adb.exe'
@@ -230,6 +239,21 @@ function Find-AdbDevice {
                 $serial = ($usb[0] -split '\s+')[0]
                 $ok = & $script:ADB -s $serial shell echo ok 2>&1
                 if ($ok -match '^ok') { return $serial }
+            }
+            # An 'unauthorized' device never matches the 'device' pattern above,
+            # so without this the loop just spins to the full timeout with no
+            # explanation. Warn once, then keep waiting in case they approve it.
+            if (-not $script:WarnedUnauthorized) {
+                $unauth = @(& $script:ADB devices 2>&1 | Where-Object { $_ -match '^\S+\s+unauthorized$' })
+                if ($unauth.Count -gt 0) {
+                    $script:WarnedUnauthorized = $true
+                    Warn 'A tablet is attached but reports "unauthorized".'
+                    Warn 'Accept the "Allow USB debugging?" prompt on the tablet screen.'
+                    Warn 'Note: adb host keys live in %USERPROFILE%\.android and the adb SERVER'
+                    Warn 'owns them, so a key approved under a different account (or a server'
+                    Warn 'started by one) will not carry over. If no prompt appears, run'
+                    Warn '"adb kill-server" and re-plug so the server restarts under this account.'
+                }
             }
         }
         Start-Sleep -Seconds 3
@@ -511,12 +535,15 @@ function Invoke-MabuFlash {
     $script:Root = if ($Root) { $Root } else { (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path }
     $script:RK = Join-Path $script:Root 'tools/rkdeveloptool/rkdeveloptool.exe'
 
-    # Elevation is required, not optional: un-elevated, Get-PnpDevice returns
-    # nothing, so Confirm-LoaderWinUsb's WinUSB check silently reports "not bound"
-    # even when it is, and Zadig cannot replace the driver. The packaged .exe
-    # already carries a requireAdministrator manifest, so this only fires if this
-    # file is dot-sourced directly from a non-elevated console -- but it's cheap
-    # insurance against a confusing silent-failure mode later in the flow.
+    # Elevation is required, not optional: Zadig cannot replace the Loader's
+    # driver without it, and the Phase 0 pnputil device removal is admin-only.
+    # PnP *queries* are NOT the reason -- Get-PnpDevice, Get-PnpDeviceProperty
+    # (DEVPKEY_Device_Service) and `pnputil /enum-drivers` all work fine
+    # un-elevated; an earlier version of this comment claimed otherwise. The
+    # packaged .exe already carries a requireAdministrator manifest, so this only
+    # fires if this file is dot-sourced directly from a non-elevated console --
+    # but it's cheap insurance against a confusing silent failure later on.
+    # Because this returns, everything below can assume Administrator.
     if (-not (Test-Admin)) {
         & $Ui.Done $false 'Must run as Administrator (USB driver binding and PnP queries require it).'
         return
@@ -548,23 +575,23 @@ function Invoke-MabuFlash {
     $ErrorActionPreference = 'Stop'
 
     try {
-        # --- Phase 0: (Admin) release USB + clear stale VID_2207 entries ---
-        if (Test-Admin) {
-            Section 'Release USB + Clear Stale VID_2207 Entries'
-            & $script:ADB kill-server 2>$null
-            Start-Sleep -Milliseconds 500
-            Get-Process -Name 'rkdeveloptool' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-            $stuck = Get-PnpDevice | Where-Object { $_.FriendlyName -match 'Device Descriptor Request Failed' }
-            foreach ($d in $stuck) { Info "Removing stuck device: $($d.InstanceId)"; & pnputil /remove-device $d.InstanceId 2>&1 | Out-Null }
-            $allRk = Get-PnpDevice | Where-Object { $_.InstanceId -match 'VID_2207' }
-            foreach ($d in $allRk) { Info "Removing: $($d.InstanceId) [Present=$($d.Present)]"; & pnputil /remove-device $d.InstanceId 2>&1 | Out-Null }
-            & pnputil /scan-devices 2>&1 | Out-Null
-            Start-Sleep -Seconds 2
-            Ok 'USB bus ready.'
-            & $script:ADB start-server 2>&1 | Out-Null
-        } else {
-            Info 'Not Administrator: skipping the USB re-enumeration step (only needed to recover a wedged USB bus after many Loader cycles).'
-        }
+        # --- Phase 0: release USB + clear stale VID_2207 entries ---
+        # No Test-Admin guard: the elevation check above returns when not
+        # elevated, so this is unconditionally reachable. The guard that used to
+        # wrap this block had an unreachable else branch announcing the phase was
+        # being skipped -- it never was.
+        Section 'Release USB + Clear Stale VID_2207 Entries'
+        & $script:ADB kill-server 2>$null
+        Start-Sleep -Milliseconds 500
+        Get-Process -Name 'rkdeveloptool' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        $stuck = Get-PnpDevice | Where-Object { $_.FriendlyName -match 'Device Descriptor Request Failed' }
+        foreach ($d in $stuck) { Info "Removing stuck device: $($d.InstanceId)"; & pnputil /remove-device $d.InstanceId 2>&1 | Out-Null }
+        $allRk = Get-PnpDevice | Where-Object { $_.InstanceId -match 'VID_2207' }
+        foreach ($d in $allRk) { Info "Removing: $($d.InstanceId) [Present=$($d.Present)]"; & pnputil /remove-device $d.InstanceId 2>&1 | Out-Null }
+        & pnputil /scan-devices 2>&1 | Out-Null
+        Start-Sleep -Seconds 2
+        Ok 'USB bus ready.'
+        & $script:ADB start-server 2>&1 | Out-Null
         & $Ui.Flash 4 'USB ready'
 
         # --- Phase 1: Catch / verify Loader, auto-detect Esper state ---

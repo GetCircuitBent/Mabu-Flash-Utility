@@ -307,7 +307,13 @@ if (Test-Path $RkExe) {
 # ---------------------------------------------------------------------------
 Hr 'adb devices  (can adb see a booted tablet for `adb reboot loader`?)'
 # ---------------------------------------------------------------------------
-$adb = (Get-Command adb -ErrorAction SilentlyContinue).Source
+# Repo-relative copy first (install-tools.ps1 puts it there, and it is the one
+# location that survives an elevation switching user accounts), then PATH, then
+# the SDK location.
+$adb = $null
+$repoAdb = Join-Path (Split-Path -Parent $PSScriptRoot) 'tools\platform-tools\adb.exe'
+if (Test-Path $repoAdb) { $adb = $repoAdb }
+if (-not $adb) { $adb = (Get-Command adb -ErrorAction SilentlyContinue).Source }
 if (-not $adb) {
     $adb = Get-ChildItem -Path "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -Expand FullName
 }
