@@ -23,3 +23,6 @@ tools/platform-tools.zip
 tools/platform-tools/
 tools/google-usb-driver-source.zip
 tools/google-usb-driver/
+
+# Release build output (app\build\make-payload.ps1, app\bootstrap\build-bootstrap.ps1)
+/dist/
