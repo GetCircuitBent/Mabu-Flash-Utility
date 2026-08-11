@@ -63,8 +63,32 @@ param(
 $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path '.').Path
 $RK = Join-Path $Root 'tools/rkdeveloptool/rkdeveloptool.exe'
-$ADB = (Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Google.PlatformTools_*\platform-tools\adb.exe" | Select-Object -First 1).FullName
-if (-not $ADB) { throw "adb.exe not found" }
+
+# Locate adb.exe: PATH first, then common install locations, then winget install.
+function Find-Adb {
+    # PATH
+    $cmd = Get-Command adb -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    # Android SDK
+    $sdk = Join-Path $env:LOCALAPPDATA 'Android\Sdk\platform-tools\adb.exe'
+    if (Test-Path $sdk) { return $sdk }
+    # WinGet package dir (may not exist on a fresh machine -- check before Get-ChildItem)
+    $wgBase = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
+    if (Test-Path $wgBase) {
+        $hit = Get-ChildItem "$wgBase\Google.PlatformTools_*\platform-tools\adb.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($hit) { return $hit.FullName }
+    }
+    return $null
+}
+
+$ADB = Find-Adb
+if (-not $ADB) {
+    Write-Host '  [--]  adb not found -- installing Google Platform Tools via winget...' -ForegroundColor Yellow
+    winget install -e --id Google.PlatformTools --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+    $ADB = Find-Adb
+    if (-not $ADB) { Write-Host '[FAIL] adb still not found after winget install. Restart PowerShell and re-run.' -ForegroundColor Red; exit 1 }
+    Write-Host "  [OK]  adb installed: $ADB" -ForegroundColor Green
+}
 
 # Pre-start the adb server NOW, while errors are non-fatal. The very first adb
 # call otherwise prints "* daemon not running; starting now at tcp:5037" to
