@@ -100,8 +100,8 @@ picks one of two paths, decisively, based on that measurement — no partial
   problem entirely — a full-partition reflash carries its own filesystem
   metadata, so there's nothing to hand-patch.
 
-The reflash fallback requires WSL2 + Ubuntu (`scripts\install-tools.ps1`
-installs it). If it isn't available, Phase 7 warns and leaves the unit
+The reflash fallback requires WSL2 + Ubuntu (`scripts\install-tools.ps1
+-InstallWsl` installs it). If it isn't available, Phase 7 warns and leaves the unit
 unmodified rather than writing a truncated policy — it will not guess.
 (The `permissive`-ebitmap growth is often zero or a few bytes, so the
 same-size fast path frequently applies — but it's measured live, not assumed.)

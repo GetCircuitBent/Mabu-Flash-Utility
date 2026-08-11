@@ -17,8 +17,9 @@
 # Loader: the validated fast path. If it grows (e.g. -KeepRoot's permissive-shell
 # rule can), the script automatically FALLS BACK to a full /vendor reflash, which
 # loop-mounts the partition image in WSL to swap the file in -- no manual i_size
-# patching. The fallback needs WSL2 + Ubuntu (scripts\install-tools.ps1 sets it
-# up); if that isn't installed the script warns and leaves the unit unmodified.
+# patching. The fallback needs WSL2 + Ubuntu (scripts\install-tools.ps1 -InstallWsl
+# sets it up); if that isn't installed the script warns and leaves the unit
+# unmodified.
 #
 # State auto-detection (the /data wipe is the only thing that differs):
 #   - State A (active Esper): the live DPC io.shoonya.shoonyadpc lives in
@@ -451,7 +452,7 @@ function Invoke-WslVendorReflash {
     if (-not $ubuntu) {
         Warn 'The patched policy changed size, so the SELinux fix needs the WSL reflash fallback,'
         Warn 'but WSL2 + Ubuntu is not installed. Install it (run scripts\install-tools.ps1'
-        Warn 'as Administrator, or: wsl --install Ubuntu ; restart), then re-run.'
+        Warn '-InstallWsl as Administrator, or: wsl --install Ubuntu ; restart), then re-run.'
         Warn 'The unit was NOT modified by the SELinux step.'
         return $false
     }
