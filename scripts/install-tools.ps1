@@ -176,59 +176,55 @@ if (Test-Path $RkExe) {
 }
 
 # ---------------------------------------------------------------------------
-# 3. WSL sepolicy-inject (needed for Phase A/B of the flash guide)
+# 3. adb (Android platform-tools)
 # ---------------------------------------------------------------------------
-Write-Step 'WSL: sepolicy-inject'
+# flash-mabu.ps1 drives the whole provisioning phase over adb, so this is a hard
+# requirement -- it used to be missing here entirely, and the flash script would
+# die at startup on a fresh PC.
+#
+# NOTE: the old WSL / sepolicy-inject step lived here. It is GONE on purpose:
+# flash-mabu.ps1 applies the SELinux rule with on-device magiskpolicy (ARM,
+# shipped in tools\magiskpolicy\) and never shells out to WSL. Installing WSL2 +
+# Ubuntu and compiling sepolicy-inject added ~20 minutes of fresh-machine setup
+# for a dependency the flash path does not use. Only the deprecated
+# flash-new-mabu.ps1 ever needed it.
+Write-Step 'adb (Android platform-tools)'
 
-$SepolicyC   = Join-Path $RepoRoot 'tools\sepolicy-inject.c'
-$SepolicyBin = '/usr/local/bin/sepolicy-inject'
-$WslOk       = $false
-
-$wslCheck = Get-Command wsl -ErrorAction SilentlyContinue
-if (-not $wslCheck) {
-    Write-Warn 'WSL not found. Install WSL2 + Ubuntu, then re-run this script.'
-    Write-Note 'Run:  wsl --install Ubuntu'
-} else {
-    # Detect a runnable Ubuntu distro
-    $distros = wsl --list --quiet 2>$null
-    $ubuntu  = $distros | Where-Object { $_ -match 'Ubuntu' } | Select-Object -First 1
-    if (-not $ubuntu) {
-        Write-Warn 'No Ubuntu WSL distro found. Run:  wsl --install Ubuntu'
-    } else {
-        $ubuntu = $ubuntu.Trim()
-        Write-Note "Using WSL distro: $ubuntu"
-
-        # Check if already built
-        $existing = wsl -d $ubuntu -- test -x $SepolicyBin '&&' echo yes 2>$null
-        if ($existing -match 'yes') {
-            Write-OK "sepolicy-inject already at $SepolicyBin"
-            $WslOk = $true
-        } else {
-            Write-Note 'Building sepolicy-inject in WSL...'
-            # Install build deps (run as root to avoid sudo password prompt)
-            $apt = wsl -d $ubuntu -u root -- apt-get install -y libsepol-dev build-essential setools 2>&1 | Select-Object -Last 3
-            $apt | ForEach-Object { Write-Note $_ }
-
-            # Compile — source is in tools/sepolicy-inject.c (accessible from WSL as /mnt/c/...)
-            $wsrc = ($SepolicyC -replace '\\','/') -replace '^([A-Za-z]):',{ '/mnt/' + $args[0].Value.ToLower() }
-            $compile = wsl -d $ubuntu -u root -- gcc -o $SepolicyBin $wsrc /usr/lib/x86_64-linux-gnu/libsepol.a 2>&1
-            if ($LASTEXITCODE -eq 0) {
-                Write-OK "sepolicy-inject compiled and installed at $SepolicyBin"
-                $WslOk = $true
-            } else {
-                Write-Warn "Compile failed: $compile"
-                Write-Note "Manual fix: in WSL run: gcc -o $SepolicyBin '<path-to-tools/sepolicy-inject.c>' /usr/lib/x86_64-linux-gnu/libsepol.a"
-            }
-        }
-
-        # Verify sesearch (used in Phase A3 verification)
-        $ss = wsl -d $ubuntu -- sesearch --version 2>$null
-        if ($ss -match '\d') {
-            Write-OK "sesearch $($ss.Trim()) available"
-        } else {
-            Write-Warn "sesearch not found — run: wsl -d $ubuntu -u root -- apt-get install -y setools"
-        }
+function Get-AdbPath {
+    $cmd = Get-Command adb -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $sdk = Join-Path $env:LOCALAPPDATA 'Android\Sdk\platform-tools\adb.exe'
+    if (Test-Path $sdk) { return $sdk }
+    $wgBase = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
+    if (Test-Path $wgBase) {
+        $hit = Get-ChildItem "$wgBase\Google.PlatformTools_*\platform-tools\adb.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($hit) { return $hit.FullName }
     }
+    return $null
+}
+
+$AdbOk   = $false
+$adbPath = Get-AdbPath
+if ($adbPath) {
+    Write-OK "adb already installed: $adbPath"
+    $AdbOk = $true
+} elseif (Get-Command winget -ErrorAction SilentlyContinue) {
+    Write-Note 'Installing Google platform-tools via winget...'
+    $p = Start-Process winget `
+        -ArgumentList 'install','--id','Google.PlatformTools','-e','--accept-source-agreements','--accept-package-agreements' `
+        -NoNewWindow -Wait -PassThru
+    $adbPath = Get-AdbPath
+    if ($adbPath) {
+        Write-OK "adb installed: $adbPath"
+        $AdbOk = $true
+    } else {
+        Write-Warn "winget finished (exit $($p.ExitCode)) but adb was not found. Reopen PowerShell so PATH refreshes, then re-run."
+    }
+} else {
+    Write-Warn 'adb not found and winget is unavailable on this machine.'
+    Write-Note 'Download platform-tools manually and add it to PATH:'
+    Write-Note '  https://developer.android.com/tools/releases/platform-tools'
+    Write-Note "Or unzip it to: $env:LOCALAPPDATA\Android\Sdk\platform-tools\"
 }
 
 # ---------------------------------------------------------------------------
@@ -267,8 +263,8 @@ if (-not $zadig) {
     Write-Host '  Install Zadig (see notes above).' -ForegroundColor White
 } elseif (-not (Test-Path $RkExe)) {
     Write-Host '  rkdeveloptool.exe missing - check download errors above and re-run.' -ForegroundColor White
-} elseif (-not $WslOk) {
-    Write-Host '  Fix WSL / sepolicy-inject issues above, then re-run.' -ForegroundColor White
+} elseif (-not $AdbOk) {
+    Write-Host '  Install adb (see notes above), then re-run.' -ForegroundColor White
 } else {
     Write-Host '  All tools ready. To flash a Mabu:' -ForegroundColor Green
     Write-Host '  1. Power on Mabu with USB harness connected (Loader window ~10s on boot).' -ForegroundColor White

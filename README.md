@@ -26,13 +26,18 @@ git clone https://github.com/GetCircuitBent/Mabu-Flash-Utility.git
 2. Click **Download ZIP**
 3. Unzip it somewhere permanent. The scripts run from that folder.
 
+> **Note on the ZIP:** it extracts to a folder that contains *another* folder of the
+> same name (`Mabu-Flash-Utility-main\Mabu-Flash-Utility-main\`). The inner one is
+> the repo: it's the folder holding `scripts\`, `tools\` and `firmware\`. That's the
+> one to `cd` into.
+
 ---
 
 ## One-Time Setup
-Run this once on each new PC before your first flash. It automatically downloads the Rockchip flashing tool and installs the USB drivers the Mabu needs.
+Run this once on each new PC before your first flash. It installs adb, the Rockchip flashing tool, and the USB drivers the Mabu needs.
 
-1. Open **PowerShell as Administrator** (right-click the Start menu, then *Windows PowerShell (Admin)*)
-2. Navigate to the repo folder:
+1. Open **PowerShell as Administrator** (right-click the Start menu, then *Windows PowerShell (Admin)*). The flash script requires this; it replaces USB drivers, which needs elevation.
+2. Navigate to the repo folder (the one containing `scripts\`):
    ```powershell
    cd "path\to\Mabu-Flash-Utility"
    ```
@@ -40,7 +45,11 @@ Run this once on each new PC before your first flash. It automatically downloads
    ```powershell
    Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
    ```
-4. Run the setup script:
+4. **If you downloaded the ZIP**, also clear the "downloaded from the internet" mark, or Windows will refuse to run the scripts even after step 3:
+   ```powershell
+   Get-ChildItem -Recurse -Filter *.ps1 | Unblock-File
+   ```
+5. Run the setup script:
    ```powershell
    .\scripts\install-tools.ps1
    ```
