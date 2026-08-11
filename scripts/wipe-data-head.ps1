@@ -30,15 +30,29 @@ param(
 $ErrorActionPreference = 'Stop'
 $Root  = Split-Path -Parent $PSScriptRoot
 $Rk    = Join-Path $Root 'tools\rkdeveloptool\rkdeveloptool.exe'
-$Zeros = Join-Path $Root 'firmware\patches\zeros-16mb.bin'
-
 # /data partition starts at sector 0x692400 per parameter file
-$BaseLBA  = 0x692400
-$ChunkSec = 32768            # 16 MB per chunk -> matches zeros-16mb.bin
-$NChunks  = [Math]::Ceiling($SizeMB / 16)
+$BaseLBA    = 0x692400
+$ChunkSec   = 32768          # 16 MB per chunk
+$ChunkBytes = $ChunkSec * 512
+$NChunks    = [Math]::Ceiling($SizeMB / 16)
 
-if (-not (Test-Path $Zeros)) {
-    Write-Host "Missing zeros payload: $Zeros" -ForegroundColor Red
+# The zero payload is generated, not shipped. It used to be
+# firmware\patches\zeros-16mb.bin: 16,777,216 bytes of nothing, committed to the
+# repo and downloaded by every user to carry no information whatsoever. Writing
+# it here costs milliseconds and takes 16 MB off every clone and every release.
+# Lands in firmware\scratch\ (already gitignored) and is reused across runs.
+$Zeros   = Join-Path $Root 'firmware\scratch\zeros-16mb.bin'
+$scratch = Split-Path -Parent $Zeros
+if (-not (Test-Path $scratch)) { New-Item -ItemType Directory -Path $scratch -Force | Out-Null }
+if (-not (Test-Path $Zeros) -or (Get-Item $Zeros).Length -ne $ChunkBytes) {
+    Write-Host ("Generating the {0:N0}-byte zero payload..." -f $ChunkBytes) -ForegroundColor Gray
+    # Explicit zero-fill rather than FileStream.SetLength: extending a file
+    # leaves the new bytes undefined per the .NET contract, and this payload is
+    # written straight to /data -- it has to actually be zeros.
+    [IO.File]::WriteAllBytes($Zeros, (New-Object byte[] $ChunkBytes))
+}
+if ((Get-Item $Zeros).Length -ne $ChunkBytes) {
+    Write-Host "Zero payload is the wrong size: $Zeros" -ForegroundColor Red
     exit 1
 }
 
