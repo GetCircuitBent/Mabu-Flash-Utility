@@ -234,10 +234,14 @@ function Confirm-LoaderWinUsb {
     Write-Host ""
     Warn 'In Zadig:'
     Warn '  1. Options -> List All Devices'
-    Warn "  2. In the dropdown pick 'Rockusb Device' (USB ID 2207 320A)"
-    Warn '  3. Set the target driver to WinUSB, then click Replace Driver'
-    Warn "  4. Wait for 'Driver Installed Successfully'"
+    Warn '  2. Options -> uncheck "Ignore Hubs or Composite Parents"'
+    Warn "  3. In the dropdown pick the device whose USB ID is 2207 320A"
+    Warn '     (it may show as "Unknown Device" -- match on the USB ID, not the name)'
+    Warn '  4. Set the target driver to WinUSB, then click Replace Driver'
+    Warn "  5. Wait for 'Driver Installed Successfully' (~30s; Windows re-enumerates)"
     Warn 'Keep the tablet powered / in Loader the whole time -- do NOT power-cycle.'
+    Info 'To revert later: Device Manager -> right-click the device -> Uninstall device'
+    Info '-> tick "Delete the driver software" -> unplug/replug.'
     Read-Host 'Press Enter after Zadig reports the WinUSB driver is installed'
 
     # Re-verify the binding (device re-enumerates on rebind; allow a moment).
@@ -818,7 +822,11 @@ if (Test-Loader) {
     Info 'Loader not seen. Finding an adb device to detect state and enter Loader.'
     $dev = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 30
     if (-not $dev) {
-        Die 'No adb device and no Loader. Power-cycle the tablet to catch Loader, then re-run.'
+        Die 'No adb device and no Loader.' `
+            'Power-cycle the tablet (hold ADKEY through power-on) to catch Loader, then re-run.' `
+            'If the PC never sees the device at all, run the read-only USB diagnostic:' `
+            '  .\scripts\diagnose-usb.ps1 -Watch' `
+            'It reports which driver is bound to each Rockchip PID and what is missing.'
     }
     $state = Get-MabuState -Dev $dev
     switch ($state) {

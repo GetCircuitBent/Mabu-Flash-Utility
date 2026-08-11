@@ -148,10 +148,8 @@ route below if you want to do it ahead of time.
 <summary>Manual WinUSB bind (optional)</summary>
 
 Get the device into Loader mode (power-cycle and catch the ~10 s window, OR
-`adb shell reboot loader` if ADB is already working), then:
-```powershell
-.\scripts\bind-winusb.ps1   # launches Zadig with instructions
-```
+`adb shell reboot loader` if ADB is already working), then launch Zadig by hand.
+
 In Zadig: **Options → List All Devices** (check), **Options → Ignore Hubs or
 Composite Parents** (uncheck). In the dropdown, find the entry whose USB ID is
 **`2207 320A`**; it will appear as **"Unknown Device"** (no name) because no
@@ -159,6 +157,9 @@ driver is bound yet. Confirm the USB ID matches before clicking **Install
 Driver** (target: WinUSB). Windows remembers this binding; only needed once
 per PC. If ADB is working, the device stays in Loader indefinitely so there is
 no time pressure.
+
+To revert: Device Manager → right-click the device → **Uninstall device** → tick
+**Delete the driver software** → unplug/replug.
 </details>
 
 > **Catching the Loader:** power the unit OFF fully (PWRON held >7 s if needed),
@@ -472,7 +473,7 @@ clears `misc` if anything ever affects boot (it should not; we never touch boot)
 |---|---|---|
 | After reboot, app still gets `avc: denied ... serial_device` | init recompiled policy from CIL and ignored our precompiled file | **Not a brick**: device boots normally. The hash check in §1 should prevent this; if it happens, re-verify the on-disk write, or escalate (patch the CIL inputs + their hash, or use Route 2). |
 | Boot loops / no Android | policy file truncated or corrupt | Restore originals (§7). This is why we capture originals **before** writing and why Route 1 requires the size to fit existing blocks. |
-| `rkdeveloptool` can't see device | Loader window missed, or WinUSB not bound | Power-cycle, re-catch within ~10 s; re-run `bind-winusb.ps1` / Zadig. |
+| `rkdeveloptool` can't see device | Loader window missed, or WinUSB not bound | Power-cycle and re-catch within ~10 s. `flash-mabu.ps1` re-launches Zadig on its own if the binding is wrong; run `.\scripts\diagnose-usb.ps1 -Watch` to see exactly which driver is bound. |
 | `wl` reports not-100% | partial write | Re-run the `wl`; never leave a partial policy write; restore + retry. |
 | Read wedge during `/vendor` dump | known Loader limit (~28 MB/session) | The cycled dumper handles it; just let it cycle, or power-cycle and resume. |
 

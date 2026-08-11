@@ -100,13 +100,25 @@ This driver step only happens once per PC.
 ---
 
 ## Troubleshooting
+**The PC can't see the Mabu at all?** Start here. This read-only diagnostic reports
+which driver is bound to each Rockchip USB ID and what's missing. It changes nothing:
+
+```powershell
+.\scripts\diagnose-usb.ps1 -Watch
+```
+
+`-Watch` polls for ~30 seconds, so you can start it first and *then* power the unit
+on — it catches the ~10-second Loader window instead of you racing it.
+
 | Symptom | Fix |
 |---|---|
-| Script says `adb.exe not found` | Run `winget install Google.PlatformTools` and restart PowerShell |
+| Script says `adb.exe not found` | Re-run `.\scripts\install-tools.ps1`, then restart PowerShell |
+| Script says it must run as Administrator | Reopen PowerShell via right-click Start menu > *Windows PowerShell (Admin)* |
+| `rkdeveloptool.exe not found` | You're running from the wrong folder, or the download was incomplete. Run `.\scripts\install-tools.ps1` from the folder containing `scripts\` |
 | Loader mode won't appear | Check D+/D- polarity on the USB wires; try holding ADKEY earlier during power-on |
 | Script stops at WiFi step | Touch the Mabu screen, join your WiFi network, then press Enter in PowerShell |
 | App installs fail | Make sure the Mabu and PC are on the same WiFi network |
-| `execution of scripts is disabled` error | Run `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser` and try again |
+| `execution of scripts is disabled` error | Run `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`. If you used the ZIP, also run `Get-ChildItem -Recurse -Filter *.ps1 \| Unblock-File` |
 
 ---
 

@@ -249,7 +249,7 @@ if (-not $rk) {
         # If it's still bound to a Microsoft USB driver (Class=USBDevice/USB), Zadig hasn't run yet.
         if ($d.Class -in @('USB','USBDevice','Unknown') -or -not $d.Class) {
             Write-Note 'Driver looks like the default Windows USB stack - libusb-based tools will fail to open the device.'
-            Write-Note 'Run Zadig and replace the driver for this device with WinUSB. See scripts\bind-winusb.ps1.'
+            Write-Note 'flash-mabu.ps1 will launch Zadig and walk you through this automatically.'
         } elseif ($d.Class -eq 'libusb-win32 devices' -or $d.Class -match 'WinUSB') {
             Write-OK 'Driver looks like a libusb/WinUSB binding - rkdeveloptool should be able to open it.'
         } else {
