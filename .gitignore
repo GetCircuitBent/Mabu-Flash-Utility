@@ -15,3 +15,10 @@ desktop.ini
 
 # Scratch / working dumps -- never commit these
 firmware/scratch/
+
+# Tool downloads fetched and hash-verified at runtime by scripts\install-tools.ps1
+# and scripts\install-android-driver.ps1. Re-downloadable, so never commit them.
+tools/zadig.exe
+tools/platform-tools.zip
+tools/google-usb-driver-source.zip
+tools/google-usb-driver/
