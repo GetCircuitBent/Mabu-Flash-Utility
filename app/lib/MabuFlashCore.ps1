@@ -140,7 +140,17 @@ function ConvertTo-WslPath([string]$WinPath) {
 # Name of an installed Ubuntu WSL distro, or $null (the default SELinux path needs no WSL).
 function Get-WslUbuntu {
     if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) { return $null }
-    $d = (wsl --list --quiet 2>$null) | Where-Object { $_ -match 'Ubuntu' } | Select-Object -First 1
+    # `wsl --list` emits UTF-16LE, which PS 5.1 decodes as ANSI unless the console
+    # encoding is switched first -- that turns "Ubuntu" into "U.b.u.n.t.u", so a
+    # machine that DOES have Ubuntu reported as having none and the SELinux reflash
+    # fallback refused to run. Switch, capture, restore; null-strip covers older builds.
+    $prev = [Console]::OutputEncoding
+    try {
+        [Console]::OutputEncoding = [Text.Encoding]::Unicode
+        $raw = & wsl.exe --list --quiet 2>$null
+    } catch { return $null } finally { [Console]::OutputEncoding = $prev }
+    $d = @($raw | ForEach-Object { ($_ -replace "`0", '').Trim() } | Where-Object { $_ }) |
+         Where-Object { $_ -match 'Ubuntu' } | Select-Object -First 1
     if ($d) { return $d.Trim() }
     return $null
 }
@@ -158,53 +168,12 @@ function Test-Winget {
     return [bool](Get-Command winget -ErrorAction SilentlyContinue)
 }
 
-function Find-Adb {
-    # Candidate order is shared with Get-AdbPath in install-tools.ps1 and the
-    # helper scripts -- keep them in step. The repo-relative copy installed by
-    # install-tools.ps1 is checked FIRST because it is the only location that
-    # survives an elevation which switches user accounts: the packaged .exe
-    # always runs elevated, and if the signed-in user is not an admin then
-    # %LOCALAPPDATA% below points at a different profile entirely.
-    $root = if ($script:Root) { $script:Root } else { (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path }
-    $repo = Join-Path $root 'tools\platform-tools\adb.exe'
-    if (Test-Path $repo) { return $repo }
-    # PATH, then the Android SDK, then the winget package dir. The winget parent
-    # may not exist on a fresh machine, so it's Test-Path'd before the wildcard
-    # Get-ChildItem (that wildcard on a missing parent throws under EAP='Stop',
-    # which is what originally crashed flash-mabu.ps1 on a clean PC).
-    $cmd = Get-Command adb -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
-    $sdk = Join-Path $env:LOCALAPPDATA 'Android\Sdk\platform-tools\adb.exe'
-    if (Test-Path $sdk) { return $sdk }
-    $wgBase = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
-    if (Test-Path $wgBase) {
-        $hit = Get-ChildItem "$wgBase\Google.PlatformTools_*\platform-tools\adb.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($hit) { return $hit.FullName }
-    }
-    return $null
-}
-
-function Find-Zadig {
-    # Explicit candidate paths only. Recursing all of Program Files measured ~6s
-    # on a clean machine (worse on a loaded one) and this sits on the hot path.
-    $candidates = @(
-        (Join-Path $script:Root 'tools\zadig.exe'),
-        (Join-Path $script:Root 'tools\zadig\zadig*.exe'),
-        "$env:USERPROFILE\scoop\apps\zadig\current\zadig.exe",
-        "$env:USERPROFILE\scoop\shims\zadig.exe",
-        "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\akeo.ie.Zadig*\zadig*.exe",
-        "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Akeo.Zadig*\zadig*.exe",
-        "$env:ProgramFiles\Zadig\zadig.exe",
-        "${env:ProgramFiles(x86)}\Zadig\zadig.exe"
-    )
-    foreach ($pat in $candidates) {
-        $hit = Get-ChildItem -Path $pat -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($hit) { return $hit.FullName }
-    }
-    $cmd = Get-Command zadig -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
-    return $null
-}
+# Find-Adb / Find-Zadig now come from scripts\lib\MabuTools.ps1
+# (Get-MabuAdbPath / Get-MabuZadigPath, plus Install-MabuAdb / Install-MabuZadig).
+# The local copies here acquired tools via winget ONLY, so on a machine without
+# winget the GUI died at its first prerequisite -- which is exactly the machine
+# class this project keeps hitting. The module falls back to a hash-pinned
+# direct download. Dot-sourced inside Invoke-MabuFlash, once $script:Root is known.
 
 function Confirm-LoaderWinUsb {
     # Gate before any Loader read/write: ensure PID 320A is bound to WinUSB.
@@ -215,11 +184,11 @@ function Confirm-LoaderWinUsb {
     Warn "PID 320A is bound to '$svc', not WinUSB."
     Warn "rkdeveloptool can SEE Loader but writes fail ('creating comm object failed')."
     Warn 'Launching Zadig to rebind 320A -> WinUSB (one-time per PC; it persists).'
-    $zadig = Find-Zadig
-    if (-not $zadig -and (Test-Winget)) {
-        Warn 'Zadig not found: installing via winget...'
-        winget install -e --id akeo.ie.Zadig --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
-        $zadig = Find-Zadig
+    $zadig = Install-MabuZadig -RepoRoot $script:Root
+    if (-not $zadig) {
+        Warn 'Zadig could not be found or downloaded.'
+        Warn 'Get it from https://zadig.akeo.ie/ and place zadig.exe at:'
+        Warn "  $(Join-Path $script:Root 'tools\zadig.exe')"
     }
     if ($zadig) {
         Info "Zadig: $zadig"
@@ -587,6 +556,22 @@ function Invoke-MabuFlash {
     $script:Root = if ($Root) { $Root } else { (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path }
     $script:RK = Join-Path $script:Root 'tools/rkdeveloptool/rkdeveloptool.exe'
 
+    # Shared tool acquisition. Dot-sourced here rather than at file scope because
+    # it is resolved from $script:Root, which -Root may override (the packaged
+    # launcher points this at an extracted payload, not at a repo checkout).
+    # Routes its output through the injected UI provider, so a GUI run shows the
+    # download progress in the log pane instead of a console nobody can see.
+    $toolsModule = Join-Path $script:Root 'scripts\lib\MabuTools.ps1'
+    if (-not (Test-Path $toolsModule)) {
+        & $Ui.Done $false "Missing $toolsModule -- the install is incomplete. Re-extract or re-clone."
+        return
+    }
+    . $toolsModule
+    Set-MabuToolsLogger {
+        param([string] $Level, [string] $Message)
+        switch ($Level) { 'ok' { Ok $Message } 'warn' { Warn $Message } default { Info $Message } }
+    }
+
     # Elevation is required, not optional: Zadig cannot replace the Loader's
     # driver without it, and the Phase 0 pnputil device removal is admin-only.
     # PnP *queries* are NOT the reason -- Get-PnpDevice, Get-PnpDeviceProperty
@@ -606,17 +591,12 @@ function Invoke-MabuFlash {
         return
     }
 
-    $script:ADB = Find-Adb
+    $script:ADB = Install-MabuAdb -RepoRoot $script:Root
     if (-not $script:ADB) {
-        if (Test-Winget) {
-            & $Ui.Log 'warn' 'adb not found: installing Google Platform Tools via winget...'
-            winget install -e --id Google.PlatformTools --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
-            $script:ADB = Find-Adb
-        }
-        if (-not $script:ADB) {
-            & $Ui.Done $false 'adb.exe not found, and could not be auto-installed. Install Google Platform Tools (https://developer.android.com/tools/releases/platform-tools) and re-run.'
-            return
-        }
+        & $Ui.Done $false ('adb.exe not found and could not be installed. Run scripts\install-tools.ps1, ' +
+            'or install Google platform-tools from https://developer.android.com/tools/releases/platform-tools ' +
+            "and unzip it to $(Join-Path $script:Root 'tools\platform-tools')")
+        return
     }
     $script:WifiIp = $WifiIp
 

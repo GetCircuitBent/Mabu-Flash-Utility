@@ -76,42 +76,6 @@ function Test-Winget {
     return [bool](Get-Command winget -ErrorAction SilentlyContinue)
 }
 
-function Find-Adb {
-    # Candidate order is shared with Get-AdbPath in install-tools.ps1 and the
-    # helper scripts -- keep them in step. The repo-relative copy installed by
-    # install-tools.ps1 is checked FIRST because it is the only location that
-    # survives an elevation which switches user accounts: this script forces
-    # admin, and if the signed-in user is not an admin then %LOCALAPPDATA% below
-    # points at a different profile entirely.
-    $repo = Join-Path $RepoRoot 'tools\platform-tools\adb.exe'
-    if (Test-Path $repo) { return $repo }
-    # PATH (covers scoop/choco/manual installs), then the Android SDK, then the
-    # winget package dir. The winget parent may not exist on a fresh machine, so
-    # it is Test-Path'd before the wildcard Get-ChildItem.
-    $cmd = Get-Command adb -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
-    $sdk = Join-Path $env:LOCALAPPDATA 'Android\Sdk\platform-tools\adb.exe'
-    if (Test-Path $sdk) { return $sdk }
-    $wgBase = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
-    if (Test-Path $wgBase) {
-        $hit = Get-ChildItem "$wgBase\Google.PlatformTools_*\platform-tools\adb.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($hit) { return $hit.FullName }
-    }
-    return $null
-}
-
-$ADB = Find-Adb
-
-# Pre-start the adb server NOW, while errors are non-fatal. The first adb call
-# otherwise prints "* daemon not running; starting now..." to stderr, and with
-# $ErrorActionPreference='Stop' the 2>&1 capture turns that banner into a
-# terminating error that aborts mid-flash. Starting it here avoids that later.
-if ($ADB -and (Test-Path $ADB)) {
-    $ErrorActionPreference = 'Continue'
-    & $ADB start-server 2>&1 | Out-Null
-    $ErrorActionPreference = 'Stop'
-}
-
 function Section($msg) { Write-Host "" ; Write-Host "==== $msg ====" -ForegroundColor Cyan }
 function Info($msg)    { Write-Host "  $msg" -ForegroundColor Gray }
 function Ok($msg)      { Write-Host "  $msg" -ForegroundColor Green }
@@ -149,6 +113,30 @@ if (-not (Test-Admin)) {
         '  3. Re-run this script.'
 }
 
+# Shared tool acquisition (hash-pinned download + the SHA-256 pins + the adb and
+# Zadig locators) lives in scripts\lib\MabuTools.ps1, so a re-pin lands in this
+# script, install-tools.ps1 and MabuFlashCore.ps1 at the same time.
+. (Join-Path $PSScriptRoot 'lib\MabuTools.ps1')
+Set-MabuToolsLogger {
+    param([string] $Level, [string] $Message)
+    switch ($Level) { 'ok' { Ok $Message } 'warn' { Warn $Message } default { Info $Message } }
+}
+
+# Acquire adb: already-installed, then winget, then a pinned direct download --
+# the last of which is what keeps winget-less machines working.
+$ADB = Install-MabuAdb -RepoRoot $RepoRoot
+
+# Pre-start the adb server NOW, while errors are non-fatal. The first adb call
+# otherwise prints "* daemon not running; starting now..." to stderr, and with
+# $ErrorActionPreference='Stop' the 2>&1 capture turns that banner into a
+# terminating error that aborts mid-flash. Starting it here avoids that later.
+if ($ADB -and (Test-Path $ADB)) {
+    $ErrorActionPreference = 'Continue'
+    & $ADB start-server 2>&1 | Out-Null
+    $ErrorActionPreference = 'Stop'
+}
+
+
 # Convert a Windows path (D:\a\b) to its WSL mount path (/mnt/d/a/b). Derived
 # from wherever the repo lives; never hardcode a specific location.
 function ConvertTo-WslPath([string]$WinPath) {
@@ -165,7 +153,17 @@ function ConvertTo-WslPath([string]$WinPath) {
 # reflash fallback; the default magiskpolicy path needs no WSL.
 function Get-WslUbuntu {
     if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) { return $null }
-    $d = (wsl --list --quiet 2>$null) | Where-Object { $_ -match 'Ubuntu' } | Select-Object -First 1
+    # `wsl --list` emits UTF-16LE, which PS 5.1 decodes as ANSI unless the console
+    # encoding is switched first -- that turns "Ubuntu" into "U.b.u.n.t.u", so a
+    # machine that DOES have Ubuntu reported as having none and the SELinux reflash
+    # fallback refused to run. Switch, capture, restore; null-strip covers older builds.
+    $prev = [Console]::OutputEncoding
+    try {
+        [Console]::OutputEncoding = [Text.Encoding]::Unicode
+        $raw = & wsl.exe --list --quiet 2>$null
+    } catch { return $null } finally { [Console]::OutputEncoding = $prev }
+    $d = @($raw | ForEach-Object { ($_ -replace "`0", '').Trim() } | Where-Object { $_ }) |
+         Where-Object { $_ -match 'Ubuntu' } | Select-Object -First 1
     if ($d) { return $d.Trim() }
     return $null
 }
@@ -190,27 +188,9 @@ function Get-LoaderDriverService {
     return (Get-PnpDeviceProperty -InstanceId $d.InstanceId -KeyName 'DEVPKEY_Device_Service' -ErrorAction SilentlyContinue).Data
 }
 
-function Find-Zadig {
-    # Explicit candidate paths only. Recursing all of Program Files measured ~6s on
-    # a clean machine (far worse on a loaded one) and this sits on the hot path.
-    $candidates = @(
-        (Join-Path $RepoRoot 'tools\zadig.exe'),
-        (Join-Path $RepoRoot 'tools\zadig\zadig*.exe'),
-        "$env:USERPROFILE\scoop\apps\zadig\current\zadig.exe",
-        "$env:USERPROFILE\scoop\shims\zadig.exe",
-        "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\akeo.ie.Zadig*\zadig*.exe",
-        "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Akeo.Zadig*\zadig*.exe",
-        "$env:ProgramFiles\Zadig\zadig.exe",
-        "${env:ProgramFiles(x86)}\Zadig\zadig.exe"
-    )
-    foreach ($pat in $candidates) {
-        $hit = Get-ChildItem -Path $pat -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($hit) { return $hit.FullName }
-    }
-    $cmd = Get-Command zadig -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
-    return $null
-}
+# Find-Zadig now comes from scripts\lib\MabuTools.ps1 (Get-MabuZadigPath /
+# Install-MabuZadig). The old local copy plus its winget-only installer aborted
+# the flash on any machine without winget.
 
 function Confirm-LoaderWinUsb {
     # Gate before any Loader read/write: ensure PID 320A is bound to WinUSB. If
@@ -223,17 +203,11 @@ function Confirm-LoaderWinUsb {
     Warn "PID 320A is bound to '$svc', not WinUSB."
     Warn "rkdeveloptool can SEE Loader but writes fail ('creating comm object failed')."
     Warn 'Launching Zadig to rebind 320A -> WinUSB (one-time per PC; it persists).'
-    $zadig = Find-Zadig
+    $zadig = Install-MabuZadig -RepoRoot $RepoRoot
     if (-not $zadig) {
-        if (Test-Winget) {
-            Warn 'Zadig not found: installing via winget...'
-            winget install -e --id akeo.ie.Zadig --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
-            $zadig = Find-Zadig
-        } else {
-            Warn 'Zadig not found and winget is unavailable on this machine.'
-            Warn 'Download it from https://zadig.akeo.ie/ and place zadig.exe at:'
-            Warn "  $(Join-Path $RepoRoot 'tools\zadig.exe')"
-        }
+        Warn 'Zadig could not be found or downloaded.'
+        Warn 'Get it from https://zadig.akeo.ie/ and place zadig.exe at:'
+        Warn "  $(Join-Path $RepoRoot 'tools\zadig.exe')"
     }
     if ($zadig) {
         Info "Zadig: $zadig"
@@ -617,21 +591,20 @@ if (-not (Test-Path $RK)) {
     }
 }
 if (-not $ADB -or -not (Test-Path $ADB)) {
-    if (-not (Test-Winget)) {
-        Die 'adb (Android platform-tools) was not found, and winget is unavailable to install it.' `
-            'Install platform-tools manually, then re-run:' `
-            '  https://developer.android.com/tools/releases/platform-tools' `
-            'Unzip it and either add the folder to PATH or place it at:' `
-            "  $env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
-    }
-    Warn 'adb.exe not found: installing Google.PlatformTools via winget...'
-    winget install -e --id Google.PlatformTools --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
-    $ADB = Find-Adb
+    # Retry through the shared acquirer (winget, else pinned direct download).
+    $ADB = Install-MabuAdb -RepoRoot $RepoRoot
     if (-not $ADB -or -not (Test-Path $ADB)) {
-        Die 'adb.exe still not found after the winget install.' `
-            'Close and reopen PowerShell (so PATH refreshes), then re-run this script.'
+        Die 'adb (Android platform-tools) was not found and could not be installed.' `
+            'Run the one-time setup, which downloads it directly:' `
+            '  .\scripts\install-tools.ps1' `
+            'Or install it by hand from:' `
+            '  https://developer.android.com/tools/releases/platform-tools' `
+            'and unzip it to:' `
+            "  $(Join-Path $RepoRoot 'tools\platform-tools')"
     }
+    $ErrorActionPreference = 'Continue'
     & $ADB start-server 2>&1 | Out-Null
+    $ErrorActionPreference = 'Stop'
 }
 $patchDir = Join-Path $RepoRoot 'firmware\patches'
 foreach ($f in @('parameter-patched.img','adbd-authreq-patched.bin','adbd-authinit-patched.bin','espersupervisor-apk-eocd-patched.bin','esperdpc-apk-eocd-patched.bin','esperhelper-apk-eocd-patched.bin','zeros-4k.bin')) {
