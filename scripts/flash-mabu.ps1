@@ -136,57 +136,29 @@ if (-not (Test-Path $RK)) {
         'running from the folder that contains scripts\, tools\ and firmware\.'
 }
 
-function Test-Winget {
-    # winget is absent on Win10 LTSC / Server and on machines where App Installer
-    # has never been provisioned. Calling it blind is a terminating
-    # CommandNotFoundException, so every auto-install path checks this first.
-    return [bool](Get-Command winget -ErrorAction SilentlyContinue)
+# Shared tool acquisition (hash-pinned download + the SHA-256 pins + the adb and
+# Zadig locators) lives in scripts\lib\MabuTools.ps1, so a re-pin lands in this
+# script, install-tools.ps1 and the GUI core at the same time.
+. (Join-Path $PSScriptRoot 'lib\MabuTools.ps1')
+Set-MabuToolsLogger {
+    param([string] $Level, [string] $Message)
+    switch ($Level) { 'ok' { Ok $Message } 'warn' { Warn $Message } default { Info $Message } }
 }
 
-# Locate adb.exe. Candidate order is shared with Get-AdbPath in install-tools.ps1
-# and the helper scripts -- keep them in step.
-function Find-Adb {
-    # Repo-relative copy, installed by install-tools.ps1. Checked FIRST because
-    # it is the only location that survives an elevation which switches user
-    # accounts: this script forces admin, and if the signed-in user is not an
-    # admin then %LOCALAPPDATA% below points at a different profile entirely.
-    $repo = Join-Path $Root 'tools\platform-tools\adb.exe'
-    if (Test-Path $repo) { return $repo }
-    # PATH
-    $cmd = Get-Command adb -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
-    # Android SDK
-    $sdk = Join-Path $env:LOCALAPPDATA 'Android\Sdk\platform-tools\adb.exe'
-    if (Test-Path $sdk) { return $sdk }
-    # WinGet package dir (may not exist on a fresh machine -- check before Get-ChildItem)
-    $wgBase = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
-    if (Test-Path $wgBase) {
-        $hit = Get-ChildItem "$wgBase\Google.PlatformTools_*\platform-tools\adb.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($hit) { return $hit.FullName }
-    }
-    return $null
-}
-
-$ADB = Find-Adb
+# Acquire adb. Tries what is already installed, then winget, then a pinned direct
+# download -- the last of which is what keeps winget-less machines working. This
+# used to Die outright when winget was missing.
+$ADB = Install-MabuAdb -RepoRoot $Root
 if (-not $ADB) {
-    if (-not (Test-Winget)) {
-        Die 'adb (Android platform-tools) was not found, and winget is unavailable to install it.' `
-            'Run the one-time setup, which downloads it directly (no winget needed):' `
-            '  .\scripts\install-tools.ps1' `
-            'Or install it by hand from:' `
-            '  https://developer.android.com/tools/releases/platform-tools' `
-            'and unzip it to:' `
-            "  $(Join-Path $Root 'tools\platform-tools\')"
-    }
-    Warn 'adb not found -- installing Google Platform Tools via winget (one-time)...'
-    winget install -e --id Google.PlatformTools --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
-    $ADB = Find-Adb
-    if (-not $ADB) {
-        Die 'adb still not found after the winget install.' `
-            'Close and reopen PowerShell (so PATH refreshes), then re-run this script.'
-    }
-    Ok "adb installed: $ADB"
+    Die 'adb (Android platform-tools) could not be found or installed.' `
+        'Run the one-time setup, which downloads it directly:' `
+        '  .\scripts\install-tools.ps1' `
+        'Or install it by hand from:' `
+        '  https://developer.android.com/tools/releases/platform-tools' `
+        'and unzip it to:' `
+        "  $(Join-Path $Root 'tools\platform-tools')"
 }
+Ok "adb: $ADB"
 
 # Pre-start the adb server NOW, while errors are non-fatal. The very first adb
 # call otherwise prints "* daemon not running; starting now at tcp:5037" to
@@ -260,45 +232,9 @@ function Get-LoaderDriverService {
     return (Get-PnpDeviceProperty -InstanceId $d.InstanceId -KeyName 'DEVPKEY_Device_Service' -ErrorAction SilentlyContinue).Data
 }
 
-function Find-Zadig {
-    # Explicit candidate paths only. This used to recurse all of Program Files,
-    # which measured ~6s on a clean machine (far worse on a loaded one) and sits on
-    # the hot path. Candidate list mirrors install-tools.ps1, including scoop.
-    $candidates = @(
-        (Join-Path $Root 'tools\zadig.exe'),
-        (Join-Path $Root 'tools\zadig\zadig*.exe'),
-        "$env:USERPROFILE\scoop\apps\zadig\current\zadig.exe",
-        "$env:USERPROFILE\scoop\shims\zadig.exe",
-        "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\akeo.ie.Zadig*\zadig*.exe",
-        "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Akeo.Zadig*\zadig*.exe",
-        "$env:ProgramFiles\Zadig\zadig.exe",
-        "${env:ProgramFiles(x86)}\Zadig\zadig.exe"
-    )
-    foreach ($pat in $candidates) {
-        $hit = Get-ChildItem -Path $pat -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($hit) { return $hit.FullName }
-    }
-    $cmd = Get-Command zadig -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
-    return $null
-}
-
-function Install-Zadig {
-    if (-not (Test-Winget)) {
-        Die 'Zadig is required to bind the Loader to WinUSB, and winget is unavailable to install it.' `
-            'Download it manually from https://zadig.akeo.ie/ , then either put zadig.exe in:' `
-            "  $(Join-Path $Root 'tools\zadig.exe')" `
-            'or install it normally, and re-run this script.'
-    }
-    Info 'Zadig not found -- installing via winget (one-time)...'
-    winget install -e --id akeo.ie.Zadig --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
-    $path = Find-Zadig
-    if (-not $path) {
-        Die 'Zadig install failed. Install it manually from https://zadig.akeo.ie/ and re-run.'
-    }
-    Ok "Zadig installed: $path"
-    return $path
-}
+# Find-Zadig / Install-Zadig now come from scripts\lib\MabuTools.ps1
+# (Get-MabuZadigPath / Install-MabuZadig). The old local copies were winget-only:
+# on a machine without it they aborted the flash outright.
 
 function Confirm-LoaderWinUsb {
     # Gate before any Loader read/write: ensure PID 320A is bound to WinUSB.
@@ -312,8 +248,13 @@ function Confirm-LoaderWinUsb {
     Warn "PID 320A is bound to '$svc', not WinUSB."
     Warn "rkdeveloptool can SEE Loader but writes fail ('creating comm object failed')."
     Warn 'Launching Zadig to rebind 320A -> WinUSB (one-time per PC; it persists).'
-    $zadig = Find-Zadig
-    if (-not $zadig) { $zadig = Install-Zadig }
+    $zadig = Install-MabuZadig -RepoRoot $Root
+    if (-not $zadig) {
+        Die 'Zadig is required to bind the Loader to WinUSB, and it could not be obtained.' `
+            'Download it from https://zadig.akeo.ie/ and put zadig.exe at:' `
+            "  $(Join-Path $Root 'tools\zadig.exe')" `
+            'then re-run this script.'
+    }
     Info "Zadig: $zadig"
     Start-Process $zadig
     Write-Host ""
@@ -502,7 +443,17 @@ function Confirm-RootPatchApplies {
 # Name of an installed Ubuntu WSL distro, or $null (the surgical path needs no WSL).
 function Get-WslUbuntu {
     if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) { return $null }
-    $d = (wsl --list --quiet 2>$null) | Where-Object { $_ -match 'Ubuntu' } | Select-Object -First 1
+    # `wsl --list` emits UTF-16LE, which PS 5.1 decodes as ANSI unless the console
+    # encoding is switched first -- that turns "Ubuntu" into "U.b.u.n.t.u", so a
+    # machine that DOES have Ubuntu reported as having none and the SELinux reflash
+    # fallback refused to run. Switch, capture, restore; null-strip covers older builds.
+    $prev = [Console]::OutputEncoding
+    try {
+        [Console]::OutputEncoding = [Text.Encoding]::Unicode
+        $raw = & wsl.exe --list --quiet 2>$null
+    } catch { return $null } finally { [Console]::OutputEncoding = $prev }
+    $d = @($raw | ForEach-Object { ($_ -replace "`0", '').Trim() } | Where-Object { $_ }) |
+         Where-Object { $_ -match 'Ubuntu' } | Select-Object -First 1
     if ($d) { return $d.Trim() }
     return $null
 }

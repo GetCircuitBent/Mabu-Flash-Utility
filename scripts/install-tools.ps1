@@ -11,12 +11,14 @@
 #   4. Patches in the Google Android USB driver for the Mabu's VID/PID.
 #   5. Verifies whatever is in place.
 #
-# Every download here is HASH-PINNED: the expected SHA-256 is a literal in this
-# script, the bytes are verified after transfer, and a mismatch deletes the file
-# rather than using it. See Get-PinnedFile below. Package managers (winget,
-# scoop) are used when present but are never required -- plenty of locked-down
-# and older Windows 10 images have neither, and the direct pinned download is
-# what keeps those machines working.
+# Every download here is HASH-PINNED: the expected SHA-256 is a literal, the
+# bytes are verified after transfer, and a mismatch deletes the file rather than
+# using it. The adb/Zadig pins and the download itself live in
+# scripts\lib\MabuTools.ps1, shared with both CLI flashers and the GUI core so a
+# re-pin lands everywhere at once; rkdeveloptool's manifest is still below.
+# Package managers (winget, scoop) are used when present but are never required
+# -- plenty of locked-down and older Windows 10 images have neither, and the
+# direct pinned download is what keeps those machines working.
 #
 # What this does NOT do:
 #   - Auto-bind WinUSB. Zadig is GUI-driven by design (driver replacement
@@ -64,63 +66,20 @@ function Write-OK($msg)    { Write-Host "  [OK]   $msg"  -ForegroundColor Green 
 function Write-Note($msg)  { Write-Host "  [note] $msg"  -ForegroundColor Yellow }
 function Write-Warn($msg)  { Write-Host "  [warn] $msg"  -ForegroundColor DarkYellow }
 
-function Get-PinnedFile {
-    # Download $Url to $Path and refuse anything whose SHA-256 is not $Sha256.
-    #
-    # HTTPS proves we reached the right host; it does not prove we got the same
-    # bytes anyone reviewed. The pin does. It also catches the mundane cases --
-    # a truncated download, a proxy that rewrote the payload, or upstream
-    # quietly replacing an artifact at the same URL.
-    #
-    # The hash doubles as a cache key: a re-run with a good file already on disk
-    # skips the download entirely, and a bad file is deleted rather than left
-    # behind for the next run to trip over. Returns $true only on a verified file.
-    param(
-        [Parameter(Mandatory)][string]$Url,
-        [Parameter(Mandatory)][string]$Path,
-        [Parameter(Mandatory)][string]$Sha256,
-        [Parameter(Mandatory)][string]$Label
-    )
+# Shared tool acquisition: hash-pinned download, the SHA-256 pins themselves,
+# and the adb/Zadig locators + installers. Lives in one place so a re-pin lands
+# in every entry point at once -- this script, both CLI flashers and the GUI
+# core all use it. See scripts\lib\MabuTools.ps1.
+. (Join-Path $PSScriptRoot 'lib\MabuTools.ps1')
 
-    $want = $Sha256.ToLower()
-    if (Test-Path $Path) {
-        $have = (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLower()
-        if ($have -eq $want) {
-            Write-OK "$Label already present (sha256 verified)"
-            return $true
-        }
-        # Discard it here, not after the re-download. If the download below
-        # fails, leaving a known-bad file behind would let the next run -- or a
-        # caller that only tests for existence -- pick up bytes that never
-        # matched the pin.
-        Write-Note "$Label failed its hash check on disk; discarding and re-downloading"
-        Remove-Item $Path -Force
+# Route the module's output through this script's console writers.
+Set-MabuToolsLogger {
+    param([string] $Level, [string] $Message)
+    switch ($Level) {
+        'ok'   { Write-OK   $Message }
+        'warn' { Write-Warn $Message }
+        default { Write-Note $Message }
     }
-
-    $dir = Split-Path -Parent $Path
-    if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-
-    Write-Note "Downloading $Url ..."
-    try {
-        # Fresh/unpatched Windows 10 images still negotiate TLS 1.0 by default in
-        # .NET, which dl.google.com and github.com both refuse outright.
-        [Net.ServicePointManager]::SecurityProtocol =
-            [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-        Invoke-WebRequest -Uri $Url -OutFile $Path -UseBasicParsing
-    } catch {
-        Write-Warn "$Label download failed: $($_.Exception.Message)"
-        return $false
-    }
-
-    $got = (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLower()
-    if ($got -ne $want) {
-        Remove-Item $Path -Force
-        Write-Warn "$Label hash mismatch. Expected $want, got $got. Deleted the file."
-        Write-Note 'Either the pin in this script is stale, or the download was tampered with.'
-        return $false
-    }
-    Write-OK "$Label downloaded and verified (sha256 $($want.Substring(0,12))...)"
-    return $true
 }
 
 # ---------------------------------------------------------------------------
@@ -128,98 +87,19 @@ function Get-PinnedFile {
 # ---------------------------------------------------------------------------
 Write-Step 'Zadig'
 
-# Hash-pinned fallback for machines with no winget and no scoop. Zadig ships as
-# a single unpacked .exe from the libwdi release that builds it, so there is
-# nothing to "install" -- dropping the file in tools\ is a complete install, and
-# it is the first place the flash script's Find-Zadig looks.
-# To upgrade: change both lines together, then re-run. The pinned build is
-# Zadig 2.9 (2.9.788), Authenticode-signed by "Akeo Consulting".
-$ZadigUrl    = 'https://github.com/pbatard/libwdi/releases/download/v1.5.1/zadig-2.9.exe'
-$ZadigSha256 = '4ecaa95df3da3621486a043aef8b3050b8bafe7c901402871e816229ef82039b'
-$ZadigLocal  = Join-Path $ToolsDir 'zadig.exe'
-
-function Get-ZadigPath {
-    # Try common install locations from the package managers below first.
-    $candidates = @(
-        $ZadigLocal,
-        "$env:USERPROFILE\scoop\apps\zadig\current\zadig.exe",
-        "$env:USERPROFILE\scoop\shims\zadig.exe",
-        "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\akeo.ie.Zadig*\zadig*.exe",
-        "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Akeo.Zadig*\zadig*.exe",
-        "$env:ProgramFiles\Zadig\zadig.exe",
-        "${env:ProgramFiles(x86)}\Zadig\zadig.exe"
-    )
-    foreach ($pat in $candidates) {
-        $hit = Get-ChildItem -Path $pat -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($hit) { return $hit.FullName }
-    }
-    $cmd = Get-Command zadig -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
-    return $null
-}
-
-# Re-verify our own managed copy on every run before Get-ZadigPath can hand it
-# out. The pin protects the download; it does nothing for a file that was
-# already sitting at the target path, and Get-ZadigPath resolves that path by
-# existence alone. Package-manager locations are not checked -- those are not
-# ours to police, and they carry their own signatures.
-if ((Test-Path $ZadigLocal) -and
-    ((Get-FileHash -Algorithm SHA256 -Path $ZadigLocal).Hash.ToLower() -ne $ZadigSha256)) {
-    Write-Warn "$ZadigLocal failed its hash check; discarding it."
-    Remove-Item $ZadigLocal -Force
-}
-
-$zadig = Get-ZadigPath
+# Acquisition lives in scripts\lib\MabuTools.ps1: already-installed, then winget,
+# then the pinned direct download. The direct download is the path that matters --
+# on locked-down and older Windows 10 images there is no winget, and this script
+# used to give up here, leaving the machine unable to flash at all.
+# (An existing scoop install is still detected; auto-installing VIA scoop was
+# dropped, since the pinned download supersedes it and works everywhere.)
+$zadig = Install-MabuZadig -RepoRoot $RepoRoot
 if ($zadig) {
-    Write-OK "Zadig already installed: $zadig"
+    Write-OK "Zadig ready: $zadig"
 } else {
-    $installed = $false
-
-    # Prefer winget if available.
-    if (Get-Command winget -ErrorAction SilentlyContinue) {
-        Write-Note 'Installing Zadig via winget...'
-        $p = Start-Process winget `
-            -ArgumentList 'install','--id','akeo.ie.Zadig','-e','--accept-source-agreements','--accept-package-agreements' `
-            -NoNewWindow -Wait -PassThru
-        if ($p.ExitCode -eq 0) {
-            $installed = $true
-        } else {
-            Write-Warn "winget exit code $($p.ExitCode); will try fallback."
-        }
-    }
-
-    # Fallback: scoop.
-    if (-not $installed -and (Get-Command scoop -ErrorAction SilentlyContinue)) {
-        Write-Note 'Installing Zadig via scoop (extras bucket)...'
-        try {
-            scoop bucket add extras 2>$null | Out-Null
-            scoop install zadig
-            $installed = $true
-        } catch {
-            Write-Warn "scoop install failed: $_"
-        }
-    }
-
-    # Fallback: direct hash-pinned download. This is the path that matters on the
-    # locked-down and older Windows 10 images where neither package manager
-    # exists -- previously the script gave up here and the flash could not run.
-    if (-not $installed) {
-        Write-Note 'No package manager available -- fetching Zadig directly.'
-        if (Get-PinnedFile -Url $ZadigUrl -Path $ZadigLocal -Sha256 $ZadigSha256 -Label 'zadig.exe') {
-            $installed = $true
-        }
-    }
-
-    if ($installed) {
-        $zadig = Get-ZadigPath
-        if ($zadig) { Write-OK "Zadig installed: $zadig" }
-    }
-
-    if (-not $zadig) {
-        Write-Warn 'Could not obtain Zadig.'
-        Write-Note 'Manual install: download from https://zadig.akeo.ie/ (single .exe, no installer needed).'
-        Write-Note "Place at: $ZadigLocal  -or-  anywhere on PATH."
-    }
+    Write-Warn 'Could not obtain Zadig.'
+    Write-Note 'Manual install: download from https://zadig.akeo.ie/ (single .exe, no installer needed).'
+    Write-Note "Place at: $(Join-Path $ToolsDir 'zadig.exe')  -or-  anywhere on PATH."
 }
 
 # ---------------------------------------------------------------------------
@@ -307,95 +187,22 @@ if (Test-Path $RkExe) {
 # die at startup on a fresh PC with an unguarded WinGet-path lookup.
 Write-Step 'adb (Android platform-tools)'
 
-# Hash-pinned fallback, same reasoning as Zadig above. Google keeps versioned
-# archives at immutable URLs, so the pin stays valid; the rolling
-# "platform-tools-latest-windows.zip" URL cannot be pinned because its bytes
-# change with every release. Verified at pin time to be byte-identical to what
-# that rolling URL served, and to match the SHA-1 in Google's own
-# repository2-3.xml manifest.
-# To upgrade: bump both lines together. Deliberately NOT auto-falling back to
-# the rolling URL if this 404s -- silently downloading unpinned bytes would give
-# up the guarantee this whole mechanism exists to provide.
-$PtUrl    = 'https://dl.google.com/android/repository/platform-tools_r37.0.1-win.zip'
-$PtSha256 = '45f4d63113e895ebde0c90f194099a4676b6ac653bd28d54314a9e022bbc1a99'
-# The zip contains a top-level platform-tools\ folder, so unpacking it into
-# tools\ yields tools\platform-tools\adb.exe.
-#
-# Deliberately repo-relative, NOT %LOCALAPPDATA%\Android\Sdk. This script does
-# not need Administrator, but every flasher does, and if the signed-in user is
-# not a local admin then UAC elevates to a DIFFERENT account with a different
-# %LOCALAPPDATA%. adb installed here would then be invisible to the flash --
-# "adb installed" followed by "adb not found" on the same machine. A path under
-# the repo is the same for both accounts, needs no PATH edit and no elevation.
-$PtDir = $ToolsDir
-
-function Get-AdbPath {
-    # Candidate order is shared with Find-Adb in the flashers and the helper
-    # scripts -- keep them in step. The repo-relative copy is checked FIRST
-    # precisely because it is the one location that survives an elevation that
-    # switches user accounts.
-    $repo = Join-Path $ToolsDir 'platform-tools\adb.exe'
-    if (Test-Path $repo) { return $repo }
-    $cmd = Get-Command adb -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
-    $sdk = Join-Path $env:LOCALAPPDATA 'Android\Sdk\platform-tools\adb.exe'
-    if (Test-Path $sdk) { return $sdk }
-    $wgBase = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
-    if (Test-Path $wgBase) {
-        $hit = Get-ChildItem "$wgBase\Google.PlatformTools_*\platform-tools\adb.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($hit) { return $hit.FullName }
-    }
-    return $null
-}
-
-$AdbOk   = $false
-$adbPath = Get-AdbPath
-if ($adbPath) {
-    Write-OK "adb already installed: $adbPath"
-    $AdbOk = $true
-}
-
-# Prefer winget when it is actually there, but never depend on it: fall through
-# to the pinned download if it is missing OR if it ran and produced no adb.
-if (-not $AdbOk -and (Get-Command winget -ErrorAction SilentlyContinue)) {
-    Write-Note 'Installing Google platform-tools via winget...'
-    $p = Start-Process winget `
-        -ArgumentList 'install','--id','Google.PlatformTools','-e','--accept-source-agreements','--accept-package-agreements' `
-        -NoNewWindow -Wait -PassThru
-    $adbPath = Get-AdbPath
-    if ($adbPath) {
-        Write-OK "adb installed: $adbPath"
-        $AdbOk = $true
-    } else {
-        Write-Warn "winget finished (exit $($p.ExitCode)) but adb was not found; falling back to a direct download."
-    }
-}
-
-if (-not $AdbOk) {
-    Write-Note 'Fetching Google platform-tools directly.'
-    $ptZip = Join-Path $ToolsDir 'platform-tools.zip'
-    if (Get-PinnedFile -Url $PtUrl -Path $ptZip -Sha256 $PtSha256 -Label 'platform-tools.zip') {
-        try {
-            if (-not (Test-Path $PtDir)) { New-Item -ItemType Directory -Path $PtDir -Force | Out-Null }
-            Expand-Archive -Path $ptZip -DestinationPath $PtDir -Force
-            $adbPath = Get-AdbPath
-            if ($adbPath) {
-                Write-OK "adb installed: $adbPath"
-                $AdbOk = $true
-            } else {
-                Write-Warn "Unpacked platform-tools but no adb.exe under $PtDir."
-            }
-        } catch {
-            Write-Warn "Unpacking platform-tools failed: $($_.Exception.Message)"
-        }
-    }
-}
-
-if (-not $AdbOk) {
+# Acquisition lives in scripts\lib\MabuTools.ps1: already-installed, then winget,
+# then the pinned direct download of Google's VERSIONED (immutable) archive.
+# It unpacks to <repo>	ools\platform-tools\ -- deliberately repo-relative, not
+# %LOCALAPPDATA%: this script needs no elevation but every flasher does, and if
+# the signed-in user is not a local admin then UAC elevates into a different
+# account with a different %LOCALAPPDATA%, where the adb we just installed would
+# be invisible.
+$adbPath = Install-MabuAdb -RepoRoot $RepoRoot
+$AdbOk   = [bool]$adbPath
+if ($AdbOk) {
+    Write-OK "adb ready: $adbPath"
+} else {
     Write-Warn 'Could not obtain adb.'
     Write-Note 'Download platform-tools manually and add it to PATH:'
     Write-Note '  https://developer.android.com/tools/releases/platform-tools'
-    Write-Note "Or unzip it to: $PtDir\platform-tools\"
+    Write-Note "Or unzip it to: $(Join-Path $ToolsDir 'platform-tools')"
 }
 
 # ---------------------------------------------------------------------------
