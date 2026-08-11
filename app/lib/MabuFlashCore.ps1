@@ -77,6 +77,54 @@ function Test-Admin {
     ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
+function Invoke-UsbPurge {
+    # Release USB and drop every VID_2207 PnP entry so Windows re-enumerates from
+    # scratch -- the fix for a bus wedged by repeated Loader cycles, where stale
+    # entries stop the fresh device binding correctly.
+    #
+    # pnputil /remove-device is admin-only, which Invoke-MabuFlash's elevation
+    # check already guarantees.
+    #
+    # NOTE: this removes PRESENT devices too, so any live Loader session is
+    # dropped and has to be re-caught. Only call it with nothing to lose.
+    param([string] $Reason)
+
+    Section 'Release USB + Clear Stale VID_2207 Entries'
+    if ($Reason) { Info $Reason }
+    $ErrorActionPreference = 'Continue'
+    & $script:ADB kill-server 2>&1 | Out-Null
+    $ErrorActionPreference = 'Stop'
+    Start-Sleep -Milliseconds 500
+    Get-Process -Name 'rkdeveloptool' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+
+    $stuck = Get-PnpDevice -ErrorAction SilentlyContinue | Where-Object { $_.FriendlyName -match 'Device Descriptor Request Failed' }
+    foreach ($d in $stuck) { Info "Removing stuck device: $($d.InstanceId)"; & pnputil /remove-device $d.InstanceId 2>&1 | Out-Null }
+    $allRk = Get-PnpDevice -ErrorAction SilentlyContinue | Where-Object { $_.InstanceId -match 'VID_2207' }
+    foreach ($d in $allRk) { Info "Removing: $($d.InstanceId) [Present=$($d.Present)]"; & pnputil /remove-device $d.InstanceId 2>&1 | Out-Null }
+    & pnputil /scan-devices 2>&1 | Out-Null
+    Start-Sleep -Seconds 2
+
+    $ErrorActionPreference = 'Continue'
+    & $script:ADB start-server 2>&1 | Out-Null
+    $ErrorActionPreference = 'Stop'
+    Ok 'USB bus ready.'
+}
+
+function Invoke-UsbPurgeRecovery {
+    # Auto-recovery for the failure paths that used to abort with "power-cycle and
+    # re-run": do the re-enumeration the operator would have done by hand, then let
+    # the caller retry. This is what covers the GUI, which has no way to pass
+    # -PurgeUsb. Capped at one attempt per run -- if a clean re-enumeration did not
+    # fix it, repeating it will not either, and looping would mask a real hardware
+    # or wiring fault.
+    param([string] $Reason)
+    if ($script:UsbPurgeRecoveryUsed) { return $false }
+    $script:UsbPurgeRecoveryUsed = $true
+    Warn "$Reason -- attempting an automatic USB re-enumeration before giving up."
+    Invoke-UsbPurge -Reason 'Triggered automatically by the failure above.'
+    return $true
+}
+
 # Convert a Windows path (D:\a\b) to its WSL mount path (/mnt/d/a/b), derived
 # from wherever the repo lives. Used only by the SELinux reflash fallback.
 function ConvertTo-WslPath([string]$WinPath) {
@@ -520,6 +568,10 @@ function Invoke-MabuFlash {
         [switch] $SkipMabu,                 # skip Mabu factory mode (installed by default)
         [switch] $SkipApps,
         [switch] $SkipSELinux,
+        [switch] $PurgeUsb,                 # up front, release USB + drop stale VID_2207 PnP entries. Off by default:
+                                            # a normal flash does not need it and it drops any caught Loader session.
+                                            # Phase 1 runs the same purge on its own when the bus looks wedged, which
+                                            # is what covers the GUI (it has no way to pass this).
         [string] $WifiIp = '',              # optional hint; auto-discovered from the device
         [string] $UsbSerial,
         [string] $LawnchairApk = 'apks/Lawnchair.apk',
@@ -575,28 +627,31 @@ function Invoke-MabuFlash {
     $ErrorActionPreference = 'Stop'
 
     try {
-        # --- Phase 0: release USB + clear stale VID_2207 entries ---
-        # No Test-Admin guard: the elevation check above returns when not
-        # elevated, so this is unconditionally reachable. The guard that used to
-        # wrap this block had an unreachable else branch announcing the phase was
-        # being skipped -- it never was.
-        Section 'Release USB + Clear Stale VID_2207 Entries'
-        & $script:ADB kill-server 2>$null
-        Start-Sleep -Milliseconds 500
-        Get-Process -Name 'rkdeveloptool' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-        $stuck = Get-PnpDevice | Where-Object { $_.FriendlyName -match 'Device Descriptor Request Failed' }
-        foreach ($d in $stuck) { Info "Removing stuck device: $($d.InstanceId)"; & pnputil /remove-device $d.InstanceId 2>&1 | Out-Null }
-        $allRk = Get-PnpDevice | Where-Object { $_.InstanceId -match 'VID_2207' }
-        foreach ($d in $allRk) { Info "Removing: $($d.InstanceId) [Present=$($d.Present)]"; & pnputil /remove-device $d.InstanceId 2>&1 | Out-Null }
-        & pnputil /scan-devices 2>&1 | Out-Null
-        Start-Sleep -Seconds 2
-        Ok 'USB bus ready.'
-        & $script:ADB start-server 2>&1 | Out-Null
+        # --- Phase 0 (opt-in): release USB + clear stale VID_2207 entries ---
+        # Off unless -PurgeUsb: it drops any Loader session already caught, and a
+        # normal flash does not need it. Phase 1 below runs the same purge by
+        # itself when the bus looks genuinely wedged, which is what the GUI relies
+        # on. No Test-Admin guard -- the elevation check above returns when not
+        # elevated, so this is only reachable when elevated.
+        if ($PurgeUsb) {
+            Invoke-UsbPurge -Reason 'Requested with -PurgeUsb.'
+        }
         & $Ui.Flash 4 'USB ready'
 
         # --- Phase 1: Catch / verify Loader, auto-detect Esper state ---
         Section 'Loader Detection'
         $state = 'Unknown'
+
+        # If NEITHER a Loader nor any adb device is visible, the bus is very likely
+        # wedged from earlier Loader cycles. That used to abort with "power-cycle
+        # and re-run" -- impossible to action from the GUI. Instead do the
+        # re-enumeration by hand would have required, once, and carry on. Placed
+        # BEFORE the branch so whatever comes back flows through the normal path.
+        # Free on the happy path: Test-Loader short-circuits the adb probe.
+        if (-not (Test-Loader) -and -not (Find-AdbDevice -PreferIp $script:WifiIp -TimeoutSec 5)) {
+            [void](Invoke-UsbPurgeRecovery -Reason 'Neither a Loader nor an adb device is visible')
+        }
+
         if (Test-Loader) {
             Ok 'Loader already present.'
             Warn 'Device is in Loader (not Android), so the Esper state cannot be probed.'
@@ -606,7 +661,7 @@ function Invoke-MabuFlash {
             Info 'Loader not seen. Finding an adb device to detect state and enter Loader.'
             $dev = Find-AdbDevice -PreferIp $script:WifiIp -TimeoutSec 30
             if (-not $dev) {
-                Die 'No adb device and no Loader.' `
+                Die 'No adb device and no Loader, including after an automatic USB re-enumeration.' `
                     'Power-cycle the tablet (hold ADKEY through power-on) to catch Loader, then re-run.' `
                     'If the PC never sees the device at all, run the read-only USB diagnostic:' `
                     '  .\scripts\diagnose-usb.ps1 -Watch'

@@ -105,7 +105,7 @@ When it's done you'll see a **`Done`** banner and a **self-test summary** (passe
 | Loader never appears after power-on | Make sure the harness is plugged in **before** you power on. Try pressing/holding ADKEY as you power on. Check the D+/D- wires (see wiring below). |
 | Script says `adb.exe not found` | Let it auto-install, or run `winget install Google.PlatformTools` and restart PowerShell. |
 | Stuck at the WiFi step | Touch the Mabu's screen and join it to your WiFi, then press Enter — the script picks up automatically once the Mabu is online. |
-| Script says the motor fix "needs the WSL reflash fallback" | This only happens on the rare unit whose policy patch changes size. Run `.\scripts\install-tools.ps1` as Administrator to install WSL/Ubuntu (restart if asked), then re-run the flash with `-NoWipe`. |
+| Script says the motor fix "needs the WSL reflash fallback" | This only happens on the rare unit whose policy patch changes size. Run `.\scripts\install-tools.ps1 -InstallWsl` as Administrator to install WSL/Ubuntu (restart if asked), then re-run the flash with `-NoWipe`. |
 | "device descriptor request failed" | The D+ and D- wires are swapped — see the wiring note below. |
 
 ---
