@@ -56,6 +56,7 @@ One command handles the full unit.
 | `-NoWipe` | Force patch-only (skip wipe) regardless of detected state |
 | `-SkipApps` | Loader patches only: no app install, no SELinux fix, no self-test |
 | `-SkipSELinux` | Skip the SELinux policy fix phase |
+| `-PurgeUsb` | Up front, release USB and drop stale `VID_2207` PnP entries so Windows re-enumerates clean. Not needed normally — the flash runs this by itself if it finds neither a Loader nor an adb device. Note it drops any Loader session already caught. |
 | `-WifiIp <ip>` | WiFi hint for first adb connect attempt (auto-discovered at runtime) |
 
 ### What the Script Does, in Order
