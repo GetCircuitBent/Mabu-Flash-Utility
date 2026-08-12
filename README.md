@@ -1,141 +1,166 @@
 # Mabu Flash Utility
-This repo contains the scripts and firmware patches needed to free a **Mabu** robot tablet from its factory software lock and install your own apps. The full process takes about fifteen minutes on a PC that has done it before, and about thirty minutes on a fresh machine.
+This repo frees a **Mabu** robot tablet from its factory software lock, installs a normal home screen and app store, and unlocks access to its motors, so you can install and run your own apps. It auto-detects the unit's state, applies everything it needs, and stops with a clear message the moment anything goes wrong.
+
+A flash takes about **15 minutes** on a PC that has done it before, and about **30 minutes** the first time (most of that is the one-time setup).
+
+---
+
+## Two Ways to Run It
+Both options run the same flash logic and produce the same result. Pick one.
+
+| | **Installer (GUI)** | **Scripts (PowerShell)** |
+|---|---|---|
+| Best for | Anyone who just wants it done | Benches, repeat flashing, anything scripted |
+| You download | One `.exe` from Releases | This repo (ZIP or Git) |
+| Setup needed | None; it fetches its own tools | `install-tools.ps1`, once per PC |
+| Runs as | Double-click, self-elevates | Administrator PowerShell |
+| Status | First packaged build, **not yet validated on a tablet** | The known-good path |
+
+If you are flashing a unit you cannot afford to re-flash, use the scripts.
 
 ---
 
 ## What You'll Need
 ### Hardware
 - A Mabu unit
-- The **USB programming harness** (a 30-pin IDC cable, 2.0 mm pitch) that connects to the internal header inside the Mabu, with a USB-A connector and an ADKEY switch wired to it. This is the only way to communicate with the device; there is no external USB port on the Mabu itself
+- The **USB programming harness**: a 30-pin ribbon cable that plugs into the header inside the Mabu, ending in a USB-A plug and an **ADKEY** button. This is the only way to talk to the Mabu; there's no external USB port on the device. (Wiring diagram is at the bottom of this page.)
 
 ### PC
-- Windows 10 or 11
-- An internet connection (to download tools and install apps onto the Mabu)
-- A Wi-Fi network the Mabu can join; the script installs apps over Wi-Fi after the flash
+- **Windows 10 or 11**
+- An **internet connection** (to download tools and apps)
+- A **Wi-Fi network the Mabu can join.** Partway through, the Mabu boots up and the flash finishes over Wi-Fi; you'll join it to your network on its own touchscreen when prompted.
 
 ---
 
-## Download This Repo
-**Option A: Git** (if you have Git installed):
+## Option 1: The Installer
+Download **`MabuFlashSetup.exe`** from the [latest release](https://github.com/GetCircuitBent/Mabu-Flash-Utility/releases/latest) and double-click it. That is the only file you need.
+
+On first run it downloads the payload (about 89 MB), checks it against a published SHA-256, installs to `%LOCALAPPDATA%\MabuFlash\`, and opens the GUI. Later launches go straight to the GUI, and work offline.
+
+There are **no prerequisites**: no PowerShell, no execution policy to change, no separate tool setup. The GUI shows two progress bars (flashing and validating) and raises a prompt card at each of the [points where it needs you](#what-happens-during-a-flash).
+
+> **Windows SmartScreen will warn you.** The installer is not code-signed yet. Click **More info**, then **Run anyway**. Verify you downloaded it from the Releases page linked above.
+
+> **Not yet hardware-validated.** This build is verified on a developer machine but has not flashed a real tablet. Treat the first run as a test.
+
+Now connect the harness and power on the Mabu (see [Flash a Mabu](#flash-a-mabu), steps 1 and 2), then follow the prompts.
+
+---
+
+## Option 2: The Scripts
+### Download
+**Option A: ZIP** (no extra software needed):
+
+1. Click the green **Code** button at the top of this page.
+2. Click **Download ZIP**.
+3. Unzip it to a **permanent location** (e.g. `C:\Mabu-Flash-Utility`). The scripts run from that folder, so don't leave it in Downloads or a temp folder.
+
+> **Note on the ZIP:** it extracts to a folder containing *another* folder of the same name (`Mabu-Flash-Utility-main\Mabu-Flash-Utility-main\`). The inner one is the repo: it's the folder holding `scripts\`, `tools\` and `firmware\`. That's the one to `cd` into.
+
+**Option B: Git** (if you already have Git):
 ```
 git clone https://github.com/GetCircuitBent/Mabu-Flash-Utility.git
 ```
 
-**Option B: ZIP** (no Git needed):
-1. Click the green **Code** button at the top of this page
-2. Click **Download ZIP**
-3. Unzip it somewhere permanent. The scripts run from that folder.
+### One-Time Setup
+Do this **once per PC**. It installs the flashing tools and the USB drivers the Mabu needs.
 
-> **Note on the ZIP:** it extracts to a folder that contains *another* folder of the
-> same name (`Mabu-Flash-Utility-main\Mabu-Flash-Utility-main\`). The inner one is
-> the repo: it's the folder holding `scripts\`, `tools\` and `firmware\`. That's the
-> one to `cd` into.
+Open **PowerShell as Administrator** (right-click the Start button → **Terminal (Admin)** or **Windows PowerShell (Admin)**) for all of the steps below, and keep this same window open for the flash itself.
 
----
+**1. Allow the scripts to run.** Windows blocks downloaded scripts by default:
+```powershell
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
 
-## One-Time Setup
-Run this once on each new PC before your first flash. It installs ADB, the Rockchip flashing tool, and the USB drivers the Mabu needs.
+If you used the ZIP, also clear the "downloaded from the internet" mark, or Windows refuses to run the scripts even after the step above:
+```powershell
+Get-ChildItem -Recurse -Filter *.ps1 | Unblock-File
+```
 
-1. Open **PowerShell as Administrator** (right-click the Start menu, then *Windows PowerShell (Admin)*). The flash script requires this; it replaces USB drivers, which needs elevation.
-2. Navigate to the repo folder (the one containing `scripts\`):
-   ```powershell
-   cd "path\to\Mabu-Flash-Utility"
-   ```
-3. Allow the scripts to run (Windows blocks them by default):
-   ```powershell
-   Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
-   ```
-4. **If you downloaded the ZIP**, also clear the "downloaded from the internet" mark, or Windows will refuse to run the scripts even after step 3:
-   ```powershell
-   Get-ChildItem -Recurse -Filter *.ps1 | Unblock-File
-   ```
-5. Run the setup script:
-   ```powershell
-   .\scripts\install-tools.ps1
-   ```
-   The script downloads and verifies all required tools. When it finishes, all boxes should show `[OK]`.
+**2. Run the setup script.** Move into the folder you unzipped (replace the path with wherever you put it):
+```powershell
+cd "C:\Mabu-Flash-Utility"
+.\scripts\install-tools.ps1
+```
+This sets up ADB, the Rockchip flashing tool, and the Zadig USB helper. When it finishes, the core checks should read **`[OK]`**.
+
+> **About WSL (optional):** the setup script also offers to install WSL/Ubuntu. The flash **does not need it** for the normal case; it patches the motor policy right on the Mabu. WSL is only used as an automatic fallback on the rare unit where that patch needs a full re-flash. If you'd rather not install it now, you can skip it; the flash will tell you if it ever needs it. If setup does install WSL, it will ask you to **restart the PC**, then run `.\scripts\install-tools.ps1` once more.
+
+**3. Install the Android USB driver.**
+```powershell
+.\scripts\install-android-driver.ps1
+```
+This prepares the driver and prints the exact **Device Manager** clicks to install it. Run it with the Mabu connected: it reads the hardware ID your unit actually reports and adds that to the driver, which is what makes the Device Manager step work on units whose USB interfaces are ordered differently.
+
+That's it. You won't need to repeat setup on this PC.
 
 ---
 
 ## Flash a Mabu
-After setup, every flash follows the same three steps.
-
 ### Step 1: Connect the Harness
-Plug the USB harness into the Mabu's internal header and into a USB port on your PC. Use the **same USB port every time**; the driver binding is per-port, and switching ports means running through the Zadig step again.
+Plug the USB harness into the Mabu's internal header and into a USB port on your PC. **Use the same USB port every time**; the driver binding is tied to the port, and switching ports means redoing the Zadig step once.
 
-### Step 2: Boot the Mabu
-1. Hold the ADKEY switch on the harness
-2. Power the unit on while still holding ADKEY
-3. Release ADKEY after a few seconds
+### Step 2: Power On the Mabu
+Turn the unit on and let it boot to its normal screen. The flasher talks to the Mabu over the harness to work out what state it's in, and puts the unit into Loader mode itself.
 
-Two things can happen:
-- **Blank screen.** The Mabu is in Loader mode and ready to flash. Go straight to Step 3.
-- **Android boots.** The Mabu came up normally. Join your Wi-Fi network on the Mabu's screen, then go to Step 3. The script will enter Loader mode on its own.
+### Step 3: Start the Flash
+**Installer:** the GUI is already open; click **Flash**.
 
-### Step 3: Run the Flash Script
-From the repo root in your Administrator PowerShell window:
-
+**Scripts:** in the same **Administrator** PowerShell window, from the repo folder:
 ```powershell
 .\scripts\flash-mabu.ps1
 ```
+That's the whole command; no options are needed.
 
-The script handles everything from here:
-- Repairs the Mabu's USB driver binding if a previous Zadig run broke it
-- Detects whether the unit needs a data wipe or just the liberation patches
-- Applies the patches over USB
-- Reboots the unit into Android
-- Asks you to connect the Mabu to Wi-Fi (touch the screen to join your network when prompted)
-- Installs F-Droid, Lawnchair, and the Mabu factory app
-- Patches the SELinux policy so apps can access the motors
-- Runs a self-test and prints a pass/fail summary
+> On the `gui-executable` branch the same console flasher is `scripts\flash.ps1`. It is the same tool under a different name, and it is the logic the GUI drives.
 
-**The first time it runs**, the script may launch **Zadig** to bind the driver the Loader needs. When Zadig opens:
-1. Go to **Options > List All Devices**
-2. Go to **Options** and uncheck **Ignore Hubs or Composite Parents**
-3. Select the device whose USB ID is **2207 320A** (it may be listed as "Unknown Device"; match on the USB ID, not the name)
-4. Set the target driver to **WinUSB**
-5. Click **Replace Driver**
-6. Switch back to PowerShell and press Enter to continue
+### Step 4: Follow the Prompts
+Both paths tell you exactly what to do when they need you, as console prompts or as GUI prompt cards.
 
-> **Only ever replace the driver on 2207 320A.** If that USB ID is not in the list,
-> close Zadig without replacing anything: the Loader is not on the bus yet, and
-> there is nothing valid to pick. The other Rockchip IDs (2207 0006, and 2207 0010
-> through 0015, listed as "ADB Interface" or "MTP") are the Mabu's Android-mode
-> interfaces. Replacing the driver on one of those stops ADB from seeing the
-> tablet, and the flash cannot continue until it is undone. The script refuses to
-> open Zadig unless the Loader is actually present, so this only comes up if you
-> launch Zadig yourself.
+---
 
-This driver step happens once per PC, per USB port.
+## What Happens During a Flash
+In order, the flasher will:
+
+1. **Repair the USB driver binding** if a previous Zadig run left the tablet invisible to ADB.
+2. **Figure out the unit automatically** and decide whether a data wipe is needed (a factory-locked unit gets wiped; an already-freed one doesn't).
+3. **(First PC only) Launch Zadig** to install the driver the Loader needs. When Zadig opens: **Options → List All Devices**, then **Options → uncheck Ignore Hubs or Composite Parents**, pick the device with **USB ID `2207 320A`**, set the driver to **WinUSB**, and click **Replace Driver**. Then continue. This happens once per PC, per USB port.
+   > **Only ever replace the driver on `2207 320A`.** If that USB ID is not listed, close Zadig without replacing anything. The other Rockchip IDs (`2207 0006`, and `2207 0010` through `0015`, shown as "ADB Interface" or "MTP") are the Mabu's Android-mode interfaces, and rebinding one stops ADB from seeing the tablet until it is undone. The flasher will not open Zadig unless the Loader is actually present.
+4. **Apply the liberation patches** and, if needed, wipe and reboot the unit.
+5. **If it wiped the unit, ask you to join it to Wi-Fi.** When the Mabu's screen comes up, connect it to your Wi-Fi network by touching the screen, then continue. Installs run over Wi-Fi from here.
+6. **Install the apps** (F-Droid app store, the Lawnchair home screen, and Mabu Factory Mode), **patch the motor-access policy, reboot, and run a self-check.**
+
+When it's done you'll see a **`Done`** banner and a **self-test summary** (passed / failed / warnings). If anything fails, it stops with a message explaining what went wrong.
+
+> **If a step fails, don't retry just that step.** Power the Mabu fully off and start the flash again from the top; it's designed to be re-run safely, and it skips work that's already done.
 
 ---
 
 ## Troubleshooting
-**The PC can't see the Mabu at all?** Start here. This read-only diagnostic reports
-which driver is bound to each Rockchip USB ID and what's missing. It changes nothing:
-
+**The PC can't see the Mabu at all?** Start here. This read-only diagnostic reports which driver is bound to each Rockchip USB ID and what's missing. It changes nothing:
 ```powershell
 .\scripts\diagnose-usb.ps1 -Watch
 ```
-
-`-Watch` polls for ~30 seconds, so you can start it first and *then* power the unit
-on; it catches the ~10-second Loader window instead of you racing it.
+`-Watch` polls for about 30 seconds, so you can start it first and *then* power the unit on; it catches the roughly 10-second Loader window instead of you racing it.
 
 | Symptom | Fix |
 |---|---|
-| Script says `adb.exe not found` | Re-run `.\scripts\install-tools.ps1`, then restart PowerShell |
-| Script says it must run as Administrator | Reopen PowerShell via right-click Start menu > *Windows PowerShell (Admin)* |
+| `execution of scripts is disabled` | Run `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`, then try again. If you used the ZIP, also run `Get-ChildItem -Recurse -Filter *.ps1 \| Unblock-File` |
+| Script says it must run as Administrator | Reopen PowerShell via right-click Start button → *Terminal (Admin)* |
+| SmartScreen blocks `MabuFlashSetup.exe` | Click **More info**, then **Run anyway**. The installer isn't code-signed yet |
+| Script says `adb.exe not found` | Let it auto-install, or run `winget install Google.PlatformTools` and restart PowerShell |
 | `rkdeveloptool.exe not found` | You're running from the wrong folder, or the download was incomplete. Run `.\scripts\install-tools.ps1` from the folder containing `scripts\` |
-| Loader mode won't appear | Check D+/D- polarity on the USB wires; try holding ADKEY earlier during power-on |
-| Windows shows the Mabu (as "H7R", "ADB Interface" or "MTP") but the script says `No adb device and no Loader` | Zadig was pointed at the Android-mode device at some point, which stops ADB from seeing it. The script detects this and repairs it in place, so re-run it first. If it still reports the misbinding, follow the undo steps it prints |
-| Script stops at Wi-Fi step | Touch the Mabu screen, join your Wi-Fi network, then press Enter in PowerShell |
-| App installs fail | Make sure the Mabu and PC are on the same Wi-Fi network |
-| `execution of scripts is disabled` error | Run `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`. If you used the ZIP, also run `Get-ChildItem -Recurse -Filter *.ps1 \| Unblock-File` |
+| Loader never appears after power-on | Make sure the harness is plugged in **before** you power on. Try pressing and holding ADKEY as you power on. Check the D+/D- wires (see wiring below) |
+| Windows shows the Mabu (as "H7R", "ADB Interface" or "MTP") but you get `No adb device and no Loader` | Zadig was pointed at the Android-mode device at some point, which stops ADB from seeing it. The flasher detects this and repairs it in place, so run it again first. If it still reports the misbinding, follow the undo steps it prints |
+| Stuck at the Wi-Fi step | Touch the Mabu's screen and join it to your Wi-Fi, then continue; it picks up automatically once the Mabu is online |
+| The motor fix "needs the WSL reflash fallback" | This only happens on the rare unit whose policy patch changes size. Run `.\scripts\install-tools.ps1 -InstallWsl` as Administrator to install WSL/Ubuntu (restart if asked), then re-run the flash with `-NoWipe` |
+| App installs fail | Make sure the Mabu and the PC are on the same Wi-Fi network |
+| "device descriptor request failed" | The D+ and D- wires are swapped; see the wiring note below |
 
 ---
 
 ## Harness Wiring
-The harness uses a 30-pin IDC ribbon cable (2.0 mm pitch); pin 1 is at the GND/USB end, marked by the red stripe. On the PC end, wire a USB-A connector and an ADKEY switch as shown below.
+The harness uses a 30-pin IDC ribbon cable (2.0 mm pitch); pin 1 is at the GND/USB end, marked by the red stripe. On the PC end, wire a USB-A connector and an ADKEY switch as shown.
 
 ```
   USB-A (to PC)                        30-pin IDC cable
@@ -155,9 +180,14 @@ The harness uses a 30-pin IDC ribbon cable (2.0 mm pitch); pin 1 is at the GND/U
 ```
 
 - VBUS is left unconnected. The Mabu runs on its own power supply, not USB bus power.
-- If you see "device descriptor request failed": the D+ and D- wires are reversed; swap them.
+- If you see "device descriptor request failed", the D+ and D- wires are reversed; swap them.
 
 ---
 
-## Detailed Documentation
-The detailed walkthrough (background on what each phase does, the full pin-out of the 30-pin header, recovery procedures for unusual unit states, and the permanent SELinux fix) is in [FLASH-A-NEW-MABU.md](FLASH-A-NEW-MABU.md).
+## More Documentation
+- **Detailed walkthrough**: background on each phase, the full 30-pin header pin-out, recovery for unusual unit states, and the permanent SELinux fix: [FLASH-A-NEW-MABU.md](FLASH-A-NEW-MABU.md).
+- **The GUI edition**: design, the UI contract shared by both front-ends, threading model, and build steps: [app/EXECUTABLE.md](https://github.com/GetCircuitBent/Mabu-Flash-Utility/blob/gui-executable/app/EXECUTABLE.md) (on the `gui-executable` branch).
+
+---
+
+Copyright (C) 2026 Get Circuit Bent LLC. Licensed under the [GNU General Public License v3.0](LICENSE). Contact: info@getcircuitbent.com
