@@ -11,7 +11,7 @@ This repo contains the scripts and firmware patches needed to free a **Mabu** ro
 ### PC
 - Windows 10 or 11
 - An internet connection (to download tools and install apps onto the Mabu)
-- A WiFi network the Mabu can join; the script installs apps over WiFi after the flash
+- A Wi-Fi network the Mabu can join; the script installs apps over Wi-Fi after the flash
 
 ---
 
@@ -34,7 +34,7 @@ git clone https://github.com/GetCircuitBent/Mabu-Flash-Utility.git
 ---
 
 ## One-Time Setup
-Run this once on each new PC before your first flash. It installs adb, the Rockchip flashing tool, and the USB drivers the Mabu needs.
+Run this once on each new PC before your first flash. It installs ADB, the Rockchip flashing tool, and the USB drivers the Mabu needs.
 
 1. Open **PowerShell as Administrator** (right-click the Start menu, then *Windows PowerShell (Admin)*). The flash script requires this; it replaces USB drivers, which needs elevation.
 2. Navigate to the repo folder (the one containing `scripts\`):
@@ -70,7 +70,7 @@ Plug the USB harness into the Mabu's internal header and into a USB port on your
 
 Two things can happen:
 - **Blank screen.** The Mabu is in Loader mode and ready to flash. Go straight to Step 3.
-- **Android boots.** The Mabu came up normally. Join your WiFi network on the Mabu's screen, then go to Step 3. The script will enter Loader mode on its own.
+- **Android boots.** The Mabu came up normally. Join your Wi-Fi network on the Mabu's screen, then go to Step 3. The script will enter Loader mode on its own.
 
 ### Step 3: Run the Flash Script
 From the repo root in your Administrator PowerShell window:
@@ -80,22 +80,33 @@ From the repo root in your Administrator PowerShell window:
 ```
 
 The script handles everything from here:
+- Repairs the Mabu's USB driver binding if a previous Zadig run broke it
 - Detects whether the unit needs a data wipe or just the liberation patches
 - Applies the patches over USB
 - Reboots the unit into Android
-- Asks you to connect the Mabu to WiFi (touch the screen to join your network when prompted)
+- Asks you to connect the Mabu to Wi-Fi (touch the screen to join your network when prompted)
 - Installs F-Droid, Lawnchair, and the Mabu factory app
 - Patches the SELinux policy so apps can access the motors
 - Runs a self-test and prints a pass/fail summary
 
-**The first time it runs**, the script may launch **Zadig** to bind the correct USB driver. When Zadig opens:
+**The first time it runs**, the script may launch **Zadig** to bind the driver the Loader needs. When Zadig opens:
 1. Go to **Options > List All Devices**
-2. Select **Rockusb Device (USB ID 2207 320A)**
-3. Set the target driver to **WinUSB**
-4. Click **Replace Driver**
-5. Switch back to PowerShell and press Enter to continue
+2. Go to **Options** and uncheck **Ignore Hubs or Composite Parents**
+3. Select the device whose USB ID is **2207 320A** (it may be listed as "Unknown Device"; match on the USB ID, not the name)
+4. Set the target driver to **WinUSB**
+5. Click **Replace Driver**
+6. Switch back to PowerShell and press Enter to continue
 
-This driver step only happens once per PC.
+> **Only ever replace the driver on 2207 320A.** If that USB ID is not in the list,
+> close Zadig without replacing anything: the Loader is not on the bus yet, and
+> there is nothing valid to pick. The other Rockchip IDs (2207 0006, and 2207 0010
+> through 0015, listed as "ADB Interface" or "MTP") are the Mabu's Android-mode
+> interfaces. Replacing the driver on one of those stops ADB from seeing the
+> tablet, and the flash cannot continue until it is undone. The script refuses to
+> open Zadig unless the Loader is actually present, so this only comes up if you
+> launch Zadig yourself.
+
+This driver step happens once per PC, per USB port.
 
 ---
 
@@ -108,7 +119,7 @@ which driver is bound to each Rockchip USB ID and what's missing. It changes not
 ```
 
 `-Watch` polls for ~30 seconds, so you can start it first and *then* power the unit
-on — it catches the ~10-second Loader window instead of you racing it.
+on; it catches the ~10-second Loader window instead of you racing it.
 
 | Symptom | Fix |
 |---|---|
@@ -116,8 +127,9 @@ on — it catches the ~10-second Loader window instead of you racing it.
 | Script says it must run as Administrator | Reopen PowerShell via right-click Start menu > *Windows PowerShell (Admin)* |
 | `rkdeveloptool.exe not found` | You're running from the wrong folder, or the download was incomplete. Run `.\scripts\install-tools.ps1` from the folder containing `scripts\` |
 | Loader mode won't appear | Check D+/D- polarity on the USB wires; try holding ADKEY earlier during power-on |
-| Script stops at WiFi step | Touch the Mabu screen, join your WiFi network, then press Enter in PowerShell |
-| App installs fail | Make sure the Mabu and PC are on the same WiFi network |
+| Windows shows the Mabu (as "H7R", "ADB Interface" or "MTP") but the script says `No adb device and no Loader` | Zadig was pointed at the Android-mode device at some point, which stops ADB from seeing it. The script detects this and repairs it in place, so re-run it first. If it still reports the misbinding, follow the undo steps it prints |
+| Script stops at Wi-Fi step | Touch the Mabu screen, join your Wi-Fi network, then press Enter in PowerShell |
+| App installs fail | Make sure the Mabu and PC are on the same Wi-Fi network |
 | `execution of scripts is disabled` error | Run `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`. If you used the ZIP, also run `Get-ChildItem -Recurse -Filter *.ps1 \| Unblock-File` |
 
 ---
