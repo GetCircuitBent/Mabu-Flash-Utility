@@ -34,9 +34,8 @@ One command handles the full unit.
 >   still being finalized; skip it for a plain flash).
 
 ```powershell
-# FLASH (default): from the repo root, with a booted adb-reachable unit.
-# The bare command does the whole job -- liberate, provision apps, motor fix, self-test.
-.\scripts\flash.ps1
+# FLASH: from the repo root, with a booted adb-reachable unit.
+.\scripts\flash-mabu.ps1
 ```
 
 > **State auto-detect:** the script probes the unit over ADB and classifies it:
@@ -51,17 +50,15 @@ One command handles the full unit.
 > probe), state is Unknown and the script wipes.
 
 ### Script Flags
-The bare `flash.ps1` does everything (liberate + apps + Mabu factory mode + motor fix + self-test). The flags below only *subtract* work.
-
 | Flag | Effect |
 |---|---|
-| `-SkipMabu` | Skip the Mabu factory mode APK + assets (they install by default now) |
 | `-WipeData` | Force `/data` wipe regardless of detected state |
 | `-NoWipe` | Force patch-only (skip wipe) regardless of detected state |
 | `-SkipApps` | Loader patches only: no app install, no SELinux fix, no self-test |
+| `-SkipMabu` | Skip only the Mabu factory mode APK and its assets; F-Droid and Lawnchair still install |
 | `-SkipSELinux` | Skip the SELinux policy fix phase |
-| `-PurgeUsb` | Up front, release USB and drop stale `VID_2207` PnP entries so Windows re-enumerates clean. Not needed normally; the flash runs this by itself if it finds neither a Loader nor an adb device. Note it drops any Loader session already caught. |
-| `-WifiIp <ip>` | Wi-Fi hint for first adb connect attempt (auto-discovered at runtime) |
+| `-PurgeUsb` | Up front, release USB and drop stale `VID_2207` PnP entries so Windows re-enumerates clean. Not needed normally; the flash runs this by itself if it finds neither a Loader nor an ADB device. Note it drops any Loader session already caught. |
+| `-WifiIp <ip>` | Wi-Fi hint for first ADB connect attempt (auto-discovered at runtime) |
 
 ### What the Script Does, in Order
 1. **Detect state** (A / B / Liberated / Unknown)
@@ -69,8 +66,8 @@ The bare `flash.ps1` does everything (liberate + apps + Mabu factory mode + moto
 3. **Wipe `/data` head** (96 MB) if State A or forced *(skipped for B / Liberated)*
 4. **Reset** to Android
 5. **Install apps**: F-Droid, Lawnchair (set as home)
-6. **Restore Mabu**: factory mode APK + assets *(default; skip with `-SkipMabu`)*
-7. **SELinux fix**: on-device `magiskpolicy` patch → Loader write to `0x5A8AB8`. If the patched policy changes size, it automatically falls back to a full `/vendor` reflash via WSL *(skippable with `-SkipSELinux`)*
+6. **Mabu factory mode + assets**: install `com.catalia.factorymode` APK + push animation/voice assets *(default; skip with `-SkipMabu`)*
+7. **SELinux fix**: on-device `magiskpolicy` patch → Loader write to `0x5A8AB8`. If the patched policy changes size, it falls back automatically to a full `/vendor` reflash via WSL *(skippable with `-SkipSELinux`)*
 8. **Self-test**: 12 checks: liberation, apps, SELinux policy SHA, AVC denial check, Wi-Fi ADB
 
 ---
@@ -121,7 +118,7 @@ At a glance:
 - Rockchip **DriverAssistant v5.0** (`rockusb.sys`) and **RKDevTool v2.92**,
   in `../Mabu/tools/rockchip-stock/`.
 - **Zadig 2.9**: to bind WinUSB to the Loader interface.
-- **adb / platform-tools** (winget `Google.PlatformTools`).
+- **ADB / platform-tools** (winget `Google.PlatformTools`).
 - **Android Studio** (winget `Google.AndroidStudio`): to build/deploy the app.
 - For the permanent SELinux fix only: WSL/Ubuntu with `setools`,
   `policycoreutils`, and **magiskpolicy** (see Section 6, Tier 2).
@@ -145,7 +142,7 @@ timing, not the host port:
 
 ## 2. Understand the Two Starting States
 A factory unit is in one of two states; they need slightly different handling
-(both are covered by `flash.ps1`, which **auto-detects which one**; see
+(both are covered by `flash-mabu.ps1`, which **auto-detects which one**; see
 below):
 
 | State | What you see | Treatment | Auto-detected by |
@@ -236,7 +233,7 @@ write dies with **`WRITE FAILED: ... creating comm object failed!`** because the
 transfer channel needs WinUSB, not rockusb.sys. So `ld` succeeding is **not**
 proof you're ready to write.
 
-**`flash.ps1` now auto-handles this.** Before Phase 2 it checks the driver
+**`flash-mabu.ps1` now auto-handles this.** Before Phase 2 it checks the driver
 service on PID 320A (`Confirm-LoaderWinUsb`); if it's not WinUSB it **launches
 Zadig for you**, prints the steps below, pauses, then re-verifies the binding and
 that Loader is still visible before continuing. You only do the Zadig clicks:
@@ -255,7 +252,7 @@ put 60 s+), then Zadig as above.
 > port/hub, 320A enumerates at a new instance path (`...&0&2` → `...&0&9`) and
 > Windows binds it back to `rockusb.sys`, so `wl`/`rl` fail again with "creating
 > comm object failed!" Fixes: replug into the **same port** you Zadig'd, or
-> re-run Zadig for the new port. `flash.ps1`'s `Confirm-LoaderWinUsb` gate
+> re-run Zadig for the new port. `flash-mabu.ps1`'s `Confirm-LoaderWinUsb` gate
 > catches this automatically; raw `rkdeveloptool` use does not, so keep to one
 > port.
 
@@ -291,7 +288,7 @@ without wiping first**, capture, *then* wipe.
 **Step 1: apply the patches only (NO wipe).** With Loader caught, from the
 Mabu repo root:
 ```powershell
-.\scripts\flash.ps1 -SkipApps      # = the 8 patches + reset; no /data wipe, no app install
+.\scripts\flash-mabu.ps1 -SkipApps      # = the 8 patches + reset; no /data wipe, no app install
 ```
 (Equivalent: `.\scripts\liberate-mabu.ps1 -Reset`.) This gives unconditional
 ADB while leaving `/data` intact.
@@ -366,7 +363,7 @@ From the repo root, with a **booted, ADB-reachable unit** (so the script can
 detect the state and reboot it into Loader itself):
 
 ```powershell
-.\scripts\flash.ps1
+.\scripts\flash-mabu.ps1
 ```
 
 The script auto-detects State A vs B and wipes `/data` only on State A (see
@@ -374,7 +371,7 @@ Section 2). Add `-WipeData` to force the wipe or `-NoWipe` to force patch-only.
 If you've **already caught Loader** the state can't be probed, so it defaults to
 wiping: pass `-WipeData`/`-NoWipe` explicitly in that case.
 
-What it does, in order (`scripts/flash.ps1` → `scripts/liberate-mabu.ps1`):
+What it does, in order (`scripts/flash-mabu.ps1` → `scripts/liberate-mabu.ps1`):
 
 1. **8 Loader-side raw-eMMC patches** (`liberate-mabu.ps1`):
    - **Parameter @ LBA 0**: kernel cmdline gets
@@ -396,20 +393,20 @@ What it does, in order (`scripts/flash.ps1` → `scripts/liberate-mabu.ps1`):
    Wi-Fi ADB** for everything that follows (see the transport rule below; USB ADB
    on this hardware times out too fast to rely on).
 4. **Install F-Droid + Lawnchair**, set Lawnchair as home.
-5. **(default; skip with `-SkipMabu`)** install `com.catalia.factorymode` + push
-   animation/voice assets, grant runtime perms. *(Factory-test app, not the
-   consumer app; the consumer Mabu app was never archived.)*
+5. **Install `com.catalia.factorymode`** + push animation/voice assets, grant
+   runtime perms. *(Factory-test app, not the consumer app; the consumer Mabu
+   app was never archived.)*
 
 After `/data` wipe, **Wi-Fi credentials are gone**. The script pauses and asks
 you to join Wi-Fi on the touch UI before app installs proceed.
 
 > **Gotcha: script aborts at the inter-phase reset with `* daemon not running;
-> starting now at tcp:5037`:** that banner is adb starting its background server
+> starting now at tcp:5037`:** that banner is ADB starting its background server
 > on first use; it goes to **stderr**, and under the script's
 > `$ErrorActionPreference = 'Stop'` the `2>&1` capture turns it into a fatal
 > `NativeCommandError` that kills the run right after the patch phase (patches are
-> already written; nothing is harmed). **Fixed in `flash.ps1`**: it now
-> pre-starts the adb server up front (with errors non-fatal) so no later adb call
+> already written; nothing is harmed). **Fixed in `flash-mabu.ps1`**: it now
+> pre-starts the ADB server up front (with errors non-fatal) so no later ADB call
 > emits the banner. If you see this on an older copy of the script, just re-run
 > the same command: the patches are idempotent and the server is now running, so
 > the second pass sails through. (Same root cause to watch for in any PS script
@@ -440,7 +437,7 @@ you to join Wi-Fi on the touch UI before app installs proceed.
 
 > **Headless / non-interactive runs:** the Wi-Fi pause above is a `Read-Host`,
 > which hangs an unattended shell. To stage it: run
-> `.\scripts\flash.ps1 -WipeData -SkipApps` (does all 8 patches + the
+> `.\scripts\flash-mabu.ps1 -WipeData -SkipApps` (does all 8 patches + the
 > inter-phase reset + 96 MB wipe, then exits cleanly **before** the pause), then
 > drive the app installs yourself over ADB. USB ADB comes up authorized right
 > after the wipe (the adbd auth-bypass patch), but it **times out too fast to rely
@@ -479,7 +476,7 @@ adb -s <tablet-ip>:5555 shell "pm list packages | grep -iE 'esper|shoonya'"  # e
 > worked immediately, but on the 2026-06-27 unit adbd was **not** listening on
 > 5555, so the connect silently failed. The fix is the standard one: run
 > **`adb tcpip 5555`** over USB once to put adbd into TCP mode, then
-> `adb connect <ip>:5555`. `flash.ps1` now does this automatically
+> `adb connect <ip>:5555`. `flash-mabu.ps1` now does this automatically
 > (`Enable-WifiAdb`): over USB it reads the device's real `wlan0` IP
 > (`ip addr show wlan0`), runs `tcpip 5555`, sets `persist.adb.tcp.port 5555`
 > (survives a reboot that keeps `/data`), and connects. **Don't trust a hardcoded
@@ -583,11 +580,9 @@ Then launch the app; it connects to the bridge and the robot tracks faces.
 ---
 
 ### Tier 2: Permanent SELinux Policy Patch (Validated; Now Automated)
-> **`flash.ps1` applies this automatically as its SELinux phase** (on-device
-> `magiskpolicy`, with an automatic full-`/vendor` WSL reflash fallback if the
-> patched policy changes size). The manual steps below are reference only: follow
-> them if you need to re-apply the fix outside of a full flash run, or if you're
-> debugging the automated path.
+> **`flash-mabu.ps1` applies this automatically as Phase 7.** The manual steps
+> below are reference only: follow them if you need to re-apply the fix outside
+> of a full flash run, or if you're debugging the automated path.
 >
 > **Known-good hashes (H7R Android 8.1):**
 > - Stock policy: `7f26df2d…`
@@ -715,6 +710,93 @@ is marked `// TEMP` in `MabuMotors.kt`):
 
 ---
 
+## 6A. System Modifications (Replacing Files in `/system`, `/vendor`)
+> **Status: planning, not yet executed.** No unit has had this applied.
+> First candidate: replacing the stock `/system/media/bootanimation.zip`
+> (factory wavy-leaf animation) with a Get Circuit Bent–branded one.
+
+The Tier 2 SELinux patch (Section 6) already proved the core technique: with
+no root and `/system`/`/vendor` mounted read-only, a file can still be
+overwritten by locating its raw eMMC blocks and writing them directly via the
+Loader (`rkdeveloptool wl`) while dm-verity is disabled. That technique
+generalizes to **any** read-only-partition file, not just the sepolicy blob,
+but the validated case was a narrow one, and the constraints matter for what
+comes next.
+
+### Why the SELinux Patch Was the Easy Case
+The sepolicy patch worked as a direct block overwrite because the patched
+output was **byte-for-byte the same size** as the original (299,979 B → same
+74 ext4 blocks). A same-size in-place overwrite of an existing extent is safe
+regardless of fragmentation, because nothing about the file's block *layout*
+changes; only the bytes inside those blocks do. The guide's own caveat:
+
+> if the new file is **larger** than the original and spills into an extra
+> block, a raw overwrite corrupts whatever file used to own that block. Only
+> raw-overwrite when out-size ≤ original block count.
+
+### Why `bootanimation.zip` Is a Different Case
+Stock `/system/media/bootanimation.zip` on the validated unit is **1,870,133
+bytes** (~457 4 KB blocks) vs. the sepolicy's 74: an order of magnitude
+bigger, and much more likely to span multiple non-contiguous extents. Two
+viable paths, in order of preference:
+
+**Path A: same-or-smaller direct overwrite, with `i_size` patched to match.**
+If we build a replacement zip that fits in ≤ 457 blocks *and* we can enumerate
+every extent the original occupies (not just the first one, unlike the
+sepolicy's single contiguous run), we only need to write as many leading
+blocks as the new content actually needs; the *inode's* `i_size` field
+controls the file's logical length, so it must be patched to the new byte
+count rather than left at the original. Zero-padding the replacement content
+itself to the original byte count does **not** work when the size gap is
+large: Android locates the zip's End-of-Central-Directory record by scanning
+only the **last 64KB** of the file (the EOCD comment-length field is 16-bit,
+max 65,535 B); any gap bigger than that leaves the real EOCD outside the
+scan window regardless of where the padding lives. Confirmed for our built
+replacement (1.36MB vs. the stock 1.78MB, a ~515KB gap): patching `i_size` is
+required, not optional. See `assets/bootanimation/DEPLOY.md` for the worked
+procedure. **Caveat:** if the partition's `metadata_csum` feature is on (ext4
+checksums each inode), hand-patching `i_size` without recomputing that
+checksum corrupts the inode; check this before patching, fall back to Path B
+if so.
+
+**Path B: dump, edit, and reflash the whole `/system` image.**
+The guide already names this as the fallback for oversized replacements
+(Section 5, "clean firmware flash" model) and it sidesteps the extent-mapping
+problem entirely by treating the whole partition as one unit. Cost: `/system`
+is almost certainly larger than the documented **28 MB Loader read-wedge per
+session** (`dump-system-cycled.ps1` handles the power-cycling this requires),
+and every write pass needs the unit re-opened on the **one-shot internal
+harness** (a real hardware session, not a Wi-Fi ADB task).
+
+### Status: Asset Built, Tooling Staged, Awaiting Harness (2026-07-02)
+Everything doable without the physical unit is done. `assets/bootanimation/`:
+- `bootanimation.zip` (1,355,264 B, sha256 `da1a04e6...`): GCB text logo
+  (unmodified, per the style guide) on Bluewood 900 `#1A242D`, with brand-
+  colored outlined sparkles (orange core/green rim and green core/orange rim)
+  twinkling around it. Built by `make_bootanim.py`. Fits Path A (well under
+  the stock 1,870,133 B).
+- `scripts/find_system_file.py`: the `/system` analogue of
+  `scripts/locate_vendor_policy.py`, generalized to arbitrary paths and
+  multi-extent aware (unlike the single-extent sepolicy case).
+- `/system` start LBA confirmed live on unit `2022010501476`: **`0x18C000`**
+  (`cat /sys/class/block/mmcblk1p11/start` over ADB); this drifts per unit,
+  don't reuse blindly.
+- `assets/bootanimation/DEPLOY.md`: full step-by-step procedure, written as
+  a manual runbook (not a blind script) given the real risk of a botched
+  multi-extent write. Key finding during planning: the ~515KB size gap
+  between the new and stock zip is too big to hide via padding (zip EOCD
+  scan only checks the last 64KB); the correct fix is patching the inode's
+  `i_size` field directly, writing only the blocks the new content needs,
+  and leaving the rest of the original extents untouched (wasted but
+  harmless once outside `i_size`).
+
+**Blocked on:** the internal USB programming harness being physically
+connected; Wi-Fi ADB can catch Loader (`adb reboot loader`) but the actual
+`rkdeveloptool` read/write only works over USB. Once connected, follow
+`assets/bootanimation/DEPLOY.md` steps 1–7.
+
+---
+
 ## 7. Motor Calibration (per Unit)
 Motor mechanical zeros differ per unit and are wiped by the `/data` reformat.
 Two options:
@@ -745,8 +827,8 @@ Protocol reference (don't hand-compute checksums; use the code):
 
 ## 9. Quick Checklist
 - [ ] Loader caught (PID 320A): `adb reboot loader` if ADB is up, else hold ADKEY (pin 4)→GND through power-on
-- [ ] **PID 320A bound to WinUSB** (not `rockusb.sys`): `flash.ps1` auto-launches Zadig if not; one-time per PC, then persists. `ld` listing the Loader is *not* proof: a `rockusb.sys` binding writes-fail with "creating comm object failed"
-- [ ] `flash.ps1` completes: confirm the "Detected State X" / "Wipe policy" line matches the unit (force with `-WipeData`/`-NoWipe` if needed; re-run wipe if it "FAILED at chunk 0")
+- [ ] **PID 320A bound to WinUSB** (not `rockusb.sys`): `flash-mabu.ps1` auto-launches Zadig if not; one-time per PC, then persists. `ld` listing the Loader is *not* proof: a `rockusb.sys` binding writes-fail with "creating comm object failed"
+- [ ] `flash-mabu.ps1` completes: confirm the "Detected State X" / "Wipe policy" line matches the unit (force with `-WipeData`/`-NoWipe` if needed; re-run wipe if it "FAILED at chunk 0")
 - [ ] Device Owner clear, no esper/shoonya packages
 - [ ] Re-joined Wi-Fi, Wi-Fi ADB on 5555, static lease set (the working transport for all on-device ADB; USB only for the Loader flash + opening ADB)
 - [ ] Launcher + apps installed
@@ -776,7 +858,7 @@ from an elevated PowerShell. Hardware can't be installed; verify physically.
 | Rockchip **DriverAssistant v5.0** (installs `rockusb.sys`) | **bundled** `../Mabu/tools/rockchip-stock/DriverAssitant_v5.0/` | `pnputil /enum-drivers | findstr rockusb` |
 | **RKDevTool v2.92** (GUI, latches Loader) | **bundled** `../Mabu/tools/rockchip-stock/RKDevTool_Release_v2.92/` | launches |
 | **Zadig** (bind WinUSB to PID 320A) | **winget** `akeo.ie.Zadig` | app opens |
-| **adb / platform-tools** | **winget** `Google.PlatformTools` | `adb version` |
+| **ADB / platform-tools** | **winget** `Google.PlatformTools` | `adb version` |
 
 > The Rockchip `android_winusb.inf` (ADB driver for PID 0006/0011) is staged in
 > the driver store alongside `rockusb.sys`. Verify: `pnputil /enum-drivers | findstr android_winusb`.
@@ -807,7 +889,7 @@ path is **ADB (Wi-Fi) + on-device ARM magiskpolicy + `find-vendor-file.py` +
 
 | Tool | Source | Verify |
 |---|---|---|
-| **adb** (Wi-Fi, on 5555) | platform-tools (A.2) | `adb connect <ip>:5555` |
+| **ADB** (Wi-Fi, on 5555) | platform-tools (A.2) | `adb connect <ip>:5555` |
 | **magiskpolicy** (binary-policy patcher, runs **on the Mabu**, ARM) | **staged** `../tools/magiskpolicy/magiskpolicy-armeabi-v7a` (Magisk v30.7) | `file` shows "ARM ... for Android" |
 | **`find-vendor-file.py`** (ext4 inode-walk → file LBA) | **bundled** `../Mabu/scripts/find-vendor-file.py` | needs **Python 3** on host |
 | `rkdeveloptool` (dump + `wl` the policy) | **bundled** (A.2) | `rkdeveloptool ld` |
@@ -839,7 +921,7 @@ download the SDK, or install components headlessly with `sdkmanager`.
 | Capability | Ready? |
 |---|---|
 | Flash a new Mabu (A.2) | ✅ **validated end-to-end** on unit `2022010501038` over direct USB 3 (no hub) |
-| Deploy a prebuilt APK (adb) | ✅ (USB push or Wi-Fi) |
+| Deploy a prebuilt APK (ADB) | ✅ (USB push or Wi-Fi) |
 | **Build** the Android app (A.3) | ✅ Android Studio 2026.1 + bundled JDK 21 installed; **launch once to download the SDK** |
 | Permanent SELinux fix (A.4) | ✅ **Tier 2 validated**: patched policy written to `/vendor` precompiled_sepolicy via Loader, persisted + Enforcing after reboot. `magiskpolicy` (ARM) + `find-vendor-file.py` + Python are what's actually used. |
 

@@ -110,9 +110,7 @@ Turn the unit on and let it boot to its normal screen. The flasher talks to the 
 ```powershell
 .\scripts\flash-mabu.ps1
 ```
-That's the whole command; no options are needed.
-
-> On the `gui-executable` branch the same console flasher is `scripts\flash.ps1`. It is the same tool under a different name, and it is the logic the GUI drives.
+That's the whole command; no options are needed. This is the same flasher the GUI drives.
 
 ### Step 4: Follow the Prompts
 Both paths tell you exactly what to do when they need you, as console prompts or as GUI prompt cards.

@@ -122,12 +122,12 @@ cd Mabu-Flash-Utility
 `install-android-driver.ps1` patches the Google Android USB driver INF to recognise
 VID 0x2207 / PID 0x0006 (the Mabu in Android mode), then opens Device Manager and
 walks you through the one manual click. **This step is required**: without it, USB
-ADB won't see the device after liberation and `flash.ps1` will time out
+ADB won't see the device after liberation and `flash-mabu.ps1` will time out
 waiting for ADB. After this driver is installed it persists across reboots.
 
 After both scripts succeed:
 
-1. **Bind WinUSB to the Loader (first Mabu only).** `flash.ps1` does this for you:
+1. **Bind WinUSB to the Loader (first Mabu only).** `flash-mabu.ps1` does this for you:
    it detects that PID `2207 320A` is bound to `rockusb.sys` instead of WinUSB,
    installs Zadig if needed, launches it, and waits. You only need the manual route
    below if you want to do it ahead of time. Get the device into Loader mode
@@ -144,7 +144,7 @@ After both scripts succeed:
 
 2. **Flash.** Every Mabu, every time, one command:
    ```powershell
-   .\scripts\flash.ps1
+   .\scripts\flash-mabu.ps1
    ```
    The script detects device state, runs liberation, app install, and the SELinux
    motor patch end-to-end, and stops with a clear message if anything fails.
@@ -460,7 +460,7 @@ clears `misc` if anything ever affects boot (it should not; we never touch boot)
 |---|---|---|
 | After reboot, app still gets `avc: denied ... serial_device` | init recompiled policy from CIL and ignored our precompiled file | **Not a brick**: device boots normally. The hash check in §1 should prevent this; if it happens, re-verify the on-disk write, or escalate (patch the CIL inputs + their hash, or use Route 2). |
 | Boot loops / no Android | policy file truncated or corrupt | Restore originals (§7). This is why we capture originals **before** writing and why Route 1 requires the size to fit existing blocks. |
-| `rkdeveloptool` can't see device | Loader window missed, or WinUSB not bound | Power-cycle, re-catch within ~10 s; re-run `flash.ps1` (it re-binds via Zadig) or run Zadig by hand. |
+| `rkdeveloptool` can't see device | Loader window missed, or WinUSB not bound | Power-cycle, re-catch within ~10 s; re-run `flash-mabu.ps1` (it re-binds via Zadig) or run Zadig by hand. |
 | `wl` reports not-100% | partial write | Re-run the `wl`; never leave a partial policy write; restore + retry. |
 | Read wedge during `/vendor` dump | known Loader limit (~28 MB/session) | The cycled dumper handles it; just let it cycle, or power-cycle and resume. |
 

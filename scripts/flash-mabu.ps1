@@ -1,4 +1,4 @@
-# flash.ps1
+# flash-mabu.ps1
 #
 # The one command to flash a Mabu. Liberates the unit from its factory lock,
 # provisions user apps, and opens motor access; then self-tests the result.
@@ -103,7 +103,7 @@ function Test-Admin {
 # work fine un-elevated; an earlier version of this comment claimed otherwise.
 # The script refuses up front with an actionable message rather than failing
 # confusingly mid-flash. (The packaged .exe already carries a
-# requireAdministrator manifest, so this only matters when running flash.ps1
+# requireAdministrator manifest, so this only matters when running flash-mabu.ps1
 # directly.) Because this gate exits, everything below can assume Administrator.
 if (-not (Test-Admin)) {
     Die 'This script must run as Administrator (USB driver binding and PnP queries require it).' `
@@ -803,7 +803,7 @@ $acq = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 180
 if (-not $acq) {
     Die 'No adb (USB or Wi-Fi) after reset.' `
         'Re-seat the USB harness (or fix tablet Wi-Fi), then finish with:' `
-        '  .\scripts\flash.ps1 -NoWipe'
+        '  .\scripts\flash-mabu.ps1 -NoWipe'
 }
 if ($acq -match ':5555$') { $dev = $acq; Ok "Wi-Fi ADB already up: $dev" }
 else {

@@ -1,7 +1,7 @@
 # MabuTools.ps1
 #
 # Shared tool acquisition for every entry point: install-tools.ps1, the CLI
-# flashers (flash-mabu.ps1 / flash.ps1) and the GUI core (MabuFlashCore.ps1).
+# flashers (flash-mabu.ps1 / flash-mabu.ps1) and the GUI core (MabuFlashCore.ps1).
 #
 # Why this file exists: adb and Zadig are hard requirements for a flash, and each
 # entry point used to acquire them on its own -- all of them via winget only. On

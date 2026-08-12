@@ -14,7 +14,7 @@
 
   New-ConsoleUi returns a provider whose Section/Log output is byte-for-byte
   the known-good console format (the old Section/Info/Ok/Warn/Fail helpers), so
-  a console run stays identical to scripts/flash.ps1. Flash/Validate are
+  a console run stays identical to scripts/flash-mabu.ps1. Flash/Validate are
   no-ops on the console (the console never had progress bars); Prompt maps to
   Read-Host.
 #>

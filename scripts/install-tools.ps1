@@ -54,12 +54,12 @@ $RkDir      = Join-Path $ToolsDir 'rkdeveloptool'
 $RkExe      = Join-Path $RkDir   'rkdeveloptool.exe'
 
 # This script is shared verbatim between the two editions, which ship different
-# flasher entry points (flash-mabu.ps1 on main, flash.ps1 alongside the WPF app).
+# flasher entry points (flash-mabu.ps1 on main, flash-mabu.ps1 alongside the WPF app).
 # Detect which one this copy has so the guidance below names the right command
 # without the file itself having to diverge.
 $FlashScript = if     (Test-Path (Join-Path $PSScriptRoot 'flash-mabu.ps1')) { '.\scripts\flash-mabu.ps1' }
-               elseif (Test-Path (Join-Path $PSScriptRoot 'flash.ps1'))      { '.\scripts\flash.ps1' }
-               else                                                          { '.\scripts\flash.ps1' }
+               elseif (Test-Path (Join-Path $PSScriptRoot 'flash-mabu.ps1'))      { '.\scripts\flash-mabu.ps1' }
+               else                                                          { '.\scripts\flash-mabu.ps1' }
 
 function Write-Step($msg)  { Write-Host "`n=== $msg ===" -ForegroundColor Cyan }
 function Write-OK($msg)    { Write-Host "  [OK]   $msg"  -ForegroundColor Green }

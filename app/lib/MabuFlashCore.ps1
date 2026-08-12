@@ -1,9 +1,9 @@
 <#
-  MabuFlashCore.ps1: UI-agnostic copy of scripts/flash.ps1.
+  MabuFlashCore.ps1: UI-agnostic copy of scripts/flash-mabu.ps1.
 
   This is a fork of the proven console script, refactored to drive the injected
   UI-provider contract (app/lib/MabuUi.ps1) instead of writing to the host
-  directly. scripts/flash.ps1 stays the known-good original; fixes must be
+  directly. scripts/flash-mabu.ps1 stays the known-good original; fixes must be
   mirrored here by hand.
 
   What changed vs the original (logic body is otherwise equivalent):
@@ -13,10 +13,10 @@
     * Added $Ui.Flash calls at phase boundaries and $Ui.Validate per self-test check.
     * $RK/$ADB/$Root/$WifiIp are $script: vars set by Invoke-MabuFlash.
 
-  Parity with flash.ps1 (merged flasher):
+  Parity with flash-mabu.ps1 (merged flasher):
     * SELinux fix uses on-device magiskpolicy by default; if the patched policy
       changes size it falls back to a full /vendor reflash via WSL.
-    * Mabu factory mode installs by DEFAULT (skip with -SkipMabu), matching flash.ps1.
+    * Mabu factory mode installs by DEFAULT (skip with -SkipMabu), matching flash-mabu.ps1.
 
   Known gap: liberate-mabu.ps1 / wipe-data-head.ps1 / dump-system-cycled.ps1 are
   child scripts; their own console output does not route through $Ui yet (the
@@ -37,7 +37,7 @@ function Fail($msg)    { & $script:Ui.Log 'fail' $msg }
 # Abort: log the reason (already done by the caller's Fail) and unwind to the
 # top-level catch, which reports Done $false. Replaces the original `exit 1`.
 function Abort($msg)   { if (-not $msg) { $msg = 'aborted' }; throw [System.OperationCanceledException]::new($msg) }
-# Die: this core's equivalent of flash.ps1's Die -- print one or more red lines,
+# Die: this core's equivalent of flash-mabu.ps1's Die -- print one or more red lines,
 # then Abort. Existing call sites use the Fail-then-Abort pair directly (kept, to
 # minimize churn on working code); use Die for anything new so a forgotten Abort
 # can never leave an aborting path silently continuing.
@@ -567,7 +567,7 @@ function Invoke-MabuFlash {
     if (-not $Ui) { . (Join-Path $PSScriptRoot 'MabuUi.ps1'); $Ui = New-ConsoleUi }
     $script:Ui = $Ui
     # Default the repo root to two levels up from app/lib, so relative paths work
-    # from any folder the repo lives in (parity with flash.ps1's $RepoRoot).
+    # from any folder the repo lives in (parity with flash-mabu.ps1's $RepoRoot).
     $script:Root = if ($Root) { $Root } else { (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path }
     $script:RK = Join-Path $script:Root 'tools/rkdeveloptool/rkdeveloptool.exe'
 
