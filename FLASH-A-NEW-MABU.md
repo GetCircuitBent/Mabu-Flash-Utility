@@ -60,8 +60,8 @@ The bare `flash.ps1` does everything (liberate + apps + Mabu factory mode + moto
 | `-NoWipe` | Force patch-only (skip wipe) regardless of detected state |
 | `-SkipApps` | Loader patches only: no app install, no SELinux fix, no self-test |
 | `-SkipSELinux` | Skip the SELinux policy fix phase |
-| `-PurgeUsb` | Up front, release USB and drop stale `VID_2207` PnP entries so Windows re-enumerates clean. Not needed normally — the flash runs this by itself if it finds neither a Loader nor an adb device. Note it drops any Loader session already caught. |
-| `-WifiIp <ip>` | WiFi hint for first adb connect attempt (auto-discovered at runtime) |
+| `-PurgeUsb` | Up front, release USB and drop stale `VID_2207` PnP entries so Windows re-enumerates clean. Not needed normally; the flash runs this by itself if it finds neither a Loader nor an adb device. Note it drops any Loader session already caught. |
+| `-WifiIp <ip>` | Wi-Fi hint for first adb connect attempt (auto-discovered at runtime) |
 
 ### What the Script Does, in Order
 1. **Detect state** (A / B / Liberated / Unknown)
@@ -71,7 +71,7 @@ The bare `flash.ps1` does everything (liberate + apps + Mabu factory mode + moto
 5. **Install apps**: F-Droid, Lawnchair (set as home)
 6. **Restore Mabu**: factory mode APK + assets *(default; skip with `-SkipMabu`)*
 7. **SELinux fix**: on-device `magiskpolicy` patch → Loader write to `0x5A8AB8`. If the patched policy changes size, it automatically falls back to a full `/vendor` reflash via WSL *(skippable with `-SkipSELinux`)*
-8. **Self-test**: 12 checks: liberation, apps, SELinux policy SHA, AVC denial check, WiFi ADB
+8. **Self-test**: 12 checks: liberation, apps, SELinux policy SHA, AVC denial check, Wi-Fi ADB
 
 ---
 
@@ -172,7 +172,7 @@ with a Settings/Dev-Options regression; smaller wipes don't reliably trigger the
 > these, the head-wipe corrupts the *encrypted* userdata but the crypto footer
 > survives, so vold gets stuck in `vold.decrypt=trigger_restart_min_framework`:
 > `/data` is only a tmpfs, `/sdcard` never mounts, and the full framework (hence
-> WiFi setup) never starts. Wiping the `metadata` partition made it **worse**
+> Wi-Fi setup) never starts. Wiping the `metadata` partition made it **worse**
 > (no boot at all: likely metadata-encryption where `/metadata` is needed
 > early), and an AOSP-style `misc` BCB `--wipe_data` did **not** trigger a
 > recovery wipe (RK bootloader may not honor it). **Not yet solved: do not
@@ -296,8 +296,8 @@ Mabu repo root:
 (Equivalent: `.\scripts\liberate-mabu.ps1 -Reset`.) This gives unconditional
 ADB while leaving `/data` intact.
 
-**Step 2: get on ADB (prefer WiFi).** Esper can wedge *USB* ADB within ~5 s of
-boot; WiFi ADB is the stable transport and the patched adbd listens on 5555:
+**Step 2: get on ADB (prefer Wi-Fi).** Esper can wedge *USB* ADB within ~5 s of
+boot; Wi-Fi ADB is the stable transport and the patched adbd listens on 5555:
 ```powershell
 # find the tablet IP (router DHCP table, or: nmap -p 5555 192.168.x.0/24), then:
 adb connect <tablet-ip>:5555
@@ -392,16 +392,16 @@ What it does, in order (`scripts/flash.ps1` → `scripts/liberate-mabu.ps1`):
    corrupts the ext4 superblock so vold reformats `/data` clean on boot,
    removing the in-`/data` Esper DPC. (Done in a separate Loader session; doing
    patches + wipe back-to-back wedges Loader.)
-3. **Reset to Android**, wait for ADB to come up, then **join WiFi and switch to
-   WiFi ADB** for everything that follows (see the transport rule below; USB ADB
+3. **Reset to Android**, wait for ADB to come up, then **join Wi-Fi and switch to
+   Wi-Fi ADB** for everything that follows (see the transport rule below; USB ADB
    on this hardware times out too fast to rely on).
 4. **Install F-Droid + Lawnchair**, set Lawnchair as home.
 5. **(default; skip with `-SkipMabu`)** install `com.catalia.factorymode` + push
    animation/voice assets, grant runtime perms. *(Factory-test app, not the
    consumer app; the consumer Mabu app was never archived.)*
 
-After `/data` wipe, **WiFi credentials are gone**. The script pauses and asks
-you to join WiFi on the touch UI before app installs proceed.
+After `/data` wipe, **Wi-Fi credentials are gone**. The script pauses and asks
+you to join Wi-Fi on the touch UI before app installs proceed.
 
 > **Gotcha: script aborts at the inter-phase reset with `* daemon not running;
 > starting now at tcp:5037`:** that banner is adb starting its background server
@@ -438,16 +438,16 @@ you to join WiFi on the touch UI before app installs proceed.
 > the device: `adb shell cat /sys/class/block/mmcblk1p16/start` (value is in
 > 512 B sectors), and pass/patch that base.
 
-> **Headless / non-interactive runs:** the WiFi pause above is a `Read-Host`,
+> **Headless / non-interactive runs:** the Wi-Fi pause above is a `Read-Host`,
 > which hangs an unattended shell. To stage it: run
 > `.\scripts\flash.ps1 -WipeData -SkipApps` (does all 8 patches + the
 > inter-phase reset + 96 MB wipe, then exits cleanly **before** the pause), then
 > drive the app installs yourself over ADB. USB ADB comes up authorized right
 > after the wipe (the adbd auth-bypass patch), but it **times out too fast to rely
-> on**: join WiFi and run the installs over WiFi ADB (`adb connect <ip>:5555`).
+> on**: join Wi-Fi and run the installs over Wi-Fi ADB (`adb connect <ip>:5555`).
 > See the transport rule below.
 
-**Result:** plain Android 8.1, Lawnchair home, F-Droid, ADB open (USB + WiFi on
+**Result:** plain Android 8.1, Lawnchair home, F-Droid, ADB open (USB + Wi-Fi on
 port 5555, no auth dialog). Verify:
 
 ```powershell
@@ -457,15 +457,15 @@ adb -s <tablet-ip>:5555 shell "pm list packages | grep -iE 'esper|shoonya'"  # e
 ```
 
 > **Transport rule (important, learned the hard way): use USB only when it is
-> 100% necessary; do everything else over WiFi.** USB is *only* genuinely needed
+> 100% necessary; do everything else over Wi-Fi.** USB is *only* genuinely needed
 > for two things:
 > - **The Loader flash itself (`rkdeveloptool`)**: rock-solid, and there is no
->   WiFi alternative. Wrote 96 MB + all patches with zero issues. (Loader *reads*
+>   Wi-Fi alternative. Wrote 96 MB + all patches with zero issues. (Loader *reads*
 >   wedge after ~28 MB cumulative per session; power-cycle / re-catch to continue.)
 > - **Opening ADB**, i.e. the auth-bypass patch the flash writes. That is the
 >   *only* job USB ADB has.
 >
-> Once ADB is open, **switch to WiFi ADB (`adb connect <ip>:5555`) for everything
+> Once ADB is open, **switch to Wi-Fi ADB (`adb connect <ip>:5555`) for everything
 > else**: app installs, shell, verification, and especially pulls. **Android USB
 > ADB times out too fast to rely on:**
 > - **USB pulls (`adb pull`, device→host)** wedge after a cumulative **~80–128 KB
@@ -474,7 +474,7 @@ adb -s <tablet-ip>:5555 shell "pm list packages | grep -iE 'esper|shoonya'"  # e
 > - **USB pushes (`adb install`, `adb push`)** can complete for small payloads but
 >   time out / wedge unpredictably under any real load; don't plan around them.
 >
-> **WiFi ADB must be switched on; it does NOT auto-listen on every unit
+> **Wi-Fi ADB must be switched on; it does NOT auto-listen on every unit
 > (corrected 2026-06-27).** On the original validated unit `adb connect <ip>:5555`
 > worked immediately, but on the 2026-06-27 unit adbd was **not** listening on
 > 5555, so the connect silently failed. The fix is the standard one: run
@@ -485,9 +485,9 @@ adb -s <tablet-ip>:5555 shell "pm list packages | grep -iE 'esper|shoonya'"  # e
 > (survives a reboot that keeps `/data`), and connects. **Don't trust a hardcoded
 > static-lease IP**: the `-WifiIp` param is only a hint; the script overwrites it
 > with the discovered address (the 2026-06-27 unit DHCP'd `.160`, not the
-> `.18` default). Once up, WiFi pulled 293 KB in 0.4 s where USB wedged at 128 KB.
-> **Caveat:** the `/data` wipe erases WiFi credentials *and* the persistent tcpip
-> flag, so re-join WiFi on the touch UI first (the script pauses for this) and the
+> `.18` default). Once up, Wi-Fi pulled 293 KB in 0.4 s where USB wedged at 128 KB.
+> **Caveat:** the `/data` wipe erases Wi-Fi credentials *and* the persistent tcpip
+> flag, so re-join Wi-Fi on the touch UI first (the script pauses for this) and the
 > script re-enables tcpip over USB afterward. A static DHCP lease keeps the IP
 > stable across runs.
 
@@ -620,7 +620,7 @@ with no root, so the patched policy is written by raw eMMC overwrite via Loader.
 > *inspecting* policy, not injection.)
 
 **Step 1: patch the policy on-device** (Loader not needed yet; do this from an
-ADB shell, WiFi ADB if you'll pull it, see below):
+ADB shell, Wi-Fi ADB if you'll pull it, see below):
 ```bash
 DEV=<ip>:5555
 adb -s $DEV push ../tools/magiskpolicy/magiskpolicy-armeabi-v7a /data/local/tmp/magiskpolicy
@@ -638,9 +638,9 @@ access-vector table. **Same size ⇒ same 74 ext4 blocks ⇒ a raw overwrite is
 block-safe** (the Size caveat below never triggered). Confirm `in ≠ out` by hash
 so you know the rule was actually added.
 
-**Step 2: pull the patched policy to the host (use WiFi ADB).** A 293 KB `adb
+**Step 2: pull the patched policy to the host (use Wi-Fi ADB).** A 293 KB `adb
 pull` over **USB wedges** (~80–128 KB inbound ceiling per boot; see the
-transport note in Section 4). Over WiFi it's instant:
+transport note in Section 4). Over Wi-Fi it's instant:
 ```bash
 adb -s $DEV pull /data/local/tmp/sepolicy.out  ../Mabu/firmware/scratch/sepolicy.patched
 adb -s $DEV pull /data/local/tmp/sepolicy.in   ../Mabu/firmware/scratch/sepolicy.orig
@@ -677,7 +677,7 @@ reliable):
 .\tools\rkdeveloptool\rkdeveloptool.exe rd        # reboot to Android
 ```
 
-**Step 5: verify after reboot** (WiFi ADB):
+**Step 5: verify after reboot** (Wi-Fi ADB):
 ```bash
 adb connect <ip>:5555
 adb -s <ip>:5555 shell "sha256sum /vendor/etc/selinux/precompiled_sepolicy"  # == patched hash
@@ -748,7 +748,7 @@ Protocol reference (don't hand-compute checksums; use the code):
 - [ ] **PID 320A bound to WinUSB** (not `rockusb.sys`): `flash.ps1` auto-launches Zadig if not; one-time per PC, then persists. `ld` listing the Loader is *not* proof: a `rockusb.sys` binding writes-fail with "creating comm object failed"
 - [ ] `flash.ps1` completes: confirm the "Detected State X" / "Wipe policy" line matches the unit (force with `-WipeData`/`-NoWipe` if needed; re-run wipe if it "FAILED at chunk 0")
 - [ ] Device Owner clear, no esper/shoonya packages
-- [ ] Re-joined WiFi, WiFi ADB on 5555, static lease set (the working transport for all on-device ADB; USB only for the Loader flash + opening ADB)
+- [ ] Re-joined Wi-Fi, Wi-Fi ADB on 5555, static lease set (the working transport for all on-device ADB; USB only for the Loader flash + opening ADB)
 - [ ] Launcher + apps installed
 - [ ] **SELinux: Tier 1 bridge running → app moves motors**
 - [ ] **SELinux: Tier 2 policy patch applied (optional, permanent)**: magiskpolicy on-device → `find-vendor-file.py` → Loader `wl` → verify persisted + Enforcing → revert app to direct serial
@@ -802,12 +802,12 @@ unrelated tooling.)
 ### A.4 Permanent SELinux Fix Toolchain (Tier 2, Optional)
 Only needed to apply the permanent `allow untrusted_app serial_device` policy
 rule. The Tier-1 TCP bridge needs none of this (just ADB). The validated Tier-2
-path is **ADB (WiFi) + on-device ARM magiskpolicy + `find-vendor-file.py` +
+path is **ADB (Wi-Fi) + on-device ARM magiskpolicy + `find-vendor-file.py` +
 `rkdeveloptool` + Python**; WSL is **not** actually required for the injection.
 
 | Tool | Source | Verify |
 |---|---|---|
-| **adb** (WiFi, on 5555) | platform-tools (A.2) | `adb connect <ip>:5555` |
+| **adb** (Wi-Fi, on 5555) | platform-tools (A.2) | `adb connect <ip>:5555` |
 | **magiskpolicy** (binary-policy patcher, runs **on the Mabu**, ARM) | **staged** `../tools/magiskpolicy/magiskpolicy-armeabi-v7a` (Magisk v30.7) | `file` shows "ARM ... for Android" |
 | **`find-vendor-file.py`** (ext4 inode-walk → file LBA) | **bundled** `../Mabu/scripts/find-vendor-file.py` | needs **Python 3** on host |
 | `rkdeveloptool` (dump + `wl` the policy) | **bundled** (A.2) | `rkdeveloptool ld` |
@@ -839,12 +839,12 @@ download the SDK, or install components headlessly with `sdkmanager`.
 | Capability | Ready? |
 |---|---|
 | Flash a new Mabu (A.2) | ✅ **validated end-to-end** on unit `2022010501038` over direct USB 3 (no hub) |
-| Deploy a prebuilt APK (adb) | ✅ (USB push or WiFi) |
+| Deploy a prebuilt APK (adb) | ✅ (USB push or Wi-Fi) |
 | **Build** the Android app (A.3) | ✅ Android Studio 2026.1 + bundled JDK 21 installed; **launch once to download the SDK** |
 | Permanent SELinux fix (A.4) | ✅ **Tier 2 validated**: patched policy written to `/vendor` precompiled_sepolicy via Loader, persisted + Enforcing after reboot. `magiskpolicy` (ARM) + `find-vendor-file.py` + Python are what's actually used. |
 
 > **Validated-flash facts (unit 2022010501038, H7R 8.1 `OPM6.171019.030.E1`):**
 > State-A active Esper; `adb reboot loader` worked on stock; full liberate +
 > 96 MB wipe + F-Droid/Lawnchair/factorymode + Tier-2 SELinux all succeeded.
-> `/vendor` policy file LBA `0x5A8AB8`. WiFi ADB (5555) was essential for pulling
+> `/vendor` policy file LBA `0x5A8AB8`. Wi-Fi ADB (5555) was essential for pulling
 > the policy (USB pulls wedge ~128 KB).

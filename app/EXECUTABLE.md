@@ -32,7 +32,7 @@ A UI provider is a hashtable of scriptblocks:
 | `Prompt($title,$body,$buttons)` | Blocking prompt → returns chosen button text        |
 | `Done($ok,$summary)`            | Terminal state                                       |
 
-`Read-Host` pauses (Zadig rebind, WiFi setup) become `Prompt(...)`. `Section/Ok/Warn/Fail` map onto `Section` + `Log`.
+`Read-Host` pauses (Zadig rebind, Wi-Fi setup) become `Prompt(...)`. `Section/Ok/Warn/Fail` map onto `Section` + `Log`.
 
 ### The Two Bars
 - **Flashing** = everything that changes the device: Loader, patches, wipe, reset, app installs, SELinux. Each `Section` bumps the bar by a fixed weight (see `$FlashWeights` in the core).
@@ -41,9 +41,11 @@ A UI provider is a hashtable of scriptblocks:
 ### Human-in-the-Loop Stops (Unavoidable, Surfaced as Prompts)
 The device flow can't be fully hands-off. These become prompt cards:
 
-1. **Connect / catch Loader**: hold ADKEY through power-on (physical).
-2. **Zadig WinUSB rebind**: one-time-per-USB-port, needs admin.
-3. **WiFi setup on tablet**: after a `/data` wipe, creds are gone.
+1. **Connect / catch Loader**: hold ADKEY through power-on (physical). Only needed when ADB is unavailable; from a booted unit the core enters Loader over ADB itself.
+2. **Zadig WinUSB rebind**: one-time-per-USB-port, needs admin. `Confirm-LoaderWinUsb` now aborts rather than prompting when `2207 320A` is absent from the bus, so this stop never appears with only the Android-mode interfaces to choose from.
+3. **Wi-Fi setup on tablet**: after a `/data` wipe, creds are gone.
+
+The Android ADB driver is no longer one of these stops. When the core finds the adb interface bound to something adb cannot see through (a Zadig binding on the Android-mode device), `Repair-MabuAdbBinding` registers the ADB device-interface GUID on it and restarts the node, then the flash continues. It falls back to a prompt-free failure message with manual steps only if that does not take.
 
 ## Files
 Project layout:
