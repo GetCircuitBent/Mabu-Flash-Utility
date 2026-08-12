@@ -200,6 +200,21 @@ function Confirm-LoaderWinUsb {
     $svc = Get-LoaderDriverService
     if ($svc -match 'WinUSB|libusb') { Ok "PID 320A bound to '$svc'; rkdeveloptool can talk to it."; return }
 
+    # Never open Zadig unless the Loader is actually on the bus. With no 320A to
+    # select, its dropdown offers only the tablet's Android-mode interfaces ("ADB
+    # Interface", "MTP") -- and replacing the driver on one of those is precisely
+    # the mistake that leaves adb permanently blind while Device Manager keeps
+    # reporting the device is working properly.
+    $loaderOnBus = @(Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
+                     Where-Object { $_.InstanceId -match 'VID_2207&PID_320A' })
+    if (-not $loaderOnBus.Count) {
+        Die 'PID 320A (Loader) is not on the bus, so there is nothing here for Zadig to rebind.' `
+            'Do NOT run Zadig now. With no Loader present its list shows only the tablet''s' `
+            'Android interfaces, and replacing the driver on one of those breaks adb until it' `
+            'is explicitly undone.' `
+            'Catch Loader first (power off, hold ADKEY through power-on), then re-run.'
+    }
+
     Warn "PID 320A is bound to '$svc', not WinUSB."
     Warn "rkdeveloptool can SEE Loader but writes fail ('creating comm object failed')."
     Warn 'Launching Zadig to rebind 320A -> WinUSB (one-time per PC; it persists).'
@@ -642,6 +657,26 @@ if (Test-Loader) {
     Info 'Loader not seen. Finding an adb device to detect state and enter Loader.'
     $dev = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 30
     if (-not $dev) {
+        # Before handing out generic power-cycle advice: the tablet may be sitting
+        # right there on the bus with the wrong driver on its adb interface. That
+        # looks identical from here (adb sees nothing) but no amount of
+        # power-cycling will ever fix it, so name it precisely instead.
+        $mis = @(Get-MabuMisboundAdbNode)
+        if ($mis.Count) {
+            foreach ($m in $mis) {
+                Fail "$($m.Name)  [$($m.InstanceId)]"
+                Fail "  -> $($m.Reason)."
+            }
+            Die 'The tablet IS on the bus -- adb just cannot see it. This is not a power-cycle problem.' `
+                'That binding is what Zadig leaves behind when it is pointed at the tablet while' `
+                'the tablet is booted into Android. Zadig is only ever for the Loader' `
+                '(USB ID 2207 320A), never for the Android-mode device. To undo it:' `
+                '  1. Device Manager -> right-click the node named above -> Uninstall device' `
+                '  2. tick "Delete the driver software for this device" -> Uninstall' `
+                '  3. unplug and replug the USB harness' `
+                '  4. .\scripts\install-android-driver.ps1   (installs the real Android ADB driver)' `
+                'Then re-run this script.'
+        }
         Die 'No adb device and no Loader, including after an automatic USB re-enumeration.' `
             'Power-cycle the tablet (hold ADKEY through power-on) to catch Loader, then re-run.' `
             'If the PC never sees the device at all, run the read-only USB diagnostic:' `

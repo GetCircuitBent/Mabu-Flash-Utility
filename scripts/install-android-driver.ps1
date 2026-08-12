@@ -38,16 +38,25 @@ $TargetVid = '2207'
 # The Mabu does not always come up on the same PID -- it depends on which USB
 # gadget config Android brings up:
 #   0006              single ADB function      (liberated / Esper main image)
-#   0010..0015 &MI_01  MTP+ADB composite, ADB is interface 1
-#                      (stock / recovery -- an H7R off the shelf reports 0011)
+#   0010..0015 &MI_xx  MTP+ADB composite       (stock -- an H7R reports 0011)
 # Patching only 0006 is why a composite unit dead-ends in Device Manager with
 # "The folder you specified doesn't contain a compatible software driver for
-# your device": the INF has no line matching USB\VID_2207&PID_0011&MI_01, so
-# Have Disk rejects it. Cover the whole range -- the same list Rockchip's own
-# DriverAssistant INF ships (tools\rockchip-stock\...\ADBDriver).
+# your device": the INF has no line matching that hardware ID, so Have Disk
+# rejects the whole folder. Cover the range Rockchip's own DriverAssistant INF
+# ships (tools\rockchip-stock\...\ADBDriver).
+#
+# The interface NUMBER is the trap. Rockchip's INF assumes adb is always &MI_01,
+# and an H7R is the other way round: adb on &MI_00, MTP on &MI_01. So the static
+# list below is a floor, not the answer -- whatever the attached tablet actually
+# reports gets added on top (see "live" section further down), which is the only
+# thing that makes Have Disk work on a unit with the interfaces reversed.
 $SingleAdbPids    = @('0006')
 $CompositeAdbPids = @('0010','0011','0012','0013','0014','0015')
 $AllAdbPids       = $SingleAdbPids + $CompositeAdbPids
+
+# Shared PnP helpers: Get-MabuAndroidUsbNode reads what the tablet reports right
+# now (which interface is adb, what is bound to it).
+. (Join-Path $PSScriptRoot 'lib\MabuTools.ps1')
 
 function Write-Step($m) { Write-Host "`n=== $m ===" -ForegroundColor Cyan }
 function Write-OK($m)   { Write-Host "  [OK]   $m" -ForegroundColor Green }
@@ -110,11 +119,34 @@ $content = Get-Content -Path $infPath -Raw
 
 $marker = "Mabu (VID_${TargetVid} ADB PIDs)"
 $lines = @(";$marker - added by scripts\install-android-driver.ps1")
-foreach ($p in $SingleAdbPids) {
-    $lines += "%SingleAdbInterface%        = USB_Install, USB\VID_${TargetVid}&PID_${p}"
+$ids   = @()
+foreach ($p in $SingleAdbPids)    { $ids += @{ Kind = 'Single';    Id = "USB\VID_${TargetVid}&PID_${p}" } }
+foreach ($p in $CompositeAdbPids) { $ids += @{ Kind = 'Composite'; Id = "USB\VID_${TargetVid}&PID_${p}&MI_01" } }
+
+# Now the part the static list cannot know: the hardware ID this tablet's adb
+# interface is reporting on THIS bench, right now. On a unit with the interfaces
+# reversed that is &MI_00, which appears in no stock INF anywhere -- add it, or
+# Have Disk will keep refusing the folder no matter how many PIDs are listed.
+$liveAdb = @()
+try { $liveAdb = @(Get-MabuAndroidUsbNode -Vid $TargetVid | Where-Object { $_.Role -eq 'adb' }) }
+catch { Write-Warn "Could not enumerate USB devices: $($_.Exception.Message)" }
+foreach ($n in $liveAdb) {
+    # Prefer the plain ID over the &REV_ variants: it matches across firmware revisions.
+    $hw = @($n.HardwareIds | Where-Object { $_ -match '^USB\\VID_' -and $_ -notmatch '&REV_' }) |
+          Sort-Object Length | Select-Object -First 1
+    if (-not $hw) { continue }
+    if ($ids.Id -contains $hw) {
+        Write-OK "Live adb interface '$($n.Name)' reports $hw (already in the static list)."
+        continue
+    }
+    $kind = if ($n.Mi) { 'Composite' } else { 'Single' }
+    $ids += @{ Kind = $kind; Id = $hw }
+    Write-OK "Live adb interface '$($n.Name)' reports $hw -- adding it."
 }
-foreach ($p in $CompositeAdbPids) {
-    $lines += "%CompositeAdbInterface%     = USB_Install, USB\VID_${TargetVid}&PID_${p}&MI_01"
+
+foreach ($e in $ids) {
+    $token = if ($e.Kind -eq 'Single') { '%SingleAdbInterface%   ' } else { '%CompositeAdbInterface%' }
+    $lines += "$token     = USB_Install, $($e.Id)"
 }
 $patch = "`r`n" + ($lines -join "`r`n") + "`r`n"
 
@@ -165,24 +197,34 @@ if ($missing.Count) {
     Write-OK "INF covers all $($AllAdbPids.Count) Mabu ADB PIDs ($($AllAdbPids -join ', ')) in both sections."
 }
 
-# Check current device state. Match the PID the tablet is actually showing, not a
-# hardcoded one -- which of these it is decides which model to pick at step 7.
-$pidAlt = ($AllAdbPids -join '|')
-$devs = @(Get-PnpDevice -PresentOnly | Where-Object { $_.InstanceId -match "VID_${TargetVid}&PID_($pidAlt)" })
-$script:LivePid = $null
-if ($devs.Count) {
-    foreach ($d in $devs) {
-        Write-OK "Device present: $($d.FriendlyName) [$($d.InstanceId)]"
-        $svc = (Get-PnpDeviceProperty -InstanceId $d.InstanceId -KeyName 'DEVPKEY_Device_Service' -ErrorAction SilentlyContinue).Data
-        Write-Note "Currently bound to driver service: $svc (will be replaced when you install the patched driver)"
-        if ($d.InstanceId -match "VID_${TargetVid}&PID_([0-9A-Fa-f]{4})") { $script:LivePid = $Matches[1].ToLower() }
+# Report what is on the bus, and single out the node the operator must click on.
+$nodes = @()
+try { $nodes = @(Get-MabuAndroidUsbNode -Vid $TargetVid) } catch { }
+$AdbNode = $null
+if ($nodes.Count) {
+    foreach ($n in $nodes) {
+        $tag = switch ($n.Role) { 'adb' { 'ADB  <- this is the one' } 'parent' { 'composite parent' } default { 'other function' } }
+        Write-OK "$($n.Name)  [$($n.InstanceId)]"
+        Write-Note "  role=$tag  service='$($n.Service)'  provider='$($n.Provider)'"
     }
-    if ($script:LivePid -in $CompositeAdbPids) {
-        Write-Note "PID $($script:LivePid) is the MTP+ADB composite config: bind the driver to the interface"
-        Write-Note '  whose hardware ID ends in &MI_01 (the one named "ADB Interface"), not &MI_00 ("MTP").'
+    $AdbNode = $nodes | Where-Object { $_.Role -eq 'adb' } | Select-Object -First 1
+    if (-not $AdbNode) {
+        Write-Warn 'None of the present interfaces identifies itself as adb.'
+        Write-Note 'USB debugging may be off on the tablet, or it is in a config without an adb function.'
+    } elseif ($AdbNode.AdbDriverOk) {
+        Write-OK 'The Android ADB driver is already bound to it -- `adb devices` should list the tablet.'
+        Write-Note 'If it does not, the tablet is probably waiting for you to accept the RSA key prompt.'
+    } elseif ($AdbNode.Provider -match 'libwdi') {
+        Write-Warn 'That interface is bound to a Zadig-installed WinUSB driver.'
+        Write-Note 'Zadig is only for the Loader (2207 320A). Pointed at the Android-mode device it'
+        Write-Note 'leaves exactly this state: the tablet works "properly" in Device Manager and adb'
+        Write-Note 'is blind, because generic WinUSB never registers the ADB interface GUID.'
+        Write-Note 'The install below replaces that binding, which is the fix.'
     }
 } else {
-    Write-Warn 'Device not currently enumerated. Plug it in before doing the Device Manager install.'
+    Write-Warn 'Device not currently enumerated. Plug it in and re-run: without the tablet attached'
+    Write-Warn 'this script cannot add the hardware ID your unit actually reports, and Have Disk may'
+    Write-Warn 'still refuse the INF.'
 }
 
 # ---------------------------------------------------------------------------
@@ -209,18 +251,19 @@ if (-not $IsAdmin) {
     Write-Host ''
 }
 
-$isComposite = ($script:LivePid -in $CompositeAdbPids)
-$modelName = if ($isComposite) { 'Android Composite ADB Interface' } else { 'Android ADB Interface' }
+$modelName = if ($AdbNode -and $AdbNode.Mi) { 'Android Composite ADB Interface' } else { 'Android ADB Interface' }
 
 Write-Host '  Steps:' -ForegroundColor White
 Write-Host '    1. Open Device Manager (devmgmt.msc).'
-if ($isComposite) {
-    Write-Host '    2. Find the ADB function of the tablet. On a composite (MTP+ADB) unit it shows as'
-    Write-Host '       "ADB Interface" under "Universal Serial Bus devices" (or "H7R" if Zadig bound it).'
-    Write-Host '       Check Properties > Details > Hardware Ids and confirm it ends in &MI_01 --'
-    Write-Host '       &MI_00 is the MTP function and binding the driver there will not give you adb.'
+if ($AdbNode) {
+    Write-Host "    2. Find this exact node -- it is the adb function, and the only one that matters:"
+    Write-Host "         $($AdbNode.Name)" -ForegroundColor Cyan
+    Write-Host "         $($AdbNode.InstanceId)" -ForegroundColor Cyan
+    Write-Host '       (Properties > Details > Hardware Ids to confirm you are on the right one.'
+    Write-Host '       Binding the driver to the other interface will not give you adb.)'
 } else {
-    Write-Host '    2. Find "H7R" under "Universal Serial Bus devices" (currently bound to WinUSB by Zadig).'
+    Write-Host '    2. Find the tablet''s ADB interface under "Universal Serial Bus devices"'
+    Write-Host '       (named "ADB Interface", or "H7R" if Zadig has bound it).'
 }
 Write-Host '    3. Right-click -> Update driver.'
 Write-Host '    4. "Browse my computer for drivers".'
@@ -230,10 +273,13 @@ Write-Host "    7. Pick `"$modelName`"."
 Write-Host '    8. Windows will warn the driver is not signed - click "Install this driver software anyway".'
 Write-Host '    9. After install completes, run: adb devices'
 Write-Host ''
-Write-Host '  If step 6 says "The folder you specified doesn''t contain a compatible software driver",'
-Write-Host '  the INF has no line for this PID. Rockchip''s own signed ADB driver ships in this repo and'
-Write-Host '  covers the same PIDs -- point Have Disk at it instead:' -ForegroundColor White
-Write-Host "    $(Join-Path $ToolsDir 'rockchip-stock\DriverAssitant_v5.0\DriverAssitant_v5.0\ADBDriver\android_winusb.inf')" -ForegroundColor Cyan
+Write-Host '  If step 6 still says "The folder you specified doesn''t contain a compatible software'
+Write-Host '  driver", the INF has no line matching that node. Two ways out:' -ForegroundColor White
+Write-Host '    a. Re-run this script WITH the tablet plugged in -- it adds the hardware ID your unit'
+Write-Host '       reports, which is the whole point of the live check above.'
+Write-Host '    b. Force it: go back, UNCHECK "Show compatible hardware", then Have Disk. Windows then'
+Write-Host "       lists every model in the INF and lets you pick `"$modelName`" anyway"
+Write-Host '       (accept the "not recommended" warning). Works regardless of hardware ID.'
 Write-Host ''
 Write-Host '  Expected result: an entry like'
 Write-Host '    2022010502079   device' -ForegroundColor Green
