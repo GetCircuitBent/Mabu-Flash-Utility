@@ -1,17 +1,17 @@
 ﻿# install-android-driver.ps1
 #
 # Sets up the Google Android USB driver to recognize the Mabu's
-# rockchip-VID device (VID 0x2207 / PID 0x0006) as an Android ADB
-# device. After this runs and the driver is installed via Device
-# Manager, `adb devices` will see the tablet.
+# rockchip-VID device (VID 0x2207) as an Android ADB device. After this
+# runs and the driver is installed via Device Manager, `adb devices`
+# will see the tablet.
 #
 # What this does:
 #   1. Downloads usb_driver_r13-windows.zip from dl.google.com
 #      (hash-pinned: 360b01d3dfb6c41621a3a64ae570dfac2c9a40cca1b5a1f136ae90d02f5e9e0b)
 #   2. Extracts to tools\google-usb-driver\ (gitignored).
-#   3. Patches android_winusb.inf to add VID_2207&PID_0006 to both the
-#      x86 and amd64 sections. Removes the catalog signature reference
-#      since editing the INF invalidates it.
+#   3. Patches android_winusb.inf to add every VID_2207 ADB PID the Mabu
+#      can enumerate under, to both the x86 and amd64 sections. Removes
+#      the catalog signature reference since editing the INF invalidates it.
 #   4. Prints exact Device Manager click-through to install.
 #
 # What this does NOT do:
@@ -34,7 +34,20 @@ $DriverUrl    = 'https://dl.google.com/android/repository/usb_driver_r13-windows
 $DriverSha256 = '360b01d3dfb6c41621a3a64ae570dfac2c9a40cca1b5a1f136ae90d02f5e9e0b'
 
 $TargetVid = '2207'
-$TargetPid = '0006'
+
+# The Mabu does not always come up on the same PID -- it depends on which USB
+# gadget config Android brings up:
+#   0006              single ADB function      (liberated / Esper main image)
+#   0010..0015 &MI_01  MTP+ADB composite, ADB is interface 1
+#                      (stock / recovery -- an H7R off the shelf reports 0011)
+# Patching only 0006 is why a composite unit dead-ends in Device Manager with
+# "The folder you specified doesn't contain a compatible software driver for
+# your device": the INF has no line matching USB\VID_2207&PID_0011&MI_01, so
+# Have Disk rejects it. Cover the whole range -- the same list Rockchip's own
+# DriverAssistant INF ships (tools\rockchip-stock\...\ADBDriver).
+$SingleAdbPids    = @('0006')
+$CompositeAdbPids = @('0010','0011','0012','0013','0014','0015')
+$AllAdbPids       = $SingleAdbPids + $CompositeAdbPids
 
 function Write-Step($m) { Write-Host "`n=== $m ===" -ForegroundColor Cyan }
 function Write-OK($m)   { Write-Host "  [OK]   $m" -ForegroundColor Green }
@@ -88,21 +101,22 @@ Write-OK "Extracted to $DriverDir"
 # ---------------------------------------------------------------------------
 # 3. Patch the INF
 # ---------------------------------------------------------------------------
-Write-Step "Patch android_winusb.inf for VID_${TargetVid}&PID_${TargetPid}"
+Write-Step "Patch android_winusb.inf for VID_${TargetVid} ADB PIDs"
 
 $infPath = Join-Path $DriverDir 'android_winusb.inf'
 if (-not (Test-Path $infPath)) { throw "android_winusb.inf not found at $infPath" }
 
 $content = Get-Content -Path $infPath -Raw
 
-$marker = "Mabu (VID_${TargetVid}&PID_${TargetPid})"
-$patch = @"
-
-;$marker - added by scripts\install-android-driver.ps1
-%SingleAdbInterface%        = USB_Install, USB\VID_${TargetVid}&PID_${TargetPid}
-%CompositeAdbInterface%     = USB_Install, USB\VID_${TargetVid}&PID_${TargetPid}&MI_01
-
-"@
+$marker = "Mabu (VID_${TargetVid} ADB PIDs)"
+$lines = @(";$marker - added by scripts\install-android-driver.ps1")
+foreach ($p in $SingleAdbPids) {
+    $lines += "%SingleAdbInterface%        = USB_Install, USB\VID_${TargetVid}&PID_${p}"
+}
+foreach ($p in $CompositeAdbPids) {
+    $lines += "%CompositeAdbInterface%     = USB_Install, USB\VID_${TargetVid}&PID_${p}&MI_01"
+}
+$patch = "`r`n" + ($lines -join "`r`n") + "`r`n"
 
 if ($content -match [regex]::Escape($marker)) {
     Write-OK 'INF already contains the Mabu entry.'
@@ -140,19 +154,33 @@ Get-ChildItem -Path $DriverDir -Filter '*.cat' -ErrorAction SilentlyContinue | F
 Write-Step 'Verify'
 
 $final = Get-Content -Path $infPath -Raw
-$mabuMatches = ([regex]::Matches($final, [regex]::Escape("VID_${TargetVid}&PID_${TargetPid}"))).Count
-if ($mabuMatches -lt 2) {
-    Write-Warn "Expected at least 2 occurrences of VID_${TargetVid}&PID_${TargetPid} (one per section), found $mabuMatches."
+$missing = @()
+foreach ($p in $AllAdbPids) {
+    # Two sections (x86 + amd64), so each PID must appear at least twice.
+    if (([regex]::Matches($final, [regex]::Escape("VID_${TargetVid}&PID_${p}"))).Count -lt 2) { $missing += $p }
+}
+if ($missing.Count) {
+    Write-Warn "These PIDs are missing from one or both sections: $($missing -join ', ')"
 } else {
-    Write-OK "INF references VID_${TargetVid}&PID_${TargetPid} $mabuMatches times (one per section, plus any &MI_xx variants)."
+    Write-OK "INF covers all $($AllAdbPids.Count) Mabu ADB PIDs ($($AllAdbPids -join ', ')) in both sections."
 }
 
-# Check current device state
-$dev = Get-PnpDevice -PresentOnly | Where-Object { $_.InstanceId -match "VID_${TargetVid}&PID_${TargetPid}" }
-if ($dev) {
-    Write-OK "Device present: $($dev.FriendlyName) [$($dev.InstanceId)]"
-    $svc = (Get-PnpDeviceProperty -InstanceId $dev.InstanceId -KeyName 'DEVPKEY_Device_Service' -ErrorAction SilentlyContinue).Data
-    Write-Note "Currently bound to driver service: $svc (will be replaced when you install the patched driver)"
+# Check current device state. Match the PID the tablet is actually showing, not a
+# hardcoded one -- which of these it is decides which model to pick at step 7.
+$pidAlt = ($AllAdbPids -join '|')
+$devs = @(Get-PnpDevice -PresentOnly | Where-Object { $_.InstanceId -match "VID_${TargetVid}&PID_($pidAlt)" })
+$script:LivePid = $null
+if ($devs.Count) {
+    foreach ($d in $devs) {
+        Write-OK "Device present: $($d.FriendlyName) [$($d.InstanceId)]"
+        $svc = (Get-PnpDeviceProperty -InstanceId $d.InstanceId -KeyName 'DEVPKEY_Device_Service' -ErrorAction SilentlyContinue).Data
+        Write-Note "Currently bound to driver service: $svc (will be replaced when you install the patched driver)"
+        if ($d.InstanceId -match "VID_${TargetVid}&PID_([0-9A-Fa-f]{4})") { $script:LivePid = $Matches[1].ToLower() }
+    }
+    if ($script:LivePid -in $CompositeAdbPids) {
+        Write-Note "PID $($script:LivePid) is the MTP+ADB composite config: bind the driver to the interface"
+        Write-Note '  whose hardware ID ends in &MI_01 (the one named "ADB Interface"), not &MI_00 ("MTP").'
+    }
 } else {
     Write-Warn 'Device not currently enumerated. Plug it in before doing the Device Manager install.'
 }
@@ -181,16 +209,31 @@ if (-not $IsAdmin) {
     Write-Host ''
 }
 
+$isComposite = ($script:LivePid -in $CompositeAdbPids)
+$modelName = if ($isComposite) { 'Android Composite ADB Interface' } else { 'Android ADB Interface' }
+
 Write-Host '  Steps:' -ForegroundColor White
 Write-Host '    1. Open Device Manager (devmgmt.msc).'
-Write-Host '    2. Find "H7R" under "Universal Serial Bus devices" (currently bound to WinUSB by Zadig).'
+if ($isComposite) {
+    Write-Host '    2. Find the ADB function of the tablet. On a composite (MTP+ADB) unit it shows as'
+    Write-Host '       "ADB Interface" under "Universal Serial Bus devices" (or "H7R" if Zadig bound it).'
+    Write-Host '       Check Properties > Details > Hardware Ids and confirm it ends in &MI_01 --'
+    Write-Host '       &MI_00 is the MTP function and binding the driver there will not give you adb.'
+} else {
+    Write-Host '    2. Find "H7R" under "Universal Serial Bus devices" (currently bound to WinUSB by Zadig).'
+}
 Write-Host '    3. Right-click -> Update driver.'
 Write-Host '    4. "Browse my computer for drivers".'
 Write-Host '    5. "Let me pick from a list of available drivers on my computer".'
 Write-Host '    6. Click "Have Disk..." -> Browse -> select android_winusb.inf in the path above.'
-Write-Host '    7. Pick "Android ADB Interface".'
+Write-Host "    7. Pick `"$modelName`"."
 Write-Host '    8. Windows will warn the driver is not signed - click "Install this driver software anyway".'
 Write-Host '    9. After install completes, run: adb devices'
+Write-Host ''
+Write-Host '  If step 6 says "The folder you specified doesn''t contain a compatible software driver",'
+Write-Host '  the INF has no line for this PID. Rockchip''s own signed ADB driver ships in this repo and'
+Write-Host '  covers the same PIDs -- point Have Disk at it instead:' -ForegroundColor White
+Write-Host "    $(Join-Path $ToolsDir 'rockchip-stock\DriverAssitant_v5.0\DriverAssitant_v5.0\ADBDriver\android_winusb.inf')" -ForegroundColor Cyan
 Write-Host ''
 Write-Host '  Expected result: an entry like'
 Write-Host '    2022010502079   device' -ForegroundColor Green
