@@ -667,16 +667,40 @@ if (Test-Loader) {
                 Fail "$($m.Name)  [$($m.InstanceId)]"
                 Fail "  -> $($m.Reason)."
             }
-            Die 'The tablet IS on the bus -- adb just cannot see it. This is not a power-cycle problem.' `
-                'That binding is what Zadig leaves behind when it is pointed at the tablet while' `
-                'the tablet is booted into Android. Zadig is only ever for the Loader' `
-                '(USB ID 2207 320A), never for the Android-mode device. To undo it:' `
-                '  1. Device Manager -> right-click the node named above -> Uninstall device' `
-                '  2. tick "Delete the driver software for this device" -> Uninstall' `
-                '  3. unplug and replug the USB harness' `
-                '  4. .\scripts\install-android-driver.ps1   (installs the real Android ADB driver)' `
-                'Then re-run this script.'
+            # Repair it here rather than sending the operator to Device Manager.
+            # The "Android ADB driver" is WinUSB plus one registry value, and these
+            # nodes are already on WinUSB (that is what Zadig left behind), so the
+            # value is all that is missing -- no INF, no unsigned-driver prompt.
+            Section 'Repairing the adb binding'
+            $repaired = $false
+            foreach ($m in ($mis | Where-Object { $_.Role -eq 'adb' })) {
+                if (Repair-MabuAdbBinding -Node $m) { $repaired = $true }
+            }
+            if ($repaired) {
+                # The running adb server enumerated before the device restarted;
+                # make it re-scan rather than trust its cached (empty) list.
+                $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+                & $ADB kill-server 2>&1 | Out-Null
+                $ErrorActionPreference = $eap
+                Info 'Re-probing for an adb device...'
+                $dev = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 60
+                if ($dev) { Ok "adb is up at $dev -- repair worked. Continuing." }
+            }
+            if (-not $dev) {
+                Die 'The tablet IS on the bus -- adb still cannot see it after the repair attempt.' `
+                    'That binding is what Zadig leaves behind when it is pointed at the tablet while' `
+                    'the tablet is booted into Android. Zadig is only ever for the Loader' `
+                    '(USB ID 2207 320A), never for the Android-mode device. To undo it by hand:' `
+                    '  1. Device Manager -> right-click the node named above -> Uninstall device' `
+                    '  2. tick "Delete the driver software for this device" -> Uninstall' `
+                    '  3. unplug and replug the USB harness' `
+                    '  4. .\scripts\install-android-driver.ps1   (installs the real Android ADB driver)' `
+                    'Also check the tablet screen: an unaccepted RSA key prompt looks identical from here.' `
+                    'Then re-run this script.'
+            }
         }
+    }
+    if (-not $dev) {
         Die 'No adb device and no Loader, including after an automatic USB re-enumeration.' `
             'Power-cycle the tablet (hold ADKEY through power-on) to catch Loader, then re-run.' `
             'If the PC never sees the device at all, run the read-only USB diagnostic:' `
