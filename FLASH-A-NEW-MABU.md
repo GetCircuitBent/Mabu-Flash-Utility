@@ -55,6 +55,7 @@ One command handles the full unit.
 | `-WipeData` | Force `/data` wipe regardless of detected state |
 | `-NoWipe` | Force patch-only (skip wipe) regardless of detected state |
 | `-SkipApps` | Loader patches only: no app install, no SELinux fix, no self-test |
+| `-SkipMabu` | Skip only the Mabu factory mode APK and its assets; F-Droid and Lawnchair still install |
 | `-SkipSELinux` | Skip the SELinux policy fix phase |
 | `-PurgeUsb` | Up front, release USB and drop stale `VID_2207` PnP entries so Windows re-enumerates clean. Not needed normally; the flash runs this by itself if it finds neither a Loader nor an ADB device. Note it drops any Loader session already caught. |
 | `-WifiIp <ip>` | Wi-Fi hint for first ADB connect attempt (auto-discovered at runtime) |
@@ -65,8 +66,8 @@ One command handles the full unit.
 3. **Wipe `/data` head** (96 MB) if State A or forced *(skipped for B / Liberated)*
 4. **Reset** to Android
 5. **Install apps**: F-Droid, Lawnchair (set as home)
-6. **Mabu factory mode + assets**: install `com.catalia.factorymode` APK + push animation/voice assets
-7. **SELinux fix**: on-device `magiskpolicy` patch → Loader write to `0x5A8AB8` *(skippable with `-SkipSELinux`)*
+6. **Mabu factory mode + assets**: install `com.catalia.factorymode` APK + push animation/voice assets *(default; skip with `-SkipMabu`)*
+7. **SELinux fix**: on-device `magiskpolicy` patch → Loader write to `0x5A8AB8`. If the patched policy changes size, it falls back automatically to a full `/vendor` reflash via WSL *(skippable with `-SkipSELinux`)*
 8. **Self-test**: 12 checks: liberation, apps, SELinux policy SHA, AVC denial check, Wi-Fi ADB
 
 ---

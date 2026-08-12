@@ -58,6 +58,7 @@ param(
     [switch] $NoWipe,            # FORCE patch-only (skip the wipe) regardless of detected state
     [int]    $WipeMB = 96,       # 96 MB matches v3 procedure (preserves Dev Options on this build)
     [switch] $SkipApps,          # only do Loader-side patches; no F-Droid/Lawnchair/factorymode
+    [switch] $SkipMabu,          # skip ONLY the Mabu factory mode APK + assets; F-Droid/Lawnchair still install
     [switch] $SkipSELinux,       # skip the SELinux policy fix (already applied, or not needed)
     [switch] $PurgeUsb,          # up front, release USB + drop stale VID_2207 PnP entries so Windows re-enumerates clean.
                                  # Not needed for a normal flash; the recovery paths below run the same purge on their own
@@ -1285,7 +1286,10 @@ else {
 Ok 'Lawnchair set as default launcher.'
 
 # --- Phase 6: Mabu factory mode + assets ---
-if (-not $SkipApps) {
+# -SkipMabu drops just this phase and leaves F-Droid/Lawnchair alone, which
+# -SkipApps cannot do (it skips the whole userspace install). Ported from the
+# gui-executable flasher so both editions take the same flags.
+if (-not $SkipApps -and -not $SkipMabu) {
     Section 'Installing Mabu factory mode + assets'
     $installed = (& $ADB -s $dev shell 'pm list packages | grep -i catalia') 2>&1
     if ($installed -match 'com.catalia.factorymode') {
