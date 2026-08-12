@@ -350,7 +350,30 @@ if ($loaderPresent -and -not $loaderWinUsb) {
     Note '  (power tablet off, run latch-loader.ps1, power on) to test the WinUSB binding.'
 }
 
-if (-not $adbInfs -or ($androidPresent -and -not $androidAdbDrv)) {
+# Before the generic "no ADB binding" verdict: check for the specific, much more
+# confusing version of it -- the adb interface present and reported as working
+# properly, but bound to a driver that adb cannot see through. That is what Zadig
+# leaves behind when it is aimed at the tablet in Android mode instead of at the
+# Loader, and it looks like a healthy device from every angle except adb's.
+$misbound = @()
+try {
+    . (Join-Path $PSScriptRoot 'lib\MabuTools.ps1')
+    $misbound = @(Get-MabuMisboundAdbNode -Vid $VID)
+} catch {
+    Note "Could not run the driver-misbinding check: $($_.Exception.Message)"
+}
+if ($misbound.Count) {
+    Bad 'ZADIG MISBINDING CONFIRMED: the tablet is on the bus but adb cannot see it.'
+    foreach ($m in $misbound) {
+        Write-Host "         $($m.Name)  [$($m.InstanceId)]" -ForegroundColor White
+        Write-Host "           $($m.Reason)" -ForegroundColor White
+        Write-Host "           service='$($m.Service)'  provider='$($m.Provider)'" -ForegroundColor White
+    }
+    Write-Host '         Fix: Device Manager -> right-click that node -> Uninstall device,' -ForegroundColor White
+    Write-Host '              tick "Delete the driver software for this device", unplug/replug,' -ForegroundColor White
+    Write-Host '              then run scripts\install-android-driver.ps1.' -ForegroundColor White
+    Write-Host '         Zadig is ONLY ever for the Loader (2207 320A), never for 2207 0006/0010-0015.' -ForegroundColor White
+} elseif (-not $adbInfs -or ($androidPresent -and -not $androidAdbDrv)) {
     Bad 'THEORY 2 LIKELY: no working android_winusb ADB binding for PID 0006/0011.'
     Write-Host '         Fix: install the Google USB driver (android_winusb.inf) via Device Manager' -ForegroundColor White
     Write-Host '              Have Disk, or winget install Google.PlatformTools + OEM driver.' -ForegroundColor White

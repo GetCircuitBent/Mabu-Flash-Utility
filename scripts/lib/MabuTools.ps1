@@ -277,3 +277,103 @@ function Install-MabuZadig {
     }
     return $null
 }
+
+# ---------------------------------------------------------------------------
+# Android-mode USB nodes (adb) and the Zadig misbinding
+# ---------------------------------------------------------------------------
+# PIDs the tablet enumerates on once Android is up. 0006 is the single-function
+# ADB config; 0010-0015 are the composite configs where ADB is one interface of
+# a multi-function gadget.
+$script:MabuAndroidPids = @('0006','0010','0011','0012','0013','0014','0015')
+
+# ClassGuid of AndroidUsbDeviceClass -- the class both Google's android_winusb.inf
+# and Rockchip's DriverAssistant INF install into. adb.exe finds tablets by the
+# ADB device-interface GUID that those INFs register; a node in any other class
+# (notably "USBDevice", where a generic Zadig/WinUSB binding lands) is invisible
+# to adb no matter how healthy Device Manager says it is.
+$script:MabuAndroidClassGuid = '{3f966bd9-fa04-4ec5-991c-d326973b5128}'
+
+function Get-MabuAndroidUsbNode {
+    # Every present VID_2207 node that is an Android-mode config, annotated with
+    # what is bound to it. Returns @() when the tablet is absent or in Loader.
+    param([string] $Vid = '2207')
+    $alt = ($script:MabuAndroidPids -join '|')
+    $out = @()
+    foreach ($d in @(Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
+                     # NB: the doubled backslash is required. PowerShell's double-quoted
+                     # strings do not treat \ as an escape, so "USB\VID_" reaches the regex
+                     # engine as the invalid escape \V and -match throws -- which
+                     # Where-Object swallows as "no matches", i.e. a silent zero.
+                     Where-Object { $_.InstanceId -match "USB\\VID_$Vid&PID_($alt)" })) {
+        $prop = {
+            param($k)
+            (Get-PnpDeviceProperty -InstanceId $d.InstanceId -KeyName $k -ErrorAction SilentlyContinue).Data
+        }
+        # The interface's own USB string descriptor. This is what actually says
+        # which function is adb -- and it is NOT a fixed interface number: an H7R
+        # reports adb on &MI_00 and MTP on &MI_01, the reverse of the &MI_01
+        # ordering Rockchip's own INF hardcodes. Never assume; read it.
+        $bus     = & $prop 'DEVPKEY_Device_BusReportedDeviceDesc'
+        $mi      = if ($d.InstanceId -match '&MI_([0-9A-Fa-f]{2})') { $Matches[1] } else { $null }
+        $pidHex  = if ($d.InstanceId -match 'PID_([0-9A-Fa-f]{4})') { $Matches[1].ToLower() } else { $null }
+        $cls     = "$($d.ClassGuid)".ToLower()
+        $svc     = "$(& $prop 'DEVPKEY_Device_Service')".Trim()
+
+        # Three kinds of node turn up under these PIDs, and conflating them is how
+        # you get a false alarm:
+        #   'adb'    the adb function itself -- either the whole device (0006, the
+        #            single-function config) or the interface whose descriptor says adb
+        #   'parent' the composite parent of 0010-0015. It has no &MI_ and is SUPPOSED
+        #            to be on usbccgp; that is what creates the child interfaces
+        #   'other'  the other functions of the composite (MTP, and friends)
+        $role = if (-not $mi) {
+            if ($pidHex -eq '0006') { 'adb' } else { 'parent' }
+        } elseif ("$bus $($d.FriendlyName)" -match 'adb') { 'adb' } else { 'other' }
+
+        $out += [pscustomobject]@{
+            InstanceId  = $d.InstanceId
+            Pid         = $pidHex
+            Mi          = $mi
+            Role        = $role
+            Name        = if ($d.FriendlyName) { $d.FriendlyName } else { $bus }
+            BusName     = $bus
+            Service     = $svc
+            Provider    = "$(& $prop 'DEVPKEY_Device_DriverProvider')".Trim()
+            HardwareIds = @(& $prop 'DEVPKEY_Device_HardwareIds')
+            ClassGuid   = $cls
+            # The one test that matters for adb: is the Android ADB driver bound?
+            # Not "is it WinUSB" -- android_winusb.inf is itself a WinUSB driver, so
+            # the service name cannot tell the right binding from Zadig's generic one.
+            # The class can.
+            AdbDriverOk = ($cls -eq $script:MabuAndroidClassGuid)
+            # A composite parent must stay on usbccgp. If Zadig replaced the PARENT
+            # (which our own instructions invite by saying to untick "Ignore Hubs or
+            # Composite Parents"), the child interfaces are never created at all --
+            # no ADB node, no MTP node, just one dead WinUSB device.
+            ParentOk    = ($role -ne 'parent') -or ($svc -match 'usbccgp')
+        }
+    }
+    return $out
+}
+
+function Get-MabuMisboundAdbNode {
+    # Nodes that explain an empty `adb devices` while the tablet sits there looking
+    # perfectly healthy in Device Manager. Overwhelmingly this is Zadig, run against
+    # the tablet while it was booted into Android instead of sitting in Loader:
+    # generic WinUSB does not register the ADB device-interface GUID, so adb.exe
+    # cannot see the device and no amount of re-plugging changes that.
+    # Each result carries a Reason for the caller to print.
+    param([string] $Vid = '2207')
+    $bad = @()
+    foreach ($n in (Get-MabuAndroidUsbNode -Vid $Vid)) {
+        if ($n.Role -eq 'adb' -and -not $n.AdbDriverOk) {
+            $who = if ($n.Provider -match 'libwdi') { 'Zadig' } else { "'$($n.Provider)'" }
+            $bad += ($n | Add-Member -PassThru -NotePropertyName Reason -NotePropertyValue (
+                "the adb interface is bound to $who's '$($n.Service)' driver instead of the Android ADB driver"))
+        } elseif ($n.Role -eq 'parent' -and -not $n.ParentOk) {
+            $bad += ($n | Add-Member -PassThru -NotePropertyName Reason -NotePropertyValue (
+                "the USB composite parent is bound to '$($n.Service)' instead of usbccgp, so no adb interface is created at all"))
+        }
+    }
+    return $bad
+}
