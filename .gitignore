@@ -26,3 +26,6 @@ tools/google-usb-driver/
 
 # Release build output (app\build\make-payload.ps1, app\bootstrap\build-bootstrap.ps1)
 /dist/
+
+# Local scratch: git worktrees and agent state, never repo content
+/.claude/
