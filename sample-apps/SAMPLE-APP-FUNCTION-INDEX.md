@@ -88,3 +88,191 @@ enough to teach them yet.
 | LEDs, screen brightness, GPIO | The `gpio_control` interface is Catalia-custom and root-only. No sample can use it on a stock freed unit. |
 | Anything requiring root | Root is a separate, still-in-progress track. Samples target a normally flashed unit. |
 | NDI, RTP-MIDI, on-device LLM, WebRTC voice | All working in other projects, none of it basic. These belong in their own showcase, not a first sample. |
+
+## Getting Started
+
+Everything you need to get a sample app off your PC and onto a Mabu, plus the
+handful of rules that keep the unit recoverable. This covers rows 20, 22 and 23,
+and the parts of row 21 you cannot avoid. Read the [safety rules](#safety-rules)
+before your first run; two of them can leave a unit unreachable.
+
+### Before You Start
+
+You need a unit that has already been through the
+[Mabu Flash Utility](../README.md). A stock, Esper-locked Mabu will not accept
+an app install and its ADB is suppressed. Flash first, then come back here.
+
+You also need the Mabu and your PC **on the same Wi-Fi network**, with client
+isolation off. Wi-Fi ADB on port 5555 is the only way onto the device once it is
+buttoned up: there is no external USB port, and the programming harness only
+plugs into an internal header.
+
+### Step 1: Connect over Wi-Fi ADB
+
+Find the tablet's IP address. In order of least effort:
+
+1. The flasher prints it in the self-check summary at the end of a flash.
+2. Your router's DHCP client table.
+3. Scan the subnet: `nmap -p 5555 192.168.0.0/24` (adjust to your subnet).
+
+Then connect:
+
+```powershell
+adb connect 192.168.0.180:5555
+adb devices
+```
+
+A flashed unit's ADB is **already authorized**: the liberation patches remove
+the authorization requirement from `adbd`, so there is no "Allow USB debugging
+from this computer?" dialog to tap. If `adb devices` reports `unauthorized`
+anyway, the unit is not fully flashed. Re-run the flasher.
+
+**If nothing is listening on 5555.** The flasher sets
+`persist.adb.tcp.port 5555` so the listener survives reboots, but two things
+undo that: a `/data` wipe clears the property along with the Wi-Fi credentials,
+and the patched `adbd` does not auto-listen on every unit. Re-enable it over the
+USB harness:
+
+```powershell
+adb tcpip 5555
+adb shell setprop persist.adb.tcp.port 5555
+```
+
+**If the connection drops mid-session.** Common and harmless. The usual causes
+are the screen going to sleep or the robot physically moving and losing its
+signal. Reconnect, and expect to try more than once:
+
+```powershell
+adb disconnect 192.168.0.180:5555
+adb connect 192.168.0.180:5555
+```
+
+### Step 2: Set Up the Build Toolchain
+
+Install **JDK 17**, the **Android SDK** with platform 28 and build-tools 34, and
+**Gradle 8.4**. Android Studio bundles all three and is the easy path. A
+portable, no-admin layout works equally well:
+
+```
+C:\Users\<you>\Tools\jdk-17\
+C:\Users\<you>\Tools\android-sdk\
+C:\Users\<you>\Tools\gradle-8.4\
+```
+
+Point the build at the SDK by setting `sdk.dir` in each sample's
+`local.properties` (gitignored, so you create it once per clone).
+
+Every sample pins the same four values, and all four matter on this hardware:
+
+| Setting | Value | Why |
+|---|---|---|
+| `minSdk` | 24 | The Mabu is API 27. Anything higher than 27 will not install. |
+| `targetSdk` | 28 | Keeps you out of the API 29+ scoped-storage and background-camera restrictions, which the samples do not need and which break the camera path. |
+| `compileSdk` | 34 | Required by current AndroidX and ML Kit. Harmless at runtime. |
+| `abiFilters` | `["armeabi-v7a"]` | The RK3288 is 32-bit ARMv7 only. An arm64 native library will not load, and shipping both just bloats the APK. |
+
+### Step 3: Install and Launch
+
+Each sample ships an `install.ps1` that does the whole sequence. Run it:
+
+```powershell
+./scripts/install.ps1 -Ip 192.168.0.180 -Logcat
+```
+
+What it does, and what to do by hand if you would rather:
+
+```powershell
+# 1. Free the serial port. Only ONE process may hold /dev/ttyS1 at a time, and
+#    whatever is currently the home launcher may be holding it. See row 21.
+adb shell am force-stop com.example.otherapp
+
+# 2. Force-stop the sample itself BEFORE installing over it. `install -r` on a
+#    live process leaves the old code running, and `am start` then merely
+#    resumes it, so your new APK silently does not load.
+adb shell am force-stop com.example.sample
+
+# 3. Build and install.
+./gradlew.bat assembleDebug
+adb install -r -d app/build/outputs/apk/debug/app-debug.apk
+
+# 4. Pre-grant runtime permissions so the app does not have to prompt.
+#    Grant only what the sample declares.
+adb shell pm grant com.example.sample android.permission.CAMERA
+adb shell pm grant com.example.sample android.permission.RECORD_AUDIO
+adb shell pm grant com.example.sample android.permission.READ_EXTERNAL_STORAGE
+
+# 5. Launch.
+adb shell am start -n com.example.sample/.MainActivity
+```
+
+With more than one device connected, set `ANDROID_SERIAL` (for example
+`$env:ANDROID_SERIAL = '192.168.0.180:5555'`) so Gradle and ADB agree on which
+one they are talking to.
+
+### Step 4: Watch It Work
+
+```powershell
+# Tag-filtered logs. Every sample logs its serial link under MabuSerial.
+adb logcat -c
+adb logcat MabuSerial:* MabuSample:* AndroidRuntime:E '*:S'
+
+# Screenshot, for when you are not next to the robot.
+adb shell screencap -p /sdcard/shot.png
+adb pull /sdcard/shot.png
+```
+
+### Driving a Sample Headlessly
+
+Every sample registers a `BroadcastReceiver` so you can drive it from the PC
+without touching the screen. This is how you script demos, and how you test a
+change without walking over to the robot.
+
+```powershell
+adb shell "am broadcast -a com.example.sample.POSE -p com.example.sample --es pose neutral"
+adb shell "am broadcast -a com.example.sample.MOVE -p com.example.sample --es motor NR --ef value 80"
+adb shell "am broadcast -a com.example.sample.STOP -p com.example.sample"
+```
+
+**The `-p <package>` is not optional.** Android 8.0 and up drops implicit
+broadcasts to manifest-registered receivers. Without it the command reports
+success and nothing happens, which is a genuinely confusing way to lose an hour.
+
+Extras use typed flags: `--es` for a string, `--ei` for an int, `--ef` for a
+float, `--ez` for a boolean.
+
+### Safety Rules
+
+Five rules. The first two exist because breaking them has cost real units real
+downtime.
+
+1. **Never run `adb reboot`.** It has left units that came back up without
+   Wi-Fi, and with no external USB port and no physical buttons, that means no
+   way in short of opening the case and attaching the harness. If you genuinely
+   need a reboot, power-cycle the hardware physically.
+
+2. **One owner of `/dev/ttyS1` at a time.** In particular, do not open the
+   serial port from an adb shell while an app is holding it. `termios` settings
+   are shared across every file description on a character device, so a
+   `busybox stty` from your shell overwrites the baud rate the app configured.
+   The motors go silent and the only fix is to force-stop and restart the app.
+   Read logcat instead while an app is running.
+
+3. **Wake the board once per power cycle.** After a cold boot the motor board
+   ignores a single power-on frame. Send it five times at 200 ms intervals, wait
+   1 second, then send your first move, all on one open file descriptor. Row 3
+   covers this. It is not optional and it is not superstition.
+
+4. **Diagnose a dead board before rewriting code.** Gently push the head with a
+   finger. **Limp** means the motor board is unpowered, which is a wiring or
+   power fault and no amount of software will fix it. **Stiff** means the board
+   is powered and holding position, so the problem is in the protocol, the wake
+   sequence, or the port ownership. See the troubleshooting section of
+   [MABU_MOTOR_GUIDE.md](../guides/MABU_MOTOR_GUIDE.md) for reading telemetry to
+   tell the two stuck states apart, since they have different recovery paths.
+
+5. **Suspect the factory app on a fresh boot.** `com.catalia.factorymode` ships
+   with `RECEIVE_BOOT_COMPLETED` and references `/dev/ttyS1`. It is the leading
+   suspect for a board that is stiff and streaming a heartbeat but ignoring
+   every command right after boot. If that is what you are seeing, force-stop it
+   and redo the wake sequence before assuming your frames are wrong. Not yet
+   confirmed, but it costs nothing to rule out.
