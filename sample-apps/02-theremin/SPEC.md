@@ -46,6 +46,7 @@ Adds the audio and vision numbers to the hardware facts in the app 1 spec.
 | Camera API | Camera1 only. The HAL is a Camera1 shim; CameraX and Camera2 fail enumeration |
 | Camera delivery | **10 fps, hard ceiling.** It advertises 24 in `supportedPreviewFpsRange` and does not deliver it |
 | Frame format | NV21 (YCbCr 4:2:0) at 320x240 |
+| Camera location | **Chest tablet, static, angled up.** It does NOT move with the head. `MABU_MOTOR_GUIDE.md` said otherwise until this app corrected it; the `Y_OFFSET = -0.70` calibration is the giveaway, since it exists to shift the tracking centre up for a camera mounted below the eye axis |
 | Face detection | ML Kit bundled, about 35 ms per frame, measured |
 | Audio out | `AudioTrack`, 44.1 kHz mono 16-bit |
 | Play Services | None. ML Kit must be the bundled model, not the Play-Services-backed one |
@@ -77,51 +78,133 @@ with face detection because this app wants both. It would also push control
 latency past 200 ms. That is fine for a robot head and unplayable for a musical
 instrument.
 
-### What we do instead
+### What We Do Instead: Two Trackers, One Interface
 
-**Chroma-match blob tracking.** A theremin needs two continuous numbers, not
-twenty-one landmarks. Find the two largest regions matching a calibrated
-colour, excluding the face, take their positions, done.
+A theremin needs two continuous numbers, not twenty-one landmarks. So: find
+the two largest interesting regions that are not the face, take their
+positions, done.
 
-Note the framing: this is **not** a skin detector. The tracker has no built-in
-idea what skin looks like. It matches whatever chroma it was calibrated to, and
-by default it calibrates itself from the player. The reason for that is in
-[Skin Tone](#skin-tone-a-requirement-not-a-caveat) below, and it is the single
-most important design decision in this app.
+There are two good ways to decide what "interesting" means, they have opposite
+strengths, and **the app ships both behind a toggle**. That is the best
+structural idea in this sample, and it is worth more than either technique on
+its own.
 
-Three things make it cheap and, on this hardware, right:
+**The camera is static.** It sits in the chest tablet, angled up, and it does
+not move when the head turns. That single fact is what puts motion tracking
+back on the table: with a fixed camera, anything that changes between frames is
+a thing that moved in the room, not the camera moving past the room. On a
+head-mounted camera this whole option would be dead.
 
-1. **The camera already gives us YCbCr.** NV21 *is* YCbCr, and colour is most
-   separable from brightness in exactly that space. Converting NV21 to RGB in
-   order to match a colour would be doing work to make the problem harder.
-2. **The face is the calibration target.** Sample the mean Cb and Cr inside the
-   detected face box and centre the match window on that. The player's own
-   face, under the room's own lighting, sets the target for the player's own
-   hands.
-3. **We can subsample.** Every second pixel in each direction is 19,200 samples
-   instead of 76,800, which is a few milliseconds of work.
+#### The Structure
 
-Total: about 40 ms of the 100 ms budget for both detectors, with latency low
-enough to play.
+The two trackers differ in **exactly one function**: how they turn a frame into
+a binary mask of interesting pixels. Everything after that is shared.
 
-### Why Not Motion Instead
+```
+    Frame (NV21)
+         |
+         +--> MotionMask  (luminance changed?)     \
+         |                                          }--> mask
+         +--> ToneMask    (chroma matches target?)  /
+                                    |
+                     [ shared from here down ]
+                     exclude the face box
+                     extract connected blobs
+                     drop blobs below minimum size
+                     take the largest two
+                     associate with last frame, smooth
+                     assign left/right by X
+                                    |
+                              Hand positions
+```
 
-Motion energy and background subtraction are appealing here because they are
-completely colour-independent. Both are ruled out by this specific robot:
-**the camera is mounted on the head, and the head moves**, because it is
-tracking the player's face. A moving camera means frame differencing sees
-motion everywhere and a background model never stabilises.
+`HandTracker` is an interface with one method. `MotionMask` and `ToneMask`
+implement it. `BlobExtractor` does everything below the line and never knows
+which one produced the mask. Swapping techniques at runtime is a field
+assignment.
 
-Motion also fails a theremin on its own terms. A hand held still to sustain a
-note produces no motion and would vanish.
+This is the lesson: a tracker is an *interface*, and the technique is an
+implementation detail you should be able to change your mind about. Most
+computer-vision sample code welds the two together and is impossible to
+experiment with as a result.
 
-So appearance-based matching is the correct family here, and it is a direct
-consequence of the hardware rather than a preference. Worth a comment, because
-on a fixed camera the answer would be different.
+#### MotionMask (the default)
+
+A running-average background model on the luminance plane:
+
+```
+background = background * (1 - adaptRate) + frame * adaptRate
+mask = |frame - background| > threshold
+```
+
+| | |
+|---|---|
+| Cost | ~3 ms subsampled. The cheapest thing in the app |
+| Calibration | **None.** Works the moment the app opens |
+| Skin tone | **Irrelevant.** It only looks at luminance change |
+| Weakness | A hand held perfectly still dissolves into the background |
+| Weakness | Anything else moving is a candidate, and shadows count as motion |
+
+`adaptRate` is a slider, and it is the most instructive control in the app
+because it exposes a real tradeoff with no right answer: adapt fast and a held
+hand vanishes in a second; adapt slowly and you get ghosts trailing your last
+few positions. Playing with it teaches more about background modelling than a
+page of prose.
+
+The held-hand weakness is the honest reason this mode is "easier to demo, less
+accurate": waving works instantly, sustaining a note fights the algorithm.
+
+#### ToneMask (the accurate one)
+
+Match chroma against a calibrated target:
+
+```
+mask = |Cb - targetCb| < tolCb && |Cr - targetCr| < tolCr
+```
+
+| | |
+|---|---|
+| Cost | ~6 ms subsampled |
+| Calibration | Required. Tap a marker, or derive from the face |
+| Skin tone | See below. No fixed constants are shipped |
+| Strength | **A still hand stays tracked indefinitely** |
+| Strength | With a coloured glove or marker, very precise and very robust |
+| Weakness | Lighting shifts move the target; needs recalibration across rooms |
+
+**A brightly coloured glove or marker is the recommended way to use this
+mode.** A saturated colour that nothing else in the room shares gives a tight
+match window, no confusion with furniture, and reliable tracking of a
+motionless hand. It costs a prop and buys the accuracy that motion mode cannot
+give you.
+
+Since NV21 *is* YCbCr, matching chroma needs no colour conversion at all.
+Converting to RGB to compare colours would be doing extra work to make the
+problem harder.
+
+#### Which To Use
+
+| | Motion | Tone |
+|---|---|---|
+| Works instantly, no setup | Yes | No |
+| Tracks a motionless hand | No | Yes |
+| Unaffected by skin tone | Inherently | By design, see below |
+| Needs props for best results | No | A coloured glove |
+| Best for | Demos, gestural playing | Sustained notes, installations |
+
+**Motion is the default**, because a sample app should do something the second
+it opens, for anybody, with nothing in their hands. Tone is the upgrade you
+switch to when you want to hold a note.
+
+Budget either way: face detection (~35 ms) plus a tracker (3 to 6 ms) fits
+inside the 100 ms frame with room to spare.
 
 ### Skin Tone: A Requirement, Not a Caveat
 
-The textbook version of this technique uses fixed YCbCr bounds, usually
+Applies to `ToneMask` only. `MotionMask` reads the luminance *change* between
+frames and never looks at colour, so it is unaffected by skin tone. That is a
+large part of why it is the default.
+
+The textbook version of chroma tracking uses fixed YCbCr bounds, usually
 `77 <= Cb <= 127` and `133 <= Cr <= 173`. **Those constants are biased toward
 light skin, and this app does not use them.**
 
@@ -152,29 +235,43 @@ does not show up in testing unless you go looking.
 | **Marker mode.** Calibrate to a brightly coloured object instead of a hand | Costs zero extra code, because the tracker already just matches a calibrated chroma. A guaranteed path for any player in any lighting |
 | **Visible calibration readout**, e.g. `window: Cb 108 +/-14, Cr 148 +/-16, from face` | Makes a failure diagnosable instead of mysterious |
 
-**Acceptance gate.** Before this app ships, tracking must be validated across a
-range of skin tones, in a bright room and a dim one. If acquisition is
+**Acceptance gate.** Before this app ships, tone tracking must be validated
+across a range of skin tones, in a bright room and a dim one. If acquisition is
 materially worse for darker skin after face calibration, that is a bug to fix,
-not a limitation to document. The fallbacks, in order, are a wider default
-tolerance, manual calibration, and marker mode.
+not a limitation to document. The fallbacks, in order, are motion mode (which
+sidesteps the question entirely), a marker or glove, manual calibration, and a
+wider default tolerance.
 
 ### What It Costs
 
-Stated plainly, in the source, next to the code:
+Stated plainly, in the source, next to the code.
 
-- Sensitive to lighting. Strong colour casts move Cb and Cr; face calibration
-  absorbs most but not all of it.
-- Long sleeves help, bare arms confuse it. The largest matching region may be a
-  forearm rather than a hand.
+Both trackers:
+
 - No left/right identity except by screen position, so crossing your hands
   swaps them.
-- Anything matching the calibrated chroma is a candidate: wooden furniture and
-  cardboard are the usual offenders. Face-box exclusion and a minimum-size
-  threshold remove most of it.
+- Long sleeves help, bare arms confuse things. The largest region may be a
+  forearm rather than a hand.
+- Only the two largest blobs survive, so a third moving object can displace a
+  hand.
+
+Motion only:
+
+- A hand held still fades at a rate set by `adaptRate`. This is the mode's
+  defining limitation, not a bug to be fixed.
+- Shadows are motion. So is a curtain, a screen, or someone walking behind you.
+
+Tone only:
+
+- Lighting shifts move the target chroma; a room change means recalibrating.
+- Anything matching the calibrated colour is a candidate. With skin
+  calibration, wooden furniture and cardboard are the usual offenders; with a
+  saturated marker, almost nothing is.
 
 This is a worked example of reading the hardware and choosing the technique
-that fits it, rather than the technique that would be correct on a phone. That
-lesson, and the calibration decision above, are why this app is worth writing.
+that fits it, rather than the technique that would be correct on a phone. That,
+the two-implementations-one-interface structure, and the calibration decision
+above are why this app is worth writing.
 
 ## Layout
 
@@ -188,6 +285,7 @@ One Activity, one scrolling page, per the index conventions.
 |                                     (o) logo   |  <- watermark
 +------------------------------------------------+
 | Left hand  [ Volume      v ]   Right [ Pitch v ]|
+| TRACK  ( MOTION )  tone      [ calibrate ]      |
 | ARMED   master [====|=====]   hands: L+R       |
 +------------------------------------------------+
 | SAMPLE                                          |
@@ -196,10 +294,10 @@ One Activity, one scrolling page, per the index conventions.
 | [ ] also require a face                         |
 +------------------------------------------------+
 | TRACKING                                        |
-| skin window / blob min size / smoothing         |
+| adapt rate / threshold / blob min size / smooth |
 | face follow + blink (reused from Signboard)     |
 +------------------------------------------------+
-| PERF · HAL 10.0 fps · face 34 ms · blobs 6 ms   |
+| PERF · HAL 10.0 fps · face 34 ms · track 3 ms   |
 | · audio underruns 0                             |
 +------------------------------------------------+
 | ABOUT · safety rules · ADB command list         |
@@ -365,7 +463,10 @@ New in this app:
 |---|---|
 | `Camera1Source.kt` | 12. Camera1 wrapper, NV21 frames, dedicated thread, buffer pool |
 | `FaceDetector.kt` | 13. ML Kit bundled detector, FAST mode |
-| `ChromaBlobTracker.kt` | **26.** The star. Face-calibrated YCbCr match window with luminance-adaptive tolerance, blob extraction, frame-to-frame association, manual and marker calibration |
+| `HandTracker.kt` | **26.** The interface, one method: frame in, mask out. The whole point of the app's vision layer |
+| `MotionMask.kt` | **26.** Running-average background model on luminance. Default tracker, no calibration, tone-independent |
+| `ToneMask.kt` | **26.** Chroma match against a calibrated target, luminance-adaptive tolerance, face and marker calibration. Ships no colour constants |
+| `BlobExtractor.kt` | **26.** Shared: face exclusion, connected blobs, size filter, association, smoothing, left/right assignment |
 | `CameraOverlayView.kt` | 13, 26. Preview, face box, hand boxes, watermark |
 | `FaceFollow.kt` | 14. Face centre to motor targets |
 | `AudioEngine.kt` | 18, 27. AudioTrack thread, block loop, parameter ramps, gate |
@@ -397,9 +498,11 @@ has already done it once.
 1. **Core transplant.** Copy app 1's motor files, confirm the robot still moves.
 2. **Camera and face.** Rows 12 and 13, with the overlay. Verify the 10 fps
    ceiling and the inference time on hardware rather than trusting this spec.
-3. **Blob tracker.** Row 26. Needs hardware and several people; tolerances and
-   minimum blob size cannot be tuned from a desk, and the skin-tone acceptance
-   gate is part of this step, not a later check.
+3. **Hand tracking.** Row 26. `HandTracker` plus `BlobExtractor` first, then
+   `MotionMask` (which needs no calibration and so proves the pipeline), then
+   `ToneMask`. Needs hardware and several people; tolerances and minimum blob
+   size cannot be tuned from a desk, and the skin-tone acceptance gate on tone
+   mode is part of this step, not a later check.
 4. **Audio engine.** Rows 18 and 27, driven by on-screen sliders first, so the
    synth can be proven before hands are in the loop.
 5. **Join them.** Hands to mapping to audio, plus the gate.
@@ -414,8 +517,12 @@ session, not a test.
 
 - **The sample file.** Supplied by the operator. A generated placeholder ships
   until then.
-- **Blob tolerances.** Every default in `ChromaBlobTracker` is a starting guess
-  until step 3.
+- **Tracker tolerances.** Every default in `MotionMask` and `ToneMask` is a
+  starting guess until step 3.
+- **Does the robot's own body appear in frame?** The chest camera points up, so
+  Mabu's chin may occupy the top of the image and would read as a static
+  region (harmless for motion, a possible false blob for tone). If so, a fixed
+  exclusion rectangle at the top, measured once on hardware.
 - **Skin-tone validation.** Tracking must be exercised across a range of skin
   tones, bright and dim, before the app is called done. Needs several people
   and cannot be faked from a desk. See the acceptance gate above.

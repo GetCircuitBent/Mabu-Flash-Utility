@@ -584,7 +584,11 @@ current deployed value.
   eye range compared to the old 20.0 floor while keeping enough buffer from the stop.
 
 **Y_OFFSET asymmetry, UD neck trigger fix:**
-The camera is fixed to Mabu's head at a steep upward angle, requiring `Y_OFFSET = -0.70` to
+The camera is in the chest tablet, static, at a steep upward angle. It does **not** move with
+the head. (Corrected 2026-08-13: this section previously said the camera was head-mounted,
+which is wrong and matters for any vision technique that assumes a fixed or a moving camera.
+The `Y_OFFSET = -0.70` below is itself the evidence: it exists to shift the tracking centre up
+for a camera mounted *below* the eye axis.) The upward angle requires `Y_OFFSET = -0.70` to
 correct the tracking center. This creates a permanent asymmetry in the UD axis:
 - **Upward** (face high in frame): effective effort `ay = yNorm - 0.70` can reach −1.0+, giving
   full effort and cleanly triggering the neck at the shared `EYE_NECK_TRIGGER = 0.60`.
