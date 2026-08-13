@@ -90,7 +90,8 @@ structural idea in this sample, and it is worth more than either technique on
 its own.
 
 **The camera is static.** It sits in the chest tablet, angled up, and it does
-not move when the head turns. That single fact is what puts motion tracking
+not move when the head turns. No part of the robot enters its field of view,
+so there is nothing to mask out. That single fact is what puts motion tracking
 back on the table: with a fixed camera, anything that changes between frames is
 a thing that moved in the room, not the camera moving past the room. On a
 head-mounted camera this whole option would be dead.
@@ -519,10 +520,6 @@ session, not a test.
   until then.
 - **Tracker tolerances.** Every default in `MotionMask` and `ToneMask` is a
   starting guess until step 3.
-- **Does the robot's own body appear in frame?** The chest camera points up, so
-  Mabu's chin may occupy the top of the image and would read as a static
-  region (harmless for motion, a possible false blob for tone). If so, a fixed
-  exclusion rectangle at the top, measured once on hardware.
 - **Skin-tone validation.** Tracking must be exercised across a range of skin
   tones, bright and dim, before the app is called done. Needs several people
   and cannot be faked from a desk. See the acceptance gate above.
