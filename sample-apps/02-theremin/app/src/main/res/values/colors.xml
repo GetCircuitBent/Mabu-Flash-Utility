@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Get Circuit Bent brand palette, dark theme.
+  Canonical source: github.com/GetCircuitBent/GitHub-Style-Guide
+
+  The UI is built in code (see MainActivity), so these are here for the theme
+  and as the reference values if you restyle the app.
+-->
+<resources>
+    <color name="gcb_bluewood_900">#1A242D</color>
+    <color name="gcb_bluewood_800">#283845</color>
+    <color name="gcb_la_palma">#179E19</color>
+    <color name="gcb_signal_orange">#FF4F00</color>
+    <color name="gcb_cadet_gray">#A5B0B7</color>
+    <color name="gcb_white">#FFFFFF</color>
+</resources>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Theremin" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/gcb_bluewood_900</item>
+        <item name="android:colorAccent">@color/gcb_la_palma</item>
+    </style>
+</resources>
