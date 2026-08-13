@@ -51,7 +51,7 @@ nothing else is still useful.
 | 8 | Blink and wink | The simplest timed sequence: close, hold, open. Introduces the sequencer pattern. | TBD |
 | 9 | Gestures | Nod yes, shake no, head tilt, look away. Keyframe list plus interpolation. | TBD |
 | 10 | Smooth motion architecture | The decoupled tween: detection or input writes targets only, a dedicated 25 Hz thread low-pass filters toward them and owns all serial I/O, and a send-side deadband drops frames that would not move a servo. Without this the servos audibly rattle. | TBD |
-| 11 | Read motor telemetry | The board talks back: idle heartbeat `FA 00 01 00 ED FB` versus position reports `FA 00 09 01 00 <7 bytes>`. A camera-free way to confirm a move landed. Needs a `readBytes()` added to the JNI shim (so far we have only ever read from an adb shell). Warning belongs here: never open `/dev/ttyS1` from adb while an app holds it, because termios is shared and you will clobber the app's settings. | TBD |
+| 11 | Read motor telemetry | The board talks back: idle heartbeat `FA 00 01 00 ED FB` versus position reports `FA 00 09 01 00 <7 bytes>`. A camera-free way to confirm a move landed. Needs a `read()` on the JNI shim alongside the write; that is proven (the Creeper Controller does it), it is just not in any sample yet. Warning belongs here: never open `/dev/ttyS1` from adb while an app holds it, because termios is shared and you will clobber the app's settings. | TBD |
 
 ## Tier 2: Sensing
 
