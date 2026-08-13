@@ -79,43 +79,102 @@ instrument.
 
 ### What we do instead
 
-**Skin-tone blob tracking.** A theremin needs two continuous numbers, not
-twenty-one landmarks. Find the two largest skin-colored regions that are not
-the face, take their positions, done.
+**Chroma-match blob tracking.** A theremin needs two continuous numbers, not
+twenty-one landmarks. Find the two largest regions matching a calibrated
+colour, excluding the face, take their positions, done.
 
-Three things make this cheap and, on this hardware, elegant:
+Note the framing: this is **not** a skin detector. The tracker has no built-in
+idea what skin looks like. It matches whatever chroma it was calibrated to, and
+by default it calibrates itself from the player. The reason for that is in
+[Skin Tone](#skin-tone-a-requirement-not-a-caveat) below, and it is the single
+most important design decision in this app.
 
-1. **The camera already gives us YCbCr.** NV21 *is* YCbCr, and skin tone is
-   most separable in exactly that space. The classic bounds are
-   `77 <= Cb <= 127` and `133 <= Cr <= 173`. Converting NV21 to RGB in order to
-   detect skin would be doing work to make the problem harder.
-2. **The face is the calibration target.** Rather than shipping fixed
-   thresholds and hoping, sample the mean Cb and Cr inside the detected face
-   box and centre the skin window on that. The player's own face, under the
-   room's own lighting, sets the threshold for the player's own hands. This is
-   the trick that makes a crude technique work in a real room.
+Three things make it cheap and, on this hardware, right:
+
+1. **The camera already gives us YCbCr.** NV21 *is* YCbCr, and colour is most
+   separable from brightness in exactly that space. Converting NV21 to RGB in
+   order to match a colour would be doing work to make the problem harder.
+2. **The face is the calibration target.** Sample the mean Cb and Cr inside the
+   detected face box and centre the match window on that. The player's own
+   face, under the room's own lighting, sets the target for the player's own
+   hands.
 3. **We can subsample.** Every second pixel in each direction is 19,200 samples
    instead of 76,800, which is a few milliseconds of work.
 
 Total: about 40 ms of the 100 ms budget for both detectors, with latency low
 enough to play.
 
-### What it costs
+### Why Not Motion Instead
+
+Motion energy and background subtraction are appealing here because they are
+completely colour-independent. Both are ruled out by this specific robot:
+**the camera is mounted on the head, and the head moves**, because it is
+tracking the player's face. A moving camera means frame differencing sees
+motion everywhere and a background model never stabilises.
+
+Motion also fails a theremin on its own terms. A hand held still to sustain a
+note produces no motion and would vanish.
+
+So appearance-based matching is the correct family here, and it is a direct
+consequence of the hardware rather than a preference. Worth a comment, because
+on a fixed camera the answer would be different.
+
+### Skin Tone: A Requirement, Not a Caveat
+
+The textbook version of this technique uses fixed YCbCr bounds, usually
+`77 <= Cb <= 127` and `133 <= Cr <= 173`. **Those constants are biased toward
+light skin, and this app does not use them.**
+
+Why the bias is real, stated in the source as well as here:
+
+- The published ranges come from late-1990s work built on predominantly
+  light-skinned datasets, and they carry that sampling forward as if it were
+  physics.
+- The usual defence, that chrominance is tone-stable because melanin mostly
+  affects luminance, is directionally true and insufficient. Darker skin
+  reflects less light, so Y is lower, so the signal-to-noise ratio in Cb and Cr
+  is worse. NV21 already subsamples chroma 4:2:0, so there is less of it to
+  begin with.
+- Camera auto-exposure routinely underexposes darker faces, which pushes the
+  chroma estimate further into the noise.
+
+The result of shipping fixed thresholds would be an instrument that works
+better for some players than others. That is a defect, and it is the kind that
+does not show up in testing unless you go looking.
+
+**What the app does instead:**
+
+| Measure | Effect |
+|---|---|
+| **No shipped colour constants.** The match window comes entirely from measured face chroma | Removes the biased step rather than compensating for it |
+| **Luminance-adaptive tolerance.** The window widens as Y falls | A fixed tolerance would reintroduce the bias through the back door, since low Y is exactly where the chroma estimate degrades |
+| **Manual calibration.** Hold a hand in the on-screen box and tap | Covers a face the detector never found, and hands that differ from the face |
+| **Marker mode.** Calibrate to a brightly coloured object instead of a hand | Costs zero extra code, because the tracker already just matches a calibrated chroma. A guaranteed path for any player in any lighting |
+| **Visible calibration readout**, e.g. `window: Cb 108 +/-14, Cr 148 +/-16, from face` | Makes a failure diagnosable instead of mysterious |
+
+**Acceptance gate.** Before this app ships, tracking must be validated across a
+range of skin tones, in a bright room and a dim one. If acquisition is
+materially worse for darker skin after face calibration, that is a bug to fix,
+not a limitation to document. The fallbacks, in order, are a wider default
+tolerance, manual calibration, and marker mode.
+
+### What It Costs
 
 Stated plainly, in the source, next to the code:
 
-- Sensitive to lighting. Strong colour casts move Cb/Cr; face calibration
+- Sensitive to lighting. Strong colour casts move Cb and Cr; face calibration
   absorbs most but not all of it.
-- Long sleeves help, bare arms confuse it. The largest skin region may be a
+- Long sleeves help, bare arms confuse it. The largest matching region may be a
   forearm rather than a hand.
 - No left/right identity except by screen position, so crossing your hands
   swaps them.
-- Anything skin-coloured in frame (wooden furniture, cardboard) is a candidate
-  blob. The face-box exclusion and a minimum-size threshold remove most of it.
+- Anything matching the calibrated chroma is a candidate: wooden furniture and
+  cardboard are the usual offenders. Face-box exclusion and a minimum-size
+  threshold remove most of it.
 
 This is a worked example of reading the hardware and choosing the technique
 that fits it, rather than the technique that would be correct on a phone. That
-lesson is the reason this app is worth writing.
+lesson, and the calibration decision above, are why this app is worth writing.
 
 ## Layout
 
@@ -185,13 +244,17 @@ per-sample increment, with linear interpolation between neighbouring samples
 (cheap; loses a little high end; cubic is the upgrade if anyone cares) and
 loops at the end.
 
-**Rate and pitch are different controls, and the difference is worth teaching.**
-Resampling faster raises pitch *and* shortens the sample, which is what a
-classic sampler does. Separating them needs granular pitch shifting: two read
-heads half a grain apart, crossfaded with a raised-cosine window, roughly 50 ms
-grains. That is affordable here, so both are offered and both are labelled for
-what they actually are. Grain artifacts at extreme ratios get a comment rather
-than being hidden.
+**Pitch is playback rate, and that equivalence is the lesson.** There is no
+pitch shifter here. Changing the playhead increment changes pitch and duration
+together, which is a worse instrument (a held note drifts through the sample)
+and much better example code: the entire pitch control is one line.
+
+The comment on that line earns its place by naming what else the same identity
+gets you. Varispeed tape, the chipmunk and slow-motion effects, a classic
+sampler mapping one recording across a whole keyboard, and sample-rate
+conversion itself are all this operation. Granular pitch shifting, which
+separates the two at the cost of two read heads and a window function, is named
+as the upgrade and deliberately not built.
 
 ### Filter
 
@@ -237,8 +300,7 @@ change with the tradeoff written out.
 |---|---|
 | None | Unmapped |
 | Volume | Amplitude |
-| Rate | Playback speed. Pitch and tempo together, classic sampler behaviour |
-| Pitch | Granular shift. Pitch without changing speed; costs more CPU |
+| Pitch | Playback rate. Changes pitch and duration together; see [Sample Playback](#sample-playback) |
 | Position | Scrub the playhead. Heavily smoothed, or it is unusable |
 | Low-pass | SVF, low output |
 | High-pass | SVF, high output |
@@ -303,11 +365,11 @@ New in this app:
 |---|---|
 | `Camera1Source.kt` | 12. Camera1 wrapper, NV21 frames, dedicated thread, buffer pool |
 | `FaceDetector.kt` | 13. ML Kit bundled detector, FAST mode |
-| `SkinBlobTracker.kt` | **26.** The star. YCbCr skin window, face-calibrated, blob extraction, frame-to-frame association |
+| `ChromaBlobTracker.kt` | **26.** The star. Face-calibrated YCbCr match window with luminance-adaptive tolerance, blob extraction, frame-to-frame association, manual and marker calibration |
 | `CameraOverlayView.kt` | 13, 26. Preview, face box, hand boxes, watermark |
 | `FaceFollow.kt` | 14. Face centre to motor targets |
 | `AudioEngine.kt` | 18, 27. AudioTrack thread, block loop, parameter ramps, gate |
-| `SamplePlayer.kt` | 27. Resampling, position, granular pitch |
+| `SamplePlayer.kt` | 27. Resampling, playhead position, pitch as rate |
 | `Filter.kt` | 27. State-variable filter |
 | `Mapping.kt` | Hand to parameter mapping and the dropdown options |
 | `SampleRecorder.kt` | 17, opt-in |
@@ -335,8 +397,9 @@ has already done it once.
 1. **Core transplant.** Copy app 1's motor files, confirm the robot still moves.
 2. **Camera and face.** Rows 12 and 13, with the overlay. Verify the 10 fps
    ceiling and the inference time on hardware rather than trusting this spec.
-3. **Blob tracker.** Row 26. Needs hardware and a person; thresholds and
-   minimum blob size cannot be tuned from a desk.
+3. **Blob tracker.** Row 26. Needs hardware and several people; tolerances and
+   minimum blob size cannot be tuned from a desk, and the skin-tone acceptance
+   gate is part of this step, not a later check.
 4. **Audio engine.** Rows 18 and 27, driven by on-screen sliders first, so the
    synth can be proven before hands are in the loop.
 5. **Join them.** Hands to mapping to audio, plus the gate.
@@ -351,7 +414,10 @@ session, not a test.
 
 - **The sample file.** Supplied by the operator. A generated placeholder ships
   until then.
-- **Blob thresholds.** Every default in `SkinBlobTracker` is a starting guess
+- **Blob tolerances.** Every default in `ChromaBlobTracker` is a starting guess
   until step 3.
+- **Skin-tone validation.** Tracking must be exercised across a range of skin
+  tones, bright and dim, before the app is called done. Needs several people
+  and cannot be faked from a desk. See the acceptance gate above.
 - **Audio buffer size.** 1024 frames is an estimate. If underruns show up in
   the perf line, it goes up, and the README records the number that worked.
