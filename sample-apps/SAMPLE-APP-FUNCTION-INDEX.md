@@ -10,6 +10,9 @@ commented, copy-pasteable Android projects that sit alongside the
 [Mabu Flash Utility](../README.md) for people who have just freed a unit and
 want to make it do something.
 
+**In progress:** [Sample App 1: Mabu Signboard](01-signboard/SPEC.md), covering
+Tier 0, Tier 1 and Tier 4.
+
 ## Conventions for Every Sample App
 
 - **One scrolling page.** All demos live on a single scrolling screen, section
@@ -76,6 +79,8 @@ nothing else is still useful.
 | 21 | Autostart as the home launcher | How your app becomes the thing the robot boots into. Includes the rule that only one process may hold `/dev/ttyS1`, so whatever launcher is already installed has to be stopped first. | TBD |
 | 22 | Build and deploy | `minSdk 24`, `targetSdk 28`, `compileSdk 34`, `abiFilters = ["armeabi-v7a"]`, an install script that goes over Wi-Fi ADB, and pre-granting runtime permissions with `pm grant`. | TBD |
 | 23 | Safety card | Short and prominent. Never run `adb reboot` (it has left units with no Wi-Fi and no recovery path). One owner of the serial port at a time. The limp-versus-stiff test for diagnosing a dead motor board, and the two stuck states with their different recovery paths. | TBD |
+| 24 | Display media full-screen | Stills and animated GIF on the 1024x600 panel: immersive mode, keep-screen-on, fit modes, and playback rate. GIF goes through `android.graphics.Movie`, which is deprecated at API 28 but alive at 27 and needs no library. Its manual `setTime()` clock gives exact rate control for free. | TBD |
+| 25 | Play video | Looping video on the panel. `MediaPlayer` with `setLooping`. RK3288 has hardware H.264 decode, but the codec set beyond H.264/MP4 is unverified and `setPlaybackParams` is frequently ignored or throws on embedded decoders, so this needs its own hardware pass. Deliberately held out of sample 1. | TBD |
 
 ## Deliberately Out of Scope
 
