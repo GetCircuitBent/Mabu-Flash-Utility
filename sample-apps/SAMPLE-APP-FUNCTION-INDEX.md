@@ -10,8 +10,17 @@ commented, copy-pasteable Android projects that sit alongside the
 [Mabu Flash Utility](../README.md) for people who have just freed a unit and
 want to make it do something.
 
-**In progress:** [Sample App 1: Mabu Signboard](01-signboard/SPEC.md), covering
-Tier 0, Tier 1 and Tier 4.
+**In progress:**
+
+- [Sample App 1: Mabu Signboard](01-signboard/SPEC.md) - Tier 0, Tier 1 and
+  Tier 4. Built, awaiting hardware validation.
+- [Sample App 2: Mabu Theremin](02-theremin/SPEC.md) - Tier 2, Tier 3 and the
+  two Tier 5 rows. Spec only.
+
+After both, four rows remain uncovered: 11 (motor telemetry), 15 (puppet
+mirroring), 16 (speak), 25 (video). They have little in common, so a third
+sample should come from a concept that wants several of them rather than from
+working backwards through the leftovers.
 
 ## Conventions for Every Sample App
 
@@ -81,6 +90,16 @@ nothing else is still useful.
 | 23 | Safety card | Short and prominent. Never run `adb reboot` (it has left units with no Wi-Fi and no recovery path). One owner of the serial port at a time. The limp-versus-stiff test for diagnosing a dead motor board, and the two stuck states with their different recovery paths. | TBD |
 | 24 | Display media full-screen | Stills and animated GIF on the 1024x600 panel: immersive mode, keep-screen-on, fit modes, and playback rate. GIF goes through `android.graphics.Movie`, which is deprecated at API 28 but alive at 27 and needs no library. Its manual `setTime()` clock gives exact rate control for free. | TBD |
 | 25 | Play video | Looping video on the panel. `MediaPlayer` with `setLooping`. RK3288 has hardware H.264 decode, but the codec set beyond H.264/MP4 is unverified and `setPlaybackParams` is frequently ignored or throws on embedded decoders, so this needs its own hardware pass. Deliberately held out of sample 1. | TBD |
+
+## Tier 5: Beyond the Basics
+
+Capabilities that are not "basic Mabu" but that a sample has had to solve, and
+that the next person will hit too.
+
+| # | Function | What the Sample Must Show | Sample App |
+|---|---|---|---|
+| 26 | Track hands | There is no hand-tracking library for this device: MediaPipe dropped `armeabi-v7a`, ML Kit has no hand API, and ML Kit Pose cannot share a 100 ms frame budget with face detection. What works is skin-tone blob tracking in YCbCr, which the camera hands you for free in NV21, calibrated live from the mean chroma inside the detected face box. A worked example of picking the technique the hardware allows rather than the one you would use on a phone. | TBD |
+| 27 | Real-time audio | Building a live instrument rather than playing a file: an `AudioTrack` block loop on its own thread, sample playback with interpolated resampling, granular pitch shifting (and why that is not the same control as playback rate), a state-variable filter, and per-block parameter ramps. The control input arrives at 10 Hz and the audio runs at 44.1 kHz, so the same decouple-and-filter pattern that stops servos chattering is what stops audio zippering. | TBD |
 
 ## Deliberately Out of Scope
 
