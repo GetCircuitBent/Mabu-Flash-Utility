@@ -131,9 +131,9 @@ if (-not $sync.AppDir) {
           <TextBlock Foreground="#F1F3F5" FontSize="13.5" TextWrapping="Wrap" Margin="0,0,0,8"
                      Text="3.  Short ADKEY (pin 4) to GND (pin 1, 2, 6, 13 or 14) and hold it."/>
           <TextBlock Foreground="#F1F3F5" FontSize="13.5" TextWrapping="Wrap" Margin="0,0,0,8"
-                     Text="4.  Still holding ADKEY, power the unit on: hold PWRON (pin 11) for 2-3 seconds. These boards have no buttons, and a quick tap often leaves it dark."/>
+                     Text="4.  Still holding ADKEY, boot the unit: unplug and replug the harness, or press the power button. Keep ADKEY held through the boot."/>
           <TextBlock Foreground="#F1F3F5" FontSize="13.5" TextWrapping="Wrap" Margin="0,0,0,8"
-                     Text="5.  Keep ADKEY held until this app reports the Loader, then release. If it boots to Android instead, power off and retry, holding ADKEY a beat earlier."/>
+                     Text="5.  Keep ADKEY held until this app reports the Loader, then release. If it boots to Android or the 'No command' screen instead, the Loader was missed: reboot to Android, then unplug and replug the harness USB and listen for the Windows 'new USB device' sound. No sound means a hardware problem (check the USB cable and connections); if it does sound, retry from step 2."/>
           <TextBlock Foreground="#F1F3F5" FontSize="13.5" TextWrapping="Wrap" Margin="0,0,0,8"
                      Text="6.  Click Start Flashing promptly: an idle Loader drops back to Android. Caught this way the unit's state cannot be read, so /data is wiped by default."/>
 

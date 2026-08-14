@@ -835,7 +835,10 @@ function Invoke-MabuFlash {
             }
             if (-not $dev) {
                 Die 'No adb device and no Loader, including after an automatic USB re-enumeration.' `
-                    'Power-cycle the tablet (hold ADKEY through power-on) to catch Loader, then re-run.' `
+                    'Boot the tablet while holding ADKEY (pin 4 to GND) to catch the Loader, then re-run.' `
+            'If it still will not catch: reboot to Android, replug the harness USB, and listen for' `
+            'the Windows "new USB device" sound -- no sound = hardware (check cable/connections),' `
+            'sound = the link is fine, retry the ADKEY boot.' `
                     'If the PC never sees the device at all, run the read-only USB diagnostic:' `
                     '  .\scripts\diagnose-usb.ps1 -Watch'
             }

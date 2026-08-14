@@ -100,20 +100,24 @@ That's it. You won't need to repeat setup on this PC.
 ### Step 1: Connect the Harness
 Plug the USB harness into the Mabu's internal header and into a USB port on your PC. **Use the same USB port every time**; the driver binding is tied to the port, and switching ports means redoing the Zadig step once.
 
-### Step 2: Power On the Mabu
-Turn the unit on and let it boot to its normal screen. The flasher talks to the Mabu over the harness to work out what state it's in, and puts the unit into Loader mode itself.
-
-### Step 3: Start the Flash
+### Step 2: Start the Flash
 **Installer:** the GUI is already open; click **Flash**.
 
 **Scripts:** in the same **Administrator** PowerShell window, from the repo folder:
 ```powershell
 .\scripts\flash-mabu.ps1
 ```
-That's the whole command; no options are needed. This is the same flasher the GUI drives.
+That's the whole command; no options are needed. This is the same flasher the GUI drives. It immediately starts watching for the Loader.
+
+### Step 3: Boot the Mabu Holding ADKEY
+With the flash already running, boot the tablet **while holding ADKEY** (short header pin 4 to GND). Either way of booting works, unplug and replug the harness or use the power button; just keep ADKEY held through the boot. The flasher catches the Rockchip Loader as the unit comes up and moves straight into the flash.
+
+**If the Loader does not catch** (the tablet boots to Android, or lands on the recovery "No command" screen), reboot it to Android, then unplug and replug the harness USB and listen for the Windows **"new USB device" chime**:
+- **No chime: it's a hardware problem.** The data link isn't there. Check the harness connections and the USB cable, then retry.
+- **Chime plays: the link is fine, the Loader window was just missed.** Retry this step (boot holding ADKEY).
 
 ### Step 4: Follow the Prompts
-Both paths tell you exactly what to do when they need you, as console prompts or as GUI prompt cards.
+Once the Loader is caught, the flasher runs on its own, liberation, reboot to Android, a pause for you to join Wi-Fi, app installs over Wi-Fi, and the self-tests (it re-runs them if any fail). Both paths tell you exactly what to do when they need you, as console prompts or GUI prompt cards.
 
 ---
 
@@ -148,7 +152,7 @@ When it's done you'll see a **`Done`** banner and a **self-test summary** (passe
 | SmartScreen blocks `MabuFlashSetup.exe` | Click **More info**, then **Run anyway**. The installer isn't code-signed yet |
 | Script says `adb.exe not found` | Let it auto-install, or run `winget install Google.PlatformTools` and restart PowerShell |
 | `rkdeveloptool.exe not found` | You're running from the wrong folder, or the download was incomplete. Run `.\scripts\install-tools.ps1` from the folder containing `scripts\` |
-| Loader never appears after power-on | Make sure the harness is plugged in **before** you power on. Try pressing and holding ADKEY as you power on. Check the D+/D- wires (see wiring below) |
+| Loader never appears | Boot the tablet **while holding ADKEY** (pin 4 to GND) with the flash already running. If it still doesn't catch, reboot to Android, replug the harness USB, and listen for the Windows **"new USB device" chime**: **no chime = hardware** (check connections and the USB cable, see wiring below); **chime = retry** the ADKEY boot |
 | Windows shows the Mabu (as "H7R", "ADB Interface" or "MTP") but you get `No adb device and no Loader` | Zadig was pointed at the Android-mode device at some point, which stops ADB from seeing it. The flasher detects this and repairs it in place, so run it again first. If it still reports the misbinding, follow the undo steps it prints |
 | Stuck at the Wi-Fi step | Touch the Mabu's screen and join it to your Wi-Fi, then continue; it picks up automatically once the Mabu is online |
 | The motor fix "needs the WSL reflash fallback" | This only happens on the rare unit whose policy patch changes size. Run `.\scripts\install-tools.ps1 -InstallWsl` as Administrator to install WSL/Ubuntu (restart if asked), then re-run the flash with `-NoWipe` |

@@ -709,9 +709,11 @@ if (Test-Loader) {
     }
     if (-not $dev) {
         Die 'No adb device and no Loader, including after an automatic USB re-enumeration.' `
-            'Power-cycle the tablet (hold ADKEY through power-on) to catch Loader, then re-run.' `
-            'If the PC never sees the device at all, run the read-only USB diagnostic:' `
-            '  .\scripts\diagnose-usb.ps1 -Watch'
+            'Boot the tablet while holding ADKEY (pin 4 to GND) to catch the Loader, then re-run.' `
+            'If it still will not catch: reboot the tablet to Android, unplug and replug the' `
+            'harness USB, and listen for the Windows "new USB device" sound. No sound means a' `
+            'hardware problem -- check the USB cable and harness connections. If it does sound,' `
+            'the link is fine and the Loader window was just missed; retry the ADKEY boot.'
     }
     $state = Get-MabuState -Dev $dev
     switch ($state) {
