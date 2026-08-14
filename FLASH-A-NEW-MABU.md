@@ -123,7 +123,30 @@ At a glance:
 - For the permanent SELinux fix only: WSL/Ubuntu with `setools`,
   `policycoreutils`, and **magiskpolicy** (see Section 6, Tier 2).
 
-### If Loader (PID 320A) Won't Enumerate
+### If NOTHING Enumerates at All (No Node in ANY Mode)
+**First, run the chime test from [PROCEDURE.md](PROCEDURE.md):** reboot to Android,
+unplug and replug the harness, and listen for the Windows "new USB device" sound.
+**No chime = a hardware problem** -- check the harness connections and the USB
+cable; that is the answer, not anything below. Only if the link *does* chime but
+Windows still shows nothing usable is the following worth trying.
+
+**Stale ghost node (only when the link chimes but nothing usable appears).** A
+stale non-present `VID_2207` ghost node bound to a dead driver on that port path
+can block Windows from cleanly re-enumerating the tablet on the same port
+(observed 2026-08-14). It is housekeeping, not the primary diagnostic. Remove
+every `VID_2207` node, present *and* ghost:
+```powershell
+# Elevated. Removes present AND non-present (ghost) VID_2207 nodes.
+Get-PnpDevice | Where-Object { $_.InstanceId -match 'VID_2207' } |
+  ForEach-Object { pnputil /remove-device $_.InstanceId }
+```
+Then replug / power the tablet and it enumerates. `flash-mabu.ps1`'s
+`Invoke-UsbPurge` does exactly this (it removes ghost nodes too), which is why a
+`-PurgeUsb` run or letting the flasher auto-purge often clears it. **Do not chase
+the harness, the USB port, or a USB-2 hub for a total no-enumeration** -- those
+are the recurring red herrings; the ghost node is the real cause.
+
+### If Loader (PID 320A) Won't Enumerate (but other modes DO)
 A direct USB 3 connection from the harness to the PC works; that's the
 validated setup. If Loader mode (VID 2207 **PID 320A**) won't show even though
 Android (0006) / recovery (0011) modes do, the usual culprits are wiring and
@@ -180,10 +203,20 @@ with a Settings/Dev-Options regression; smaller wipes don't reliably trigger the
 ---
 
 ## 3. Catch the Loader
-There are two ways in. **If you can get an ADB shell, use the first; it's
-deterministic and instant.**
+**The canonical way in is to boot the tablet while holding ADKEY, with the flash
+already running so it catches the Loader as the unit comes up** (see
+[PROCEDURE.md](PROCEDURE.md), the source of truth). `adb reboot loader` also works
+when an authorized adb device is already up, but it is not required.
 
-### Optimal: `adb reboot loader` (When ADB Is Reachable)
+**If the Loader does not catch** (the unit boots to Android, or lands on the
+recovery "No command" screen), reboot it to Android and test the physical USB
+link: unplug and replug the harness and listen for the Windows **"new USB device"
+chime**. **No chime = a hardware problem** (check the harness connections and the
+USB cable); **chime present = the link is fine and the Loader window was just
+missed, so retry the ADKEY boot.** Do not chase drivers, ports, hubs, or ghost
+nodes for a link that never chimes.
+
+### Secondary: `adb reboot loader` (when an authorized adb device is already up)
 Stock Esper units are *often* already ADB-authorized; Esper does not always
 suppress the auth grant (on the validated unit `adb` showed `device`, not
 `unauthorized`). And post-liberation ADB is always open. Whenever `adb devices`
@@ -194,11 +227,11 @@ adb reboot loader      # drops straight into Rockchip Loader (PID 320A)
 On the validated unit this landed in Loader in **~1 second**, no power-on
 timing race. This is also how you re-enter Loader between phases.
 
-### Fallback: Boot into Loader by Holding ADKEY (Validated on This PC)
-If there is no ADB at all, **hold ADKEY through power-on to force Loader.** This
-is the reliable way in on a unit that otherwise free-boots straight to the
-auth-walled Esper Android (PID 0006); confirmed 2026-06-27 on this flashing PC,
-which had never once reached Loader until this sequence:
+### Primary: Boot into Loader by Holding ADKEY
+**This is the way in.** Boot the unit while holding ADKEY to catch the Loader,
+rather than letting it free-boot to the auth-walled Esper Android (PID 0006);
+confirmed 2026-06-27 on this flashing PC, which had never once reached Loader
+until this sequence:
 
 1. Connect the harness directly to the PC (USB 3 is fine). Tablet powered off.
 2. **Short ADKEY (pin 4) to GND** (any of pins 1/2/6/13/14…) and **hold it**.
@@ -826,7 +859,7 @@ Protocol reference (don't hand-compute checksums; use the code):
 ---
 
 ## 9. Quick Checklist
-- [ ] Loader caught (PID 320A): `adb reboot loader` if ADB is up, else hold ADKEY (pin 4)→GND through power-on
+- [ ] Loader caught (PID 320A): **boot holding ADKEY (pin 4→GND) with the flash running** (`adb reboot loader` also works if an authorized adb device is already up). Didn't catch? Reboot to Android and chime-test the USB link: no "new USB device" sound = hardware (check cable/connections)
 - [ ] **PID 320A bound to WinUSB** (not `rockusb.sys`): `flash-mabu.ps1` auto-launches Zadig if not; one-time per PC, then persists. `ld` listing the Loader is *not* proof: a `rockusb.sys` binding writes-fail with "creating comm object failed"
 - [ ] `flash-mabu.ps1` completes: confirm the "Detected State X" / "Wipe policy" line matches the unit (force with `-WipeData`/`-NoWipe` if needed; re-run wipe if it "FAILED at chunk 0")
 - [ ] Device Owner clear, no esper/shoonya packages

@@ -1,5 +1,9 @@
 # Sample App 1: Mabu Signboard
 
+> **Status: in development, not yet hardware-validated.** This is a locked
+> *design* to build against; the app itself has not been built and tested on a
+> real Mabu yet.
+
 Locked design. Build to this; changes go through an edit here first.
 
 Mabu as a living sign. The screen shows a still image or a looping animation

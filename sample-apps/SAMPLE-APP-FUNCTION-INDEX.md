@@ -1,5 +1,9 @@
 # Sample App Function Index
 
+> **Status: in development / untested.** The sample apps below are unbuilt or not
+> yet validated on real hardware. Treat this as a work in progress, not a finished,
+> tested reference.
+
 Every Mabu capability we have driven on real hardware, in the order a new
 developer should meet them. Each row is a function a sample app should cover.
 The **Sample App** column links to the app that demonstrates it once that app
