@@ -69,6 +69,14 @@ class MainActivity : Activity(), ControlReceiver.Handler, SurfaceHolder.Callback
     @Volatile private var trackMs = 0f
     @Volatile private var pendingCalibration = false
 
+    // --- Test harness ------------------------------------------------------
+    // Replays saved frames through the same pipeline instead of the camera.
+    // See ReplaySource for why this matters more than it looks like it should.
+    private lateinit var replay: ReplaySource
+    @Volatile private var replaying = false
+    /** Last frame seen, so CAPTURE can save exactly what the tracker just used. */
+    @Volatile private var lastFrame: ByteArray? = null
+
     // --- Audio -------------------------------------------------------------
     private val sample = SamplePlayer()
     private lateinit var audio: AudioEngine
@@ -88,6 +96,8 @@ class MainActivity : Activity(), ControlReceiver.Handler, SurfaceHolder.Callback
     private lateinit var calibLine: TextView
     private lateinit var trackerButton: Button
     private lateinit var armButton: Button
+    private lateinit var replayButton: Button
+    private lateinit var qualityLine: TextView
 
     private val ui = Handler(Looper.getMainLooper())
 
@@ -116,6 +126,10 @@ class MainActivity : Activity(), ControlReceiver.Handler, SurfaceHolder.Callback
         faces = FaceDetector()
         audio = AudioEngine(sample)
         camera = Camera1Source(::onCameraFrame)
+        // Both sources call the SAME handler. Nothing downstream can tell
+        // whether a frame came from the camera or from a file, which is the
+        // property that makes the harness worth having.
+        replay = ReplaySource(::onCameraFrame)
 
         buildUi()
 
@@ -143,6 +157,7 @@ class MainActivity : Activity(), ControlReceiver.Handler, SurfaceHolder.Callback
         ControlReceiver.handler = null
         ui.removeCallbacksAndMessages(null)
         camera.stop()
+        replay.stop()
         faces.close()
         audio.stop()
         tween.stop()
@@ -163,6 +178,7 @@ class MainActivity : Activity(), ControlReceiver.Handler, SurfaceHolder.Callback
 
     private fun onCameraFrame(nv21: ByteArray, width: Int, height: Int) {
         val t0 = SystemClock.uptimeMillis()
+        lastFrame = nv21
 
         // 1. Face detection is asynchronous; this just hands ML Kit the frame
         //    and moves on. The result lands a frame later, which is fine.
@@ -205,6 +221,10 @@ class MainActivity : Activity(), ControlReceiver.Handler, SurfaceHolder.Callback
         overlayView.faceBox = faceBox
         overlayView.leftHand = left
         overlayView.rightHand = right
+        // In replay the SurfaceView shows nothing (the camera is stopped), so
+        // the overlay draws the frame under test itself. You have to SEE what
+        // you are testing or the harness is just numbers.
+        overlayView.backgroundFrame = if (replaying) replay.currentBitmap else null
         overlayView.postInvalidate()
 
         trackMs = trackMs * 0.8f + (SystemClock.uptimeMillis() - t0) * 0.2f
@@ -269,6 +289,27 @@ class MainActivity : Activity(), ControlReceiver.Handler, SurfaceHolder.Callback
             button("Calibrate") { startCalibration() },
         ))
         calibLine = body("").also { page.addView(it) }
+
+        // The tracker's own opinion of how it is doing. This is here because
+        // the tone tracker cannot be fully validated across everyone who might
+        // use it, so instead of hoping, it reports. See HandTracker.quality.
+        qualityLine = body("").also { page.addView(it) }
+
+        page.addView(section("Test Harness"))
+        page.addView(body(
+            "CAPTURE saves the current frame to " + FrameStore.DIR + ". REPLAY runs " +
+                "saved frames through the same pipeline instead of the camera, at the " +
+                "same 10 fps, so tuning changes one variable instead of two. Capture " +
+                "anyone who walks past and the corpus becomes a permanent test - which " +
+                "is the only practical way to cover a range of people over time. " +
+                "scripts/tone-sweep.py synthesises darker and dimmer variants of a " +
+                "capture on your PC."
+        ))
+        replayButton = button("Replay: off") { toggleReplay() }
+        page.addView(row(
+            button("Capture Frame") { captureFrame() },
+            replayButton,
+        ))
 
         page.addView(slider("Motion: adapt rate", 0.002f, 0.08f, motionMask.adaptRate) {
             motionMask.adaptRate = it
@@ -367,6 +408,41 @@ class MainActivity : Activity(), ControlReceiver.Handler, SurfaceHolder.Callback
         }
     }
 
+    /** Save the frame the tracker just used, raw, for the replay corpus. */
+    private fun captureFrame() {
+        val f = lastFrame
+        if (f == null) {
+            toast("No frame yet")
+            return
+        }
+        val file = FrameStore.capture(f.copyOf(), tracker.name.lowercase())
+        toast(if (file != null) "Saved ${file.name}" else "Capture failed")
+    }
+
+    private fun toggleReplay() {
+        if (replaying) {
+            replay.stop()
+            replaying = false
+            // Restarting the camera means re-attaching to the live surface.
+            camera.start(preview.holder)
+        } else {
+            val err = replay.start()
+            if (err != null) {
+                toast(err)
+                return
+            }
+            // One source at a time: two things calling onCameraFrame would
+            // interleave frames and the background model would see a scene
+            // cutting back and forth.
+            camera.stop()
+            replaying = true
+            // Both trackers hold history that a scene change invalidates.
+            tracker.reset()
+            blobs.reset()
+        }
+        replayButton.text = if (replaying) "Replay: ON" else "Replay: off"
+    }
+
     private fun toggleTracker() {
         tracker = if (tracker === motionMask) toneMask else motionMask
         tracker.reset()
@@ -436,6 +512,21 @@ class MainActivity : Activity(), ControlReceiver.Handler, SurfaceHolder.Callback
                     d.summary(), if (audio.active) "sounding" else "silent", audio.underruns,
                 )
             calibLine.text = tracker.calibrationSummary()
+
+            val q = tracker.quality()
+            qualityLine.text = if (replaying) {
+                "REPLAY ${replay.currentName} · ${q.summary()}"
+            } else {
+                q.summary()
+            }
+            qualityLine.setTextColor(
+                when {
+                    q.verdict.isEmpty() -> FG_DIM
+                    q.verdict == "GOOD" -> GREEN
+                    q.advice.isEmpty() -> FG_DIM
+                    else -> ORANGE
+                }
+            )
             ui.postDelayed(this, 500)
         }
     }

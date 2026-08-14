@@ -81,8 +81,12 @@ class MotionMask : HandTracker {
     /** The background model, in luma, at mask resolution. Float so it can creep. */
     private var background: FloatArray? = null
 
+    @Volatile
+    private var lastQuality = Quality.unknown()
+
     override fun reset() {
         background = null
+        lastQuality = Quality.unknown()
     }
 
     override fun buildMask(nv21: ByteArray, width: Int, height: Int, out: ByteArray) {
@@ -111,6 +115,10 @@ class MotionMask : HandTracker {
         val a = adaptRate.coerceIn(0.001f, 0.2f)
         val t = threshold
 
+        var matched = 0
+        var deltaSum = 0.0
+        var lumaSum = 0.0
+
         for (my in 0 until mh) {
             val rowBase = my * mw
             val py = my * step
@@ -120,7 +128,15 @@ class MotionMask : HandTracker {
 
                 // Interesting if it differs from what we expect the room to
                 // look like here.
-                out[i] = if (abs(v - bg[i]) > t) 1 else 0
+                val delta = abs(v - bg[i])
+                if (delta > t) {
+                    out[i] = 1
+                    matched++
+                    deltaSum += delta.toDouble()
+                    lumaSum += v.toDouble()
+                } else {
+                    out[i] = 0
+                }
 
                 // Then let the model creep toward reality. Note this happens
                 // whether or not the pixel was interesting: that is precisely
@@ -130,7 +146,53 @@ class MotionMask : HandTracker {
                 bg[i] = bg[i] * (1f - a) + v * a
             }
         }
+
+        lastQuality = assess(matched, mw * mh, deltaSum, lumaSum, t)
     }
+
+    /**
+     * Motion's version of the same question, with failures that mirror the
+     * tone tracker's:
+     *
+     *   NOTHING MOVING - nobody is there, OR you are holding still and the
+     *       background model has absorbed you. That second case is this mode's
+     *       defining weakness, so it is named rather than left to guess at.
+     *   TOO MUCH MOTION - the lights changed or somebody walked behind you and
+     *       the model has not caught up. It settles by itself, so the advice is
+     *       to wait rather than start turning knobs.
+     *
+     * MARGIN is how far past the threshold the moving pixels sat. Low means you
+     * are barely clearing the noise floor, which is the state immediately
+     * before tracking starts to flicker.
+     */
+    private fun assess(matched: Int, total: Int, deltaSum: Double, lumaSum: Double, t: Int): Quality {
+        if (matched == 0) {
+            return Quality(0f, 0f, 0, "NOTHING MOVING", "wave, or use Tone to hold still")
+        }
+        val frac = matched.toFloat() / total
+        val meanDelta = (deltaSum / matched).toFloat()
+        // Twice the threshold counts as a comfortable margin.
+        val margin = ((meanDelta - t) / t).coerceIn(0f, 1f)
+        val meanY = (lumaSum / matched).toInt()
+
+        return when {
+            frac > 0.45f -> Quality(
+                frac, margin, meanY, "TOO MUCH MOTION",
+                "lighting changed? it will settle - or raise the threshold",
+            )
+            margin < 0.15f -> Quality(
+                frac, margin, meanY, "WEAK",
+                if (meanY < 70) "very dim - add light" else "barely above noise - lower the threshold",
+            )
+            frac < 0.004f -> Quality(
+                frac, margin, meanY, "FAINT",
+                "moving, but too small to be a hand - move closer",
+            )
+            else -> Quality(frac, margin, meanY, "GOOD")
+        }
+    }
+
+    override fun quality(): Quality = lastQuality
 
     override fun calibrationSummary(): String =
         "adapt %.3f · threshold %d".format(adaptRate, threshold)

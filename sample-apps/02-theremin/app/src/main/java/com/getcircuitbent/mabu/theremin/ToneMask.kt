@@ -58,11 +58,12 @@ import kotlin.math.abs
  *
  * Three further things keep it honest:
  *
- *  - LUMINANCE-ADAPTIVE TOLERANCE. The match window widens as brightness
- *    falls, because dim is exactly where the chroma estimate degrades. A
- *    fixed tolerance would quietly reintroduce the bias through the back
- *    door: same window, worse data, more misses, and the misses would not be
- *    evenly distributed.
+ *  - A SMALL LUMINANCE ALLOWANCE. The match window widens slightly as
+ *    brightness falls, to cover sensor noise. It is deliberately small, and
+ *    it is NOT a fix for dim light - see DARK_WIDENING at the bottom of this
+ *    file for the measurement that settled that, and for why widening is
+ *    self-defeating. Dim light is a regime this tracker cannot rescue; it can
+ *    only report it.
  *  - MARKER MODE IS FREE. Because nothing here assumes skin, calibrating to a
  *    brightly coloured glove costs zero extra code and gives the best
  *    tracking in the app for anyone at all. It is the recommended way to use
@@ -100,6 +101,14 @@ class ToneMask : HandTracker {
     @Volatile
     var calibrated = false
         private set
+
+    /** Self-assessment of the last frame. See [quality]. */
+    @Volatile
+    private var lastQuality = Quality.unknown()
+
+    /** Tolerance actually used on the last frame, after the luminance widening. */
+    @Volatile
+    private var lastTol = 0
 
     /**
      * Take the match colour from a region of the frame.
@@ -165,36 +174,178 @@ class ToneMask : HandTracker {
         val step = HandTracking.STEP
 
         // --- Luminance-adaptive tolerance ---------------------------------
-        // Widen the window when the calibration sample was dark, because that
-        // is where the chroma estimate is least reliable. Read the class
-        // comment before changing this: a FIXED tolerance here is how the
-        // skin-tone bias gets back in.
-        val darkness = ((128 - targetY).coerceAtLeast(0)) / 128f   // 0 bright, 1 very dark
-        val tol = (tolerance * (1f + darkness * 1.5f)).toInt().coerceIn(4, 48)
+        // Widen the window when the picture is dark, because that is where the
+        // chroma estimate is least reliable. Read the class comment before
+        // changing this: a FIXED tolerance here is how the skin-tone bias gets
+        // back in.
+        //
+        // NOTE THE `min` BELOW, AND WHY IT IS THERE.
+        //
+        // The first version of this used targetY alone - the brightness of the
+        // calibration sample. That is wrong in the exact way that matters: it
+        // widens the window only if you happened to CALIBRATE in the dark, and
+        // does nothing if you calibrate in good light and the room then dims,
+        // which is the common case. The scripts/tone-sweep.py harness caught
+        // it: across a sweep from mean luma 172 down to 50, the tolerance never
+        // moved off its base value.
+        //
+        // So it takes the DIMMER of the calibration sample and the frame in
+        // front of us now. Either being dark is a reason to be more forgiving.
+        val frameY = meanLuma(nv21, width)
+        val effectiveY = minOf(targetY, frameY)
+        val darkness = ((128 - effectiveY).coerceAtLeast(0)) / 128f   // 0 bright, 1 very dark
+        val tol = (tolerance * (1f + darkness * DARK_WIDENING)).toInt().coerceIn(4, 48)
+        lastTol = tol
+
+        // Accumulators for the self-assessment, gathered in the same pass so
+        // that knowing how well we are doing costs essentially nothing.
+        var matched = 0
+        var distanceSum = 0L
+        var lumaSum = 0L
 
         for (my in 0 until mh) {
             val rowBase = my * mw
             val py = my * step
             for (mx in 0 until mw) {
-                val c = HandTracking.chroma(nv21, width, height, mx * step, py)
+                val px = mx * step
+                val c = HandTracking.chroma(nv21, width, height, px, py)
                 val cb = (c shr 8) and 0xFF
                 val cr = c and 0xFF
-                out[rowBase + mx] =
-                    if (abs(cb - targetCb) < tol && abs(cr - targetCr) < tol) 1 else 0
+                val dCb = abs(cb - targetCb)
+                val dCr = abs(cr - targetCr)
+
+                if (dCb < tol && dCr < tol) {
+                    out[rowBase + mx] = 1
+                    matched++
+                    // Chebyshev distance: the test is a box, not a circle.
+                    distanceSum += maxOf(dCb, dCr).toLong()
+                    lumaSum += HandTracking.luma(nv21, width, px, py).toLong()
+                } else {
+                    out[rowBase + mx] = 0
+                }
             }
         }
+
+        lastQuality = assess(matched, mw * mh, distanceSum, lumaSum, tol)
+    }
+
+    /**
+     * Turn the pass's counters into something an operator can act on.
+     *
+     * Two different failures need telling apart, and they look identical if you
+     * only count matched pixels:
+     *
+     *   NO MATCH   - calibration is wrong, the light changed, or this is the
+     *       failure we could not fully test for: a match window that does not
+     *       fit the person standing in front of it.
+     *   TOO BROAD  - the window is so wide it has swallowed the room. Blob
+     *       extraction then finds one enormous blob and tracking is nonsense.
+     *       A different problem with a different fix.
+     *
+     * MARGIN separates "just barely matching" from "comfortably matching". Near
+     * zero means the pixels are scraping the edge of the window, so any change
+     * in the light will drop them. That is the early warning, and it appears
+     * well before tracking visibly breaks.
+     */
+    private fun assess(matched: Int, total: Int, distanceSum: Long, lumaSum: Long, tol: Int): Quality {
+        if (matched == 0) {
+            return Quality(
+                0f, 0f, 0, "NO MATCH",
+                if (calibrated) "recalibrate, or switch to Motion" else "not calibrated",
+            )
+        }
+        val frac = matched.toFloat() / total
+        val meanDist = distanceSum.toFloat() / matched
+        val margin = (1f - meanDist / tol).coerceIn(0f, 1f)
+        val meanY = (lumaSum / matched).toInt()
+
+        return when {
+            frac > 0.35f -> Quality(
+                frac, margin, meanY, "TOO BROAD",
+                "window is catching the room - lower the tolerance",
+            )
+            margin < 0.25f -> Quality(
+                frac, margin, meanY, "WEAK",
+                if (meanY < 70) "very dim - add light, or use Motion"
+                else "recalibrate, or try a coloured marker",
+            )
+            frac < 0.004f -> Quality(
+                frac, margin, meanY, "FAINT",
+                "matching, but too small to be a hand - move closer",
+            )
+            else -> Quality(frac, margin, meanY, "GOOD")
+        }
+    }
+
+    override fun quality(): Quality = lastQuality
+
+    /**
+     * Mean luma of the frame, sampled coarsely.
+     *
+     * Every fourth pixel in each direction: 4,800 reads, which is nothing next
+     * to the mask pass, and plenty for an average. We only need to know
+     * roughly how dark the room is, not precisely.
+     */
+    private fun meanLuma(nv21: ByteArray, width: Int): Int {
+        var sum = 0L
+        var n = 0
+        var y = 0
+        while (y < HandTracking.FRAME_H) {
+            var x = 0
+            while (x < width) {
+                sum += HandTracking.luma(nv21, width, x, y).toLong()
+                n++
+                x += 4
+            }
+            y += 4
+        }
+        return if (n == 0) 128 else (sum / n).toInt()
     }
 
     override fun calibrationSummary(): String =
         if (!calibrated) "uncalibrated - tap Calibrate, or use Motion"
-        else "Cb $targetCb / Cr $targetCr +/-$tolerance from $source"
+        // Shows the base tolerance AND the one actually in force, because they
+        // differ in dim light and the difference is the whole point.
+        else "Cb $targetCb / Cr $targetCr +/-$tolerance (using $lastTol) from $source"
 
     override fun reset() {
         calibrated = false
         source = "uncalibrated"
+        lastQuality = Quality.unknown()
     }
 
     companion object {
         private const val TAG = "MabuTone"
+
+        /**
+         * How much to widen the match window in dim light.
+         *
+         * *** THIS NUMBER IS SMALL ON PURPOSE, AND THE REASON IS INTERESTING. ***
+         *
+         * It started at 1.5, on the reasoning that dim light degrades the
+         * chroma estimate so the window should be more forgiving. Running the
+         * scripts/tone-sweep.py harness over a luminance sweep showed that is
+         * wrong, and wrong in a way worth understanding:
+         *
+         *   widening    matched fraction of frame, bright -> dark
+         *   0.00        14% 14% 14% 14% 14%
+         *   0.25        14% 14% 14% 14% 16%
+         *   0.50        14% 14% 14% 15% 25%
+         *   1.50        14% 15% 36% 78% 96%     <- swallowed the whole room
+         *
+         * Dim light does not just make the measurement noisier. It compresses
+         * the chroma of EVERYTHING toward neutral, so the background converges
+         * on the target as fast as the target does. The separation between
+         * hand and wall shrinks, and a wider window captures the wall.
+         *
+         * You cannot rescue dim-light colour tracking by being more
+         * forgiving, because forgiveness is symmetric.
+         *
+         * 0.25 is therefore a modest allowance for genuine sensor noise, not a
+         * fix for darkness. The actual answers when it gets dark are the two
+         * honest ones: [quality] says so, and MotionMask does not care about
+         * light level at all.
+         */
+        private const val DARK_WIDENING = 0.25f
     }
 }

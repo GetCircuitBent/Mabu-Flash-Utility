@@ -99,8 +99,57 @@ interface HandTracker {
     /** One line for the UI, e.g. the current match window. Empty if n/a. */
     fun calibrationSummary(): String = ""
 
+    /**
+     * How well the last frame matched, and what to do about it.
+     *
+     * This exists because of something we could not test our way out of. The
+     * tone tracker's behaviour depends on the player's own colouring and
+     * lighting, and validating it properly needs a range of people in front of
+     * the camera - which is not always available. A tracker that reports its
+     * own confidence turns "we hope this works for you" into "it tells you
+     * when it does not, and points at the fallback", which is the honest
+     * posture when you cannot verify something for every user.
+     *
+     * Shown live on the main screen. Keep it short.
+     */
+    fun quality(): Quality = Quality.unknown()
+
     /** Drop any accumulated state, e.g. the background model. */
     fun reset() {}
+}
+
+/**
+ * A tracker's own assessment of the frame it just processed.
+ *
+ * @param matchedFrac fraction of sampled pixels the tracker called interesting
+ * @param margin      0..1, how far inside its acceptance threshold the matched
+ *                    pixels sat. 1 is dead centre, 0 is scraping the edge.
+ * @param meanY       mean luminance of the matched pixels, 0..255. The number
+ *                    that matters most: low luminance is where chroma gets
+ *                    noisy and where a colour tracker starts to fail.
+ * @param verdict     short human-readable state
+ * @param advice      what to do about it, or empty when nothing is wrong
+ */
+data class Quality(
+    val matchedFrac: Float,
+    val margin: Float,
+    val meanY: Int,
+    val verdict: String,
+    val advice: String = "",
+) {
+    fun summary(): String = buildString {
+        append(verdict)
+        if (matchedFrac > 0f) {
+            append(" · %.1f%% of frame".format(matchedFrac * 100))
+            append(" · margin %.2f".format(margin))
+            append(" · Y %d".format(meanY))
+        }
+        if (advice.isNotEmpty()) append(" · ").append(advice)
+    }
+
+    companion object {
+        fun unknown() = Quality(0f, 0f, 0, "")
+    }
 }
 
 /**

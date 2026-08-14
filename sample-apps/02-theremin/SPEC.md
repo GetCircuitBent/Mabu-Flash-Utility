@@ -231,10 +231,34 @@ does not show up in testing unless you go looking.
 | Measure | Effect |
 |---|---|
 | **No shipped colour constants.** The match window comes entirely from measured face chroma | Removes the biased step rather than compensating for it |
-| **Luminance-adaptive tolerance.** The window widens as Y falls | A fixed tolerance would reintroduce the bias through the back door, since low Y is exactly where the chroma estimate degrades |
+| **A small luminance allowance.** The window widens slightly as Y falls | Covers sensor noise. Deliberately small: measurement showed that widening aggressively is self-defeating, because dim light compresses everyone's chroma toward neutral, so a wider window catches the background as readily as the hand. See [Dim Light](#dim-light-is-a-limit-not-a-bug) |
 | **Manual calibration.** Hold a hand in the on-screen box and tap | Covers a face the detector never found, and hands that differ from the face |
 | **Marker mode.** Calibrate to a brightly coloured object instead of a hand | Costs zero extra code, because the tracker already just matches a calibrated chroma. A guaranteed path for any player in any lighting |
 | **Visible calibration readout**, e.g. `window: Cb 108 +/-14, Cr 148 +/-16, from face` | Makes a failure diagnosable instead of mysterious |
+
+### Dim Light Is a Limit, Not a Bug
+
+Established with `scripts/tone-sweep.py` over a synthetic luminance sweep, and
+worth stating plainly because the first version of this spec claimed otherwise:
+
+**Widening the match window in dim light does not help.** Low light does not
+merely add noise to the chroma estimate, it compresses the chroma of the whole
+scene toward neutral. The background approaches the target colour at the same
+rate the target does, so separation shrinks and a more forgiving window admits
+the wall along with the hand. Measured over the sweep, a widening factor of 1.5
+took the matched fraction of the frame from 14 percent to 96 percent; a factor
+of 0 held it flat at 14 percent.
+
+The widening is therefore kept small (0.25) as an allowance for sensor noise
+and nothing more. Dim light is a regime the tone tracker cannot be tuned out
+of. The honest responses are the two the app already has: the quality readout
+names the condition, and motion tracking is unaffected by light level because
+it never looks at colour.
+
+This matters for the skin-tone question specifically. Adaptive tolerance was
+listed as a mitigation in an earlier draft; it is a weak one. The mitigations
+that actually carry weight are: motion as the default, marker calibration,
+shipping no colour constants, and reporting quality honestly.
 
 **Acceptance gate.** Before this app ships, tone tracking must be validated
 across a range of skin tones, in a bright room and a dim one. If acquisition is
@@ -520,8 +544,18 @@ session, not a test.
   until then.
 - **Tracker tolerances.** Every default in `MotionMask` and `ToneMask` is a
   starting guess until step 3.
-- **Skin-tone validation.** Tracking must be exercised across a range of skin
-  tones, bright and dim, before the app is called done. Needs several people
-  and cannot be faked from a desk. See the acceptance gate above.
+- **Skin-tone validation.** Tone tracking must be exercised across a range of
+  skin tones, bright and dim, before the app is called done. See the acceptance
+  gate above.
+
+  Where live testing is not available, `scripts/tone-sweep.py` plus the
+  in-app replay harness get part of the way: capture one real frame, synthesise
+  darker and dimmer variants that model the luminance drop AND the loss of
+  signal-to-noise that comes with it, and replay them through the real pipeline
+  on the real hardware. That is what found the tolerance bug above, so it is
+  not a token gesture - but it is a MODEL. It cannot certify that the app works
+  for real people, because real skin differs spectrally rather than by a
+  brightness scale, and a real camera's auto-exposure responds to the whole
+  scene. A pass means "the obvious failure is absent". The gate stays open.
 - **Audio buffer size.** 1024 frames is an estimate. If underruns show up in
   the perf line, it goes up, and the README records the number that worked.

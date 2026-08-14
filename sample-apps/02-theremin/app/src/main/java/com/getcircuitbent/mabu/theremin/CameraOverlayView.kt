@@ -49,6 +49,16 @@ class CameraOverlayView(context: Context) : View(context) {
     /** Shown centred when the operator is about to calibrate ToneMask. */
     @Volatile var showCalibrationBox = false
 
+    /**
+     * The frame being replayed, drawn underneath everything else.
+     *
+     * Null in normal use, when the SurfaceView underneath is showing the live
+     * camera. During replay the camera is stopped and that surface is blank,
+     * so the overlay has to draw the frame itself or you would be tuning a
+     * tracker against boxes floating on black.
+     */
+    @Volatile var backgroundFrame: Bitmap? = null
+
     private val facePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = 3f
@@ -71,6 +81,7 @@ class CameraOverlayView(context: Context) : View(context) {
     private val watermarkPaint = Paint(Paint.FILTER_BITMAP_FLAG).apply {
         alpha = WATERMARK_ALPHA
     }
+    private val framePaint = Paint(Paint.FILTER_BITMAP_FLAG)
 
     private var watermark: Bitmap? = null
     private val src = Rect()
@@ -92,6 +103,13 @@ class CameraOverlayView(context: Context) : View(context) {
         val w = width.toFloat()
         val h = height.toFloat()
         if (w <= 0f || h <= 0f) return
+
+        // --- Replayed frame, if any ---------------------------------------
+        backgroundFrame?.let { bm ->
+            src.set(0, 0, bm.width, bm.height)
+            dst.set(0f, 0f, w, h)
+            canvas.drawBitmap(bm, src, dst, framePaint)
+        }
 
         // --- Face ---------------------------------------------------------
         faceBox?.let { f ->

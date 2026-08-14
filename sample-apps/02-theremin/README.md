@@ -81,6 +81,49 @@ dropped 32-bit ARM, ML Kit has no hand API, and ML Kit Pose would eat the
 entire 100 ms frame budget on its own. [HandTracker.kt](app/src/main/java/com/getcircuitbent/mabu/theremin/HandTracker.kt)
 works through that arithmetic. It is the most useful page in the app.
 
+## Testing It Without a Crowd
+
+The tone tracker's behaviour depends on the colouring and lighting of whoever
+is in front of it, which is awkward to verify properly: you would need a range
+of people on hand. Two things in here get you most of the way without that.
+
+**CAPTURE and REPLAY.** Capture saves the current frame, raw, to
+`/sdcard/theremin/testframes/`. Replay runs saved frames through the same
+pipeline instead of the camera, at the same 10 fps, drawing each frame under
+the tracking boxes. Tuning a threshold against a live camera changes two things
+at once - the setting and whatever your hands were doing. Against replayed
+frames, only the setting moves.
+
+It also compounds: capture anyone who happens to walk past, and the corpus
+becomes a permanent regression test. Testing across a range of people stops
+being an event you have to organise.
+
+**scripts/tone-sweep.py.** Takes one captured frame and synthesises darker and
+dimmer variants, modelling the drop in luminance and, importantly, the loss of
+signal-to-noise that comes with it.
+
+```powershell
+adb pull /sdcard/theremin/testframes/cap-001.nv21
+python scripts/tone-sweep.py cap-001.nv21 --out sweep/
+adb push sweep/*.nv21 /sdcard/theremin/testframes/
+```
+
+Then switch to Tone, calibrate on step 00, and press REPLAY while watching the
+quality line.
+
+**This is a model, not a validation.** Real skin differs spectrally rather than
+by a brightness scale, and a real camera's auto-exposure responds to the whole
+scene. A clean sweep means the obvious failure is absent, not that the app
+works for everyone. It has already earned its place though - it is what caught
+the match window failing to adapt, and then caught the fix over-correcting.
+
+**The quality line** is the same idea in live use. The tracker scores its own
+last frame and says what to do: `GOOD`, `WEAK - recalibrate, or try a coloured
+marker`, `TOO BROAD - window is catching the room`, `NOTHING MOVING - wave, or
+use Tone to hold still`. When a thing cannot be verified for every user in
+advance, the next best property is that it tells the user when it is not
+working.
+
 ## Changing the Sample
 
 ```powershell
