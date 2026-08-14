@@ -63,6 +63,127 @@ function Invoke-Child {
     }
 }
 
+function Reset-AdbServer {
+    # Kill AND immediately restart the adb server, both with errors non-fatal.
+    # A bare `adb kill-server` leaves the NEXT adb call to print
+    # "* daemon not running; starting now at tcp:5037" on stderr, which becomes a
+    # terminating NativeCommandError under $ErrorActionPreference='Stop' and aborts
+    # the flash. Restarting here means the server is already up when the following
+    # Find-AdbDevice runs, so no later call trips that banner. Use this anywhere a
+    # rebind or repair makes the server's cached device list stale.
+    $eap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & $script:ADB kill-server  2>&1 | Out-Null
+    & $script:ADB start-server 2>&1 | Out-Null
+    $ErrorActionPreference = $eap
+}
+
+function Confirm-AndroidAdbDriver {
+    # The Android ADB driver is a prerequisite for the WHOLE flash, not just for
+    # first contact: after the patch phase the tablet reboots to Android and the
+    # inter-phase step waits on Find-AdbDevice over USB. Without this driver that
+    # wait always times out -- so a run that started from a hand-caught Loader
+    # still dies halfway through.
+    #
+    # The scripts path covers this with a documented one-time setup step. The GUI
+    # never ran it, which left installer users with no route to adb at all. This
+    # is that step, driven through the UI provider.
+    #
+    # Returns $true when adb can see the tablet. $false is NOT fatal: a device
+    # already sitting in Loader has no Android interface to bind yet, and the
+    # caller carries on rather than blocking a flash that may still get somewhere.
+    Section 'Android USB Driver'
+
+    if (Find-AdbDevice -TimeoutSec 5) {
+        Ok 'adb already sees the tablet: the driver is in place.'
+        return $true
+    }
+
+    $nodes   = @(Get-MabuAndroidUsbNode)
+    $adbNode = $nodes | Where-Object { $_.Role -eq 'adb' } | Select-Object -First 1
+
+    if ($adbNode -and $adbNode.AdbDriverOk) {
+        # Right driver, still no device: the tablet has not authorized this PC. On
+        # a Mabu the "Allow USB debugging?" dialog frequently NEVER appears (the
+        # Esper launcher suppresses system dialogs), so telling the user only to
+        # "accept the prompt" dead-ends them. Give the no-prompt fallback too.
+        Warn 'The Android ADB driver is bound, but the tablet has not authorized this PC.'
+        Warn 'On many Mabu units the "Allow USB debugging?" dialog never pops up on its own.'
+        $choice = & $script:Ui.Prompt 'Authorize This PC on the Tablet' `
+            ("The driver is installed, but the tablet reports 'unauthorized' -- it has not " +
+             "trusted this PC yet.`r`n`r`n" +
+             "If an 'Allow USB debugging?' dialog is on the tablet screen: tap Allow (tick " +
+             "'Always allow from this computer'), then press Continue.`r`n`r`n" +
+             "If NO dialog appears (common on Mabu units):`r`n" +
+             "  - Wake the screen and pull down the notification shade; it can be hidden there.`r`n" +
+             "  - Unplug and replug the harness with the screen awake to re-trigger it.`r`n" +
+             "  - If it still never appears, press Skip. The flash will catch the Loader " +
+             "directly instead (power the tablet fully OFF, then hold ADKEY = header pin 4 " +
+             "shorted to GND through power-on), which needs no adb authorization.") `
+            @('Continue','Skip')
+        if ($choice -eq 'Skip') { return $false }
+        return [bool](Find-AdbDevice -TimeoutSec 20)
+    }
+
+    if (-not $nodes.Count) {
+        if (Test-Loader) {
+            Info 'Tablet is in Loader, so it exposes no Android interface to bind right now.'
+            Info 'Skipping the driver step; it will be needed once the unit reboots to Android.'
+        } else {
+            Warn 'No Android-mode tablet interface is on the USB bus, so there is nothing to bind yet.'
+            Warn 'If the tablet is booted into Android, this points at the harness, the USB port,'
+            Warn 'or USB debugging being off on the tablet.'
+        }
+        return $false
+    }
+
+    # Something is there but not usable as adb. Prepare the patched INF -- this is
+    # the part that can be automated, and it adds the hardware ID THIS unit
+    # reports, which is what makes Have Disk accept the folder.
+    Info 'Preparing the Android USB driver (download, verify, patch the INF)...'
+    Invoke-Child 'scripts/install-android-driver.ps1' @{ PrepareOnly = $true }
+
+    # install-android-driver.ps1 stages a browsable copy of the patched driver to
+    # the Desktop; point the walkthrough there rather than at the hidden
+    # %LOCALAPPDATA%\...\tools\google-usb-driver a Have Disk dialog cannot reach.
+    $driverDir = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Mabu-Flash-Driver'
+    if (-not (Test-Path $driverDir)) { $driverDir = Join-Path $script:Root 'tools\google-usb-driver' }
+    $nodeName  = if ($adbNode) { $adbNode.Name } else { 'the tablet''s ADB interface' }
+    $model     = if ($adbNode -and $adbNode.Mi) { 'Android Composite ADB Interface' } else { 'Android ADB Interface' }
+
+    # Installing it cannot be automated: patching the INF invalidates Google's
+    # catalog signature, so pnputil refuses it and only the Device Manager
+    # click-through lets a user consent to an unsigned driver. We are already
+    # elevated, so devmgmt.msc inherits the token it needs.
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        try { Start-Process devmgmt.msc } catch { Warn "Could not open Device Manager: $_" }
+        $choice = & $script:Ui.Prompt 'Install the Android USB Driver' `
+            ("Device Manager is open. Install the patched driver on this node:`r`n`r`n" +
+             "    $nodeName`r`n`r`n" +
+             "1. Right-click it > Update driver`r`n" +
+             "2. Browse my computer for drivers`r`n" +
+             "3. Let me pick from a list of available drivers`r`n" +
+             "4. Have Disk... > Browse > android_winusb.inf in:`r`n    $driverDir`r`n" +
+             "5. Pick `"$model`"`r`n" +
+             "6. Accept the unsigned-driver warning`r`n`r`n" +
+             "If step 4 says the folder has no compatible driver, go back and untick " +
+             "`"Show compatible hardware`" first.`r`n`r`nPress Continue when it is installed.") `
+            @('Continue','Skip')
+        if ($choice -eq 'Skip') {
+            Warn 'Driver install skipped. adb will stay blind, and the flash will stall at the'
+            Warn 'first step that needs the tablet booted into Android.'
+            return $false
+        }
+        # The server's device list predates the driver rebind. Reset it and leave
+        # it RUNNING so the Find-AdbDevice below never trips the daemon banner.
+        Reset-AdbServer
+        if (Find-AdbDevice -TimeoutSec 30) { Ok 'adb can see the tablet: driver installed.'; return $true }
+        Warn "Still no adb device (attempt $attempt of 3)."
+    }
+    Warn 'Giving up on the driver step; continuing without adb.'
+    return $false
+}
+
 function Test-Loader { (& $script:RK ld 2>&1) -match 'Vid=0x2207,Pid=0x320a.*Loader' }
 
 function Wait-Loader([int]$TimeoutSec = 30) {
@@ -280,11 +401,14 @@ function Find-AdbDevice {
                 if ($unauth.Count -gt 0) {
                     $script:WarnedUnauthorized = $true
                     Warn 'A tablet is attached but reports "unauthorized".'
-                    Warn 'Accept the "Allow USB debugging?" prompt on the tablet screen.'
-                    Warn 'Note: adb host keys live in %USERPROFILE%\.android and the adb SERVER'
-                    Warn 'owns them, so a key approved under a different account (or a server'
-                    Warn 'started by one) will not carry over. If no prompt appears, run'
-                    Warn '"adb kill-server" and re-plug so the server restarts under this account.'
+                    Warn 'If an "Allow USB debugging?" dialog is on the tablet screen, tap Allow.'
+                    Warn 'On many Mabu units that dialog NEVER appears on its own. If you do not see it:'
+                    Warn '  - Wake the tablet and pull down the notification shade; it can be hidden there.'
+                    Warn '  - Unplug and replug the harness with the screen awake to re-trigger it.'
+                    Warn '  - Still nothing? You do not need adb at all: power the tablet fully OFF and hold'
+                    Warn '    ADKEY (header pin 4) to GND through power-on to catch the Loader directly.'
+                    Warn 'Note: adb host keys live in %USERPROFILE%\.android and the adb SERVER owns them,'
+                    Warn 'so a key approved under a different account will not carry over.'
                 }
             }
         }
@@ -633,6 +757,14 @@ function Invoke-MabuFlash {
         }
         & $Ui.Flash 4 'USB ready'
 
+        # --- Phase 0b: Android USB driver ---
+        # Ahead of Loader Detection because every later phase needs adb, and
+        # because the INF patch has to read the hardware ID off a tablet that is
+        # still in Android -- once we reboot it into Loader that ID is gone.
+        # Advisory: its return value is deliberately not fatal (see the function).
+        [void](Confirm-AndroidAdbDriver)
+        & $Ui.Flash 6 'Driver checked'
+
         # --- Phase 1: Catch / verify Loader, auto-detect Esper state ---
         Section 'Loader Detection'
         $state = 'Unknown'
@@ -680,9 +812,9 @@ function Invoke-MabuFlash {
                         # The running adb server enumerated before the device
                         # restarted; make it re-scan rather than trust its cached
                         # (empty) list.
-                        $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-                        & $script:ADB kill-server 2>&1 | Out-Null
-                        $ErrorActionPreference = $eap
+                        # Re-scan after the rebind; keep the server up so the
+                        # Find-AdbDevice below does not trip the daemon banner.
+                        Reset-AdbServer
                         Info 'Re-probing for an adb device...'
                         $dev = Find-AdbDevice -PreferIp $script:WifiIp -TimeoutSec 60
                         if ($dev) { Ok "adb is up at $dev -- repair worked. Continuing." }

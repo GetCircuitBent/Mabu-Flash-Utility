@@ -60,7 +60,7 @@ if (-not $sync.AppDir) {
 [xml]$xaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Mabu Flash Utility" Height="680" Width="760"
+        Title="Mabu Flash Utility" Height="720" Width="760"
         WindowStartupLocation="CenterScreen" Background="#1A242D"
         FontFamily="Segoe UI" ResizeMode="CanMinimize">
   <Window.Resources>
@@ -123,13 +123,26 @@ if (-not $sync.AppDir) {
                  Text="Liberate &amp; Provision a Mabu Tablet."/>
       <Border Grid.Row="2" Background="#283845" CornerRadius="8" Padding="22">
         <StackPanel>
-          <TextBlock Text="Before You Start" FontSize="16" FontWeight="SemiBold" Foreground="#61CE70" Margin="0,0,0,12"/>
+          <TextBlock Text="Catch the Loader" FontSize="16" FontWeight="SemiBold" Foreground="#61CE70" Margin="0,0,0,12"/>
           <TextBlock Foreground="#F1F3F5" FontSize="13.5" TextWrapping="Wrap" Margin="0,0,0,8"
-                     Text="1.  Plug the tablet into this PC with the USB harness."/>
+                     Text="1.  Plug the harness straight into this PC, no hub. Use the SAME USB port every time: the Loader driver binding is per port."/>
           <TextBlock Foreground="#F1F3F5" FontSize="13.5" TextWrapping="Wrap" Margin="0,0,0,8"
-                     Text="2.  Hold the ADKEY, then power the tablet on; keep holding until this app detects it. (First flash: catches the Rockchip Loader.)"/>
+                     Text="2.  Make sure the tablet is powered OFF."/>
           <TextBlock Foreground="#F1F3F5" FontSize="13.5" TextWrapping="Wrap" Margin="0,0,0,8"
-                     Text="3.  If it boots to Android instead, join it to Wi-Fi, then continue."/>
+                     Text="3.  Short ADKEY (pin 4) to GND (pin 1, 2, 6, 13 or 14) and hold it."/>
+          <TextBlock Foreground="#F1F3F5" FontSize="13.5" TextWrapping="Wrap" Margin="0,0,0,8"
+                     Text="4.  Still holding ADKEY, power the unit on: hold PWRON (pin 11) for 2-3 seconds. These boards have no buttons, and a quick tap often leaves it dark."/>
+          <TextBlock Foreground="#F1F3F5" FontSize="13.5" TextWrapping="Wrap" Margin="0,0,0,8"
+                     Text="5.  Keep ADKEY held until this app reports the Loader, then release. If it boots to Android instead, power off and retry, holding ADKEY a beat earlier."/>
+          <TextBlock Foreground="#F1F3F5" FontSize="13.5" TextWrapping="Wrap" Margin="0,0,0,8"
+                     Text="6.  Click Start Flashing promptly: an idle Loader drops back to Android. Caught this way the unit's state cannot be read, so /data is wiped by default."/>
+
+          <Border Background="#33454F" Height="1" Margin="0,12,0,10"/>
+          <TextBlock Text="Quicker, if adb already sees the tablet" FontSize="13.5" FontWeight="SemiBold"
+                     Foreground="#FFB020" Margin="0,0,0,6"/>
+          <TextBlock Foreground="#A5B0B7" FontSize="12.5" TextWrapping="Wrap"
+                     Text="Boot the unit into Android, join it to Wi-Fi, then click Start Flashing: the app reads the unit's state and enters the Loader over adb, with no timing to get right. It needs the Windows Android USB driver, which it will walk you through installing on the first run."/>
+
           <TextBlock x:Name="ConnectStatus" Margin="0,14,0,0" FontSize="13.5" FontWeight="SemiBold"
                      Foreground="#FFB020" Text="Waiting for device..." TextWrapping="Wrap"/>
         </StackPanel>
@@ -425,7 +438,7 @@ if ($Simulate) {
     $sync.ConnectStatus.Foreground = $brush.ConvertFromString('#61CE70')
     $sync.StartBtn.IsEnabled = $true
 } else {
-    $sync.ConnectStatus.Text = 'Plug in the tablet (hold ADKEY through power-on for a first flash, or join Wi-Fi if it boots to Android), then click Start Flashing.'
+    $sync.ConnectStatus.Text = 'Hold ADKEY through power-on to catch the Loader, then click Start Flashing.'
     $sync.ConnectStatus.Foreground = $brush.ConvertFromString('#FFB020')
     $sync.StartBtn.IsEnabled = $true
 }

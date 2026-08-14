@@ -123,7 +123,29 @@ At a glance:
 - For the permanent SELinux fix only: WSL/Ubuntu with `setools`,
   `policycoreutils`, and **magiskpolicy** (see Section 6, Tier 2).
 
-### If Loader (PID 320A) Won't Enumerate
+### If NOTHING Enumerates at All (No Node in ANY Mode) -- Stale Ghost Node
+**Read this first if the PC shows literally nothing on the bus** -- not a Loader,
+not an Android node, not even an unknown "device descriptor request failed" node,
+in *any* mode (Android, recovery, Loader). USB enumeration happens at the
+descriptor level *before* any driver binds, so "no node at all" is NOT a missing
+driver (that shows a node with a yellow bang) and, on a harness proven good on
+another PC, is NOT the cable. The cause we hit (2026-08-14, and burned hours
+re-deriving because it was undocumented): **a stale non-present `VID_2207` ghost
+node bound to a dead driver on that port path blocks Windows from cleanly
+re-enumerating the tablet on the same port.** The fix is to remove every
+`VID_2207` node, present *and* ghost:
+```powershell
+# Elevated. Removes present AND non-present (ghost) VID_2207 nodes.
+Get-PnpDevice | Where-Object { $_.InstanceId -match 'VID_2207' } |
+  ForEach-Object { pnputil /remove-device $_.InstanceId }
+```
+Then replug / power the tablet and it enumerates. `flash-mabu.ps1`'s
+`Invoke-UsbPurge` does exactly this (it removes ghost nodes too), which is why a
+`-PurgeUsb` run or letting the flasher auto-purge often clears it. **Do not chase
+the harness, the USB port, or a USB-2 hub for a total no-enumeration** -- those
+are the recurring red herrings; the ghost node is the real cause.
+
+### If Loader (PID 320A) Won't Enumerate (but other modes DO)
 A direct USB 3 connection from the harness to the PC works; that's the
 validated setup. If Loader mode (VID 2207 **PID 320A**) won't show even though
 Android (0006) / recovery (0011) modes do, the usual culprits are wiring and

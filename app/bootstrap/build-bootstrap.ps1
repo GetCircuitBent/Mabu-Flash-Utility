@@ -15,6 +15,13 @@
 #   .\app\bootstrap\build-bootstrap.ps1
 #   .\app\bootstrap\build-bootstrap.ps1 -OutputFile D:\releases\MabuFlashSetup.exe
 #   .\app\bootstrap\build-bootstrap.ps1 -CertThumbprint <hex>    # Authenticode-sign
+#   .\app\bootstrap\build-bootstrap.ps1 -EmbedPayload dist\mabuflash-payload-0.1.0.zip
+#
+# -EmbedPayload builds the STANDALONE variant: the payload zip is compiled into
+# the exe as a resource, so it needs no network, no GitHub release, and nothing
+# beside it on disk. The exe grows by the size of the zip (~89 MB). Use it for
+# testing and for anyone who cannot reach GitHub; the normal downloading build
+# stays the release artifact.
 #
 # Signing: -CertThumbprint reads a cert from Cert:\CurrentUser\My, which works
 # with a hardware token plugged in (the cert surfaces in the store, the key stays
@@ -27,7 +34,8 @@ param(
     [string] $OutputFile,
     [string] $IconFile,
     [string] $Version = '1.0.0.0',
-    [string] $CertThumbprint
+    [string] $CertThumbprint,
+    [string] $EmbedPayload
 )
 
 $ErrorActionPreference = 'Stop'
@@ -35,7 +43,24 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $Source   = Join-Path $PSScriptRoot 'MabuFlashSetup.cs'
 $Manifest = Join-Path $PSScriptRoot 'MabuFlashSetup.manifest'
-if (-not $OutputFile) { $OutputFile = Join-Path $RepoRoot 'dist\MabuFlashSetup.exe' }
+
+# Standalone: resolve the payload and derive the resource name the exe looks for.
+# The tag embeds a short hash of the zip, so every rebuild extracts to its own
+# folder under %LOCALAPPDATA%\MabuFlash instead of reusing a stale install that
+# still carries a .complete marker.
+$ResourceArg = $null
+if ($EmbedPayload) {
+    if (-not (Test-Path $EmbedPayload)) { throw "Payload zip not found: $EmbedPayload" }
+    $payload = (Resolve-Path $EmbedPayload).Path
+    $payVer  = if ((Split-Path $payload -Leaf) -match 'mabuflash-payload-(.+)\.zip$') { $Matches[1] } else { 'local' }
+    $sha8    = (Get-FileHash -Algorithm SHA256 -Path $payload).Hash.Substring(0,8).ToLower()
+    $ResourceArg = "/resource:$payload,MabuFlashPayload-$payVer-$sha8.zip"
+}
+
+if (-not $OutputFile) {
+    $OutputFile = if ($EmbedPayload) { Join-Path $RepoRoot 'dist\MabuFlashStandalone.exe' }
+                  else               { Join-Path $RepoRoot 'dist\MabuFlashSetup.exe' }
+}
 
 function Info($m) { Write-Host "  $m" -ForegroundColor Gray }
 function Ok($m)   { Write-Host "  $m" -ForegroundColor Green }
@@ -113,6 +138,11 @@ $args = @(
     '/reference:System.IO.Compression.FileSystem.dll'
 )
 if ($IconFile) { $args += "/win32icon:$IconFile"; Info "icon: $IconFile" }
+if ($ResourceArg) {
+    $args += $ResourceArg
+    $pmb = [math]::Round((Get-Item $payload).Length / 1MB, 1)
+    Info "embedding payload: $(Split-Path $payload -Leaf)  ($pmb MB)"
+}
 $args += $Source
 $args += $asmInfo
 

@@ -25,6 +25,13 @@
 //
 // Offline behaviour: if the API cannot be reached but a completed install already
 // exists locally, the newest local one is launched instead of failing.
+//
+// Standalone builds: if this exe was compiled with a payload zip embedded as the
+// resource "MabuFlashPayload-<tag>.zip" (build-bootstrap.ps1 -EmbedPayload), the
+// whole download/verify path is skipped and the payload is unpacked straight out
+// of the exe. One file, no network, nothing beside it on disk. Steps 1, 3 and 4
+// are unchanged, so a standalone build and a downloading build behave the same
+// from the user's side.
 
 using System;
 using System.Diagnostics;
@@ -34,6 +41,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Net;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -84,6 +92,17 @@ internal static class MabuFlashSetup
 
         var ui = new ProgressWindow();
         ui.Show();
+
+        // Standalone build: the payload rode along inside this exe. Nothing to
+        // fetch and nothing to verify -- these bytes came out of the same file
+        // the user already chose to run.
+        string embedded = FindEmbeddedPayload();
+        if (embedded != null)
+        {
+            string local = InstallEmbedded(embedded, installRoot, ui);
+            return Elevate(local, ui);
+        }
+
         ui.Say("Checking for the latest release...");
         Application.DoEvents();
 
@@ -153,14 +172,19 @@ internal static class MabuFlashSetup
             }
         }
 
+        return Elevate(target, ui);
+    }
+
+    // Re-launch elevated with the path resolved as THIS user. UAC shows this
+    // program's name, which is why the install happens first: the user sees what
+    // they are approving, and approves it once.
+    private static int Elevate(string target, ProgressWindow ui)
+    {
         ui.Say("Starting Mabu Flash...");
         Application.DoEvents();
         Thread.Sleep(300);
         ui.Close();
 
-        // Re-launch elevated with the path we resolved as THIS user. UAC shows
-        // this program's name, which is why the download happens first: the user
-        // sees what they are approving, and approves it once.
         var psi = new ProcessStartInfo
         {
             FileName        = Application.ExecutablePath,
@@ -180,6 +204,45 @@ internal static class MabuFlashSetup
             return 1;
         }
         return 0;
+    }
+
+    // -----------------------------------------------------------------------
+    // Embedded payload (standalone builds)
+    // -----------------------------------------------------------------------
+    private const string ResPrefix = "MabuFlashPayload-";
+
+    private static string FindEmbeddedPayload()
+    {
+        return Assembly.GetExecutingAssembly().GetManifestResourceNames()
+            .FirstOrDefault(n => n.StartsWith(ResPrefix, StringComparison.OrdinalIgnoreCase)
+                              && n.EndsWith(".zip", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string InstallEmbedded(string resource, string installRoot, ProgressWindow ui)
+    {
+        // The tag carries a hash of the payload (see build-bootstrap.ps1), so a
+        // rebuilt exe always lands in its own folder instead of silently reusing
+        // an older extract that IsComplete() would happily accept.
+        string tag    = resource.Substring(ResPrefix.Length, resource.Length - ResPrefix.Length - 4);
+        string target = Path.Combine(installRoot, SafeName(tag));
+        if (IsComplete(target)) return target;
+
+        ui.Say("Unpacking Mabu Flash (this takes a few seconds)...");
+        Application.DoEvents();
+
+        // Same staging-then-swap as the download path: an interrupted unpack must
+        // never leave a half-populated folder for IsComplete() to bless later.
+        string staging = target + ".partial";
+        if (Directory.Exists(staging)) Directory.Delete(staging, true);
+        using (Stream s = Assembly.GetExecutingAssembly().GetManifestResourceStream(resource))
+        using (var zip = new ZipArchive(s, ZipArchiveMode.Read))
+        {
+            zip.ExtractToDirectory(staging);
+        }
+        if (Directory.Exists(target)) Directory.Delete(target, true);
+        Directory.Move(staging, target);
+        File.WriteAllText(Path.Combine(target, ".complete"), tag);
+        return target;
     }
 
     // -----------------------------------------------------------------------

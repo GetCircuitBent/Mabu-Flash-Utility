@@ -298,11 +298,14 @@ function Find-AdbDevice {
                 if ($unauth.Count -gt 0) {
                     $script:WarnedUnauthorized = $true
                     Warn 'A tablet is attached but reports "unauthorized".'
-                    Warn 'Accept the "Allow USB debugging?" prompt on the tablet screen.'
-                    Warn 'Note: adb host keys live in %USERPROFILE%\.android and the adb SERVER'
-                    Warn 'owns them, so a key approved under a different account (or a server'
-                    Warn 'started by one) will not carry over. If no prompt appears, run'
-                    Warn '"adb kill-server" and re-plug so the server restarts under this account.'
+                    Warn 'If an "Allow USB debugging?" dialog is on the tablet screen, tap Allow.'
+                    Warn 'On many Mabu units that dialog NEVER appears on its own. If you do not see it:'
+                    Warn '  - Wake the tablet and pull down the notification shade; it can be hidden there.'
+                    Warn '  - Unplug and replug the harness with the screen awake to re-trigger it.'
+                    Warn '  - Still nothing? You do not need adb at all: power the tablet fully OFF and hold'
+                    Warn '    ADKEY (header pin 4) to GND through power-on to catch the Loader directly.'
+                    Warn 'Note: adb host keys live in %USERPROFILE%\.android and the adb SERVER owns them,'
+                    Warn 'so a key approved under a different account will not carry over.'
                 }
             }
         }
@@ -678,9 +681,13 @@ if (Test-Loader) {
             }
             if ($repaired) {
                 # The running adb server enumerated before the device restarted;
-                # make it re-scan rather than trust its cached (empty) list.
+                # make it re-scan rather than trust its cached (empty) list. Kill
+                # AND restart it (both non-fatal): a bare kill-server leaves the
+                # next adb call to emit "* daemon not running; starting now" on
+                # stderr, which turns fatal under -Stop and aborts the flash.
                 $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-                & $ADB kill-server 2>&1 | Out-Null
+                & $ADB kill-server  2>&1 | Out-Null
+                & $ADB start-server 2>&1 | Out-Null
                 $ErrorActionPreference = $eap
                 Info 'Re-probing for an adb device...'
                 $dev = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 60
