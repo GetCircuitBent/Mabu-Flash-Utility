@@ -22,6 +22,17 @@
 #     install step does that implicitly when it replaces the driver.
 #
 # Idempotent: re-running re-verifies the download and patch.
+#
+# -PrepareOnly: do the download/extract/patch and print the instructions, but ask
+# nothing and open nothing. The GUI core calls it this way and then drives the
+# Device Manager walkthrough through its own prompt cards. Without it the
+# Read-Host below would block forever under the GUI, whose PowerShell host has a
+# hidden console with inherited stdin -- it never reaches the catch.
+
+[CmdletBinding()]
+param(
+    [switch] $PrepareOnly
+)
 
 $ErrorActionPreference = 'Stop'
 
@@ -29,6 +40,12 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 $ToolsDir = Join-Path $RepoRoot 'tools'
 $DriverSrc = Join-Path $ToolsDir 'google-usb-driver-source.zip'
 $DriverDir = Join-Path $ToolsDir 'google-usb-driver'
+
+# The working copy lives under tools\ (in the GUI that is %LOCALAPPDATA%, which is
+# hidden and unreachable from a Have Disk browse dialog). Stage a browsable copy
+# to a visible, predictable folder -- the Desktop is a top node in that dialog, so
+# the user can click straight to it with no hidden folders and no typed paths.
+$StagedDir = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Mabu-Flash-Driver'
 
 $DriverUrl    = 'https://dl.google.com/android/repository/usb_driver_r13-windows.zip'
 $DriverSha256 = '360b01d3dfb6c41621a3a64ae570dfac2c9a40cca1b5a1f136ae90d02f5e9e0b'
@@ -197,6 +214,22 @@ if ($missing.Count) {
     Write-OK "INF covers all $($AllAdbPids.Count) Mabu ADB PIDs ($($AllAdbPids -join ', ')) in both sections."
 }
 
+# ---------------------------------------------------------------------------
+# 4b. Stage a browsable copy to the Desktop
+# ---------------------------------------------------------------------------
+Write-Step 'Stage a browsable copy'
+
+try {
+    if (Test-Path $StagedDir) { Remove-Item $StagedDir -Recurse -Force }
+    New-Item -ItemType Directory -Path $StagedDir -Force | Out-Null
+    Copy-Item -Path (Join-Path $DriverDir '*') -Destination $StagedDir -Recurse -Force
+    Write-OK "Staged a browsable copy to $StagedDir"
+} catch {
+    Write-Warn "Could not stage to $StagedDir : $($_.Exception.Message)"
+    Write-Note "Falling back to the working copy at $DriverDir"
+    $StagedDir = $DriverDir
+}
+
 # Report what is on the bus, and single out the node the operator must click on.
 $nodes = @()
 try { $nodes = @(Get-MabuAndroidUsbNode -Vid $TargetVid) } catch { }
@@ -232,8 +265,8 @@ if ($nodes.Count) {
 # ---------------------------------------------------------------------------
 Write-Step 'Install via Device Manager'
 Write-Host ''
-Write-Host '  Patched driver is ready at:' -ForegroundColor White
-Write-Host "    $DriverDir" -ForegroundColor Cyan
+Write-Host '  Patched driver is ready at (a folder you can browse to on your Desktop):' -ForegroundColor White
+Write-Host "    $StagedDir" -ForegroundColor Cyan
 Write-Host ''
 
 # Everything above this point -- download, extract, INF patch -- works fine
@@ -268,7 +301,8 @@ if ($AdbNode) {
 Write-Host '    3. Right-click -> Update driver.'
 Write-Host '    4. "Browse my computer for drivers".'
 Write-Host '    5. "Let me pick from a list of available drivers on my computer".'
-Write-Host '    6. Click "Have Disk..." -> Browse -> select android_winusb.inf in the path above.'
+Write-Host '    6. Click "Have Disk..." -> Browse -> open the Desktop > Mabu-Flash-Driver folder'
+Write-Host '       (the path above) and select android_winusb.inf.'
 Write-Host "    7. Pick `"$modelName`"."
 Write-Host '    8. Windows will warn the driver is not signed - click "Install this driver software anyway".'
 Write-Host '    9. After install completes, run: adb devices'
@@ -285,14 +319,21 @@ Write-Host '  Expected result: an entry like'
 Write-Host '    2022010502079   device' -ForegroundColor Green
 Write-Host '  or possibly' -ForegroundColor White
 Write-Host '    2022010502079   unauthorized' -ForegroundColor Yellow
-Write-Host '  (if unauthorized, accept the host RSA key prompt on the tablet itself).'
+Write-Host '  If unauthorized, accept the "Allow USB debugging?" dialog on the tablet.'
+Write-Host '  That dialog often NEVER appears on a Mabu. If you do not see it:'
+Write-Host '    - Wake the tablet and pull down the notification shade; it can hide there.'
+Write-Host '    - Unplug and replug the harness with the screen awake to re-trigger it.'
+Write-Host '    - Still nothing? You do not need adb: power the tablet fully OFF and hold'
+Write-Host '      ADKEY (header pin 4) to GND through power-on to catch the Loader directly.'
 Write-Host ''
 
 # Offer to open Device Manager. Tolerate non-interactive sessions.
 # Only offered when elevated: devmgmt.msc launched from a non-elevated shell
 # inherits that token and cannot install a driver, so opening it would just walk
 # the user into a dead end.
-if (-not $IsAdmin) {
+if ($PrepareOnly) {
+    Write-Note 'Prepare-only: the caller drives the Device Manager step from here.'
+} elseif (-not $IsAdmin) {
     Write-Note 'Skipping the Device Manager launch (needs Administrator, see above).'
 } else {
     try {

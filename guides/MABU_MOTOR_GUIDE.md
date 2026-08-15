@@ -444,7 +444,7 @@ adb shell "busybox timeout -t 5 cat /dev/ttyS1 | busybox hexdump -C"
 ```
 
 **State A: STIFF + MUTE (zero telemetry, not even a heartbeat):** the MCU is hung.
-A physical power-cycle recovered this state in session 8 (2026-05-31). After cycling: reconnect ADB, run the clean-control procedure (Section 7), do the 5× cold-boot wake, then a validation move with Alex watching.
+A physical power-cycle recovered this state in session 8 (2026-05-31). After cycling: reconnect ADB, run the clean-control procedure (Section 7), do the 5× cold-boot wake, then a validation move with the operator watching.
 
 **State B: STIFF + heartbeat-only (`FA 00 01 00 ED FB`) + commands ignored:** recovery confirmed 2026-05-31.
 
@@ -465,7 +465,7 @@ Replace `<motor-frame>` with the target move frame (e.g. `\xFA\x00\x04\x01\x02\x
 #### Post-Power-Cycle Recovery (State A)
 1. `adb disconnect 192.168.0.180:5555 && adb connect 192.168.0.180:5555` (may take a couple of tries).
 2. Follow the clean-control procedure in Section 7.
-3. Run the 5× cold-boot wake (Section 3), then a validation move **with Alex watching**.
+3. Run the 5× cold-boot wake (Section 3), then a validation move **with the operator watching**.
 4. Confirm engagement via telemetry: a successful move streams `FA 00 09 …` position frames (Section 13).
 
 ### Full Diagnostic Order

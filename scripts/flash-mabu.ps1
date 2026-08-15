@@ -698,6 +698,24 @@ function Run-SelfTest {
     $col = if ($stF -gt 0) { 'Red' } elseif ($stW -gt 0) { 'Yellow' } else { 'Green' }
     Write-Host "  Self-test: $stP passed  $stF failed  $stW warnings" -ForegroundColor $col
     if ($stF -gt 0) { Warn 'One or more checks FAILED -- review before deploying this unit.' }
+    return $stF
+}
+
+function Wait-DeviceSettled {
+    # adb reappearing after the final reboot is NOT the same as the system being
+    # ready to test: PackageManager still has to re-scan the freshly installed apps
+    # and framework services have to start. Testing in that window fails checks
+    # transiently (a manual re-run then passes). Wait for sys.boot_completed, then a
+    # fixed settle margin for package/service registration.
+    param([string] $Dev, [int] $BootTimeoutSec = 90, [int] $SettleSec = 20)
+    Info 'Letting the system settle before self-test (boot_completed + margin)...'
+    $deadline = (Get-Date).AddSeconds($BootTimeoutSec)
+    while ((Get-Date) -lt $deadline) {
+        $bc = (& $ADB -s $Dev shell getprop sys.boot_completed 2>&1 | Out-String).Trim()
+        if ($bc -eq '1') { break }
+        Start-Sleep -Seconds 3
+    }
+    Start-Sleep -Seconds $SettleSec
 }
 
 function Enable-WifiAdb {
@@ -1040,9 +1058,13 @@ if (Test-Loader) {
             }
             if ($repaired) {
                 # The running adb server enumerated before the device restarted;
-                # make it re-scan rather than trust its cached (empty) list.
+                # make it re-scan rather than trust its cached (empty) list. Kill
+                # AND restart (both non-fatal): a bare kill-server leaves the next
+                # Stop-guarded adb call to emit "* daemon not running" on stderr,
+                # which turns fatal under -Stop and aborts the flash.
                 $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-                & $ADB kill-server 2>&1 | Out-Null
+                & $ADB kill-server  2>&1 | Out-Null
+                & $ADB start-server 2>&1 | Out-Null
                 $ErrorActionPreference = $eap
                 Info 'Re-probing for an adb device...'
                 $dev = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 60
@@ -1334,8 +1356,15 @@ if (-not $SkipApps) {
     Info 'Waiting for device to come up for self-test...'
     $testDev = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 120
     if ($testDev) {
+        Wait-DeviceSettled -Dev $testDev
         & $ADB -s $testDev shell 'cmd package set-home-activity app.lawnchair/.LawnchairLauncher' 2>&1 | Out-Null
-        Run-SelfTest -Dev $testDev
+        $stFails = Run-SelfTest -Dev $testDev
+        if ($stFails -gt 0) {
+            Warn "Self-test reported $stFails failure(s) on the first pass; the system may still"
+            Warn 'have been settling. Waiting 20s and re-testing once before reporting...'
+            Start-Sleep -Seconds 20
+            Run-SelfTest -Dev $testDev | Out-Null
+        }
     }
     else          { Warn 'Self-test skipped: no adb device found after reboot.' }
 }

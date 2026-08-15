@@ -188,7 +188,7 @@ The harness uses a 30-pin IDC ribbon cable (2.0 mm pitch); pin 1 is at the GND/U
 
 ## More Documentation
 - **Detailed walkthrough**: background on each phase, the full 30-pin header pin-out, recovery for unusual unit states, and the permanent SELinux fix: [FLASH-A-NEW-MABU.md](FLASH-A-NEW-MABU.md).
-- **The GUI edition**: design, the UI contract shared by both front-ends, threading model, and build steps: [app/EXECUTABLE.md](https://github.com/GetCircuitBent/Mabu-Flash-Utility/blob/gui-executable/app/EXECUTABLE.md) (on the `gui-executable` branch).
+- **The GUI edition**: design, the UI contract shared by both front-ends, threading model, and build steps: [app/EXECUTABLE.md](app/EXECUTABLE.md).
 
 ---
 

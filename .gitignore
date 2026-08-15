@@ -2,6 +2,9 @@
 *.log
 *.tmp
 
+# Built GUI executable (regenerate with app/build/build-exe.ps1)
+app/MabuFlash.exe
+
 # Runtime flash logs
 log/
 
@@ -30,3 +33,9 @@ __pycache__/
 # Wallpaper helper build temp + apksigner v4 sidecar
 assets/wallpaper-helper/build/
 *.idsig
+
+# Release build output (app\build\make-payload.ps1, app\bootstrap\build-bootstrap.ps1)
+/dist/
+
+# Local scratch: git worktrees and agent state, never repo content
+/.claude/
