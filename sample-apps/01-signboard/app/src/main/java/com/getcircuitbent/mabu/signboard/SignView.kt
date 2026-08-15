@@ -88,7 +88,9 @@ class SignView(context: Context) : View(context) {
         COVER,
     }
 
-    var fitMode: FitMode = FitMode.CONTAIN
+    // Default COVER = Fill Screen on: the sign fills the display, edges cropped.
+    // The admin "Fill Screen" toggle and the ADB FIT action flip this to CONTAIN.
+    var fitMode: FitMode = FitMode.COVER
         set(value) {
             field = value
             invalidate()

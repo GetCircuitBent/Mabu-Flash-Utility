@@ -52,6 +52,7 @@
                 <action android:name="com.getcircuitbent.mabu.signboard.SHOW" />
                 <action android:name="com.getcircuitbent.mabu.signboard.HIDE" />
                 <action android:name="com.getcircuitbent.mabu.signboard.SET_MEDIA" />
+                <action android:name="com.getcircuitbent.mabu.signboard.FIT" />
                 <action android:name="com.getcircuitbent.mabu.signboard.IDLE" />
                 <action android:name="com.getcircuitbent.mabu.signboard.POSE" />
                 <action android:name="com.getcircuitbent.mabu.signboard.GESTURE" />

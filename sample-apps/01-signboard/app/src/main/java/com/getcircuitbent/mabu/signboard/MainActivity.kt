@@ -79,6 +79,7 @@ class MainActivity : Activity(), ControlReceiver.Handler {
     private lateinit var linkLine: TextView
     private lateinit var mediaLine: TextView
     private lateinit var idleButton: Button
+    private lateinit var fillButton: Button
 
     /** Motor sliders, kept so the refresh loop can mirror engine state into them. */
     private val motorBars = HashMap<Int, SeekBar>()
@@ -353,16 +354,16 @@ class MainActivity : Activity(), ControlReceiver.Handler {
             },
             button("From /sdcard") { pickFromSdcard() },
         ))
-        page.addView(row(
-            button("Fit: Contain") {
-                sign.fitMode = SignView.FitMode.CONTAIN
-                toast("Contain: whole image visible")
-            },
-            button("Fit: Cover") {
-                sign.fitMode = SignView.FitMode.COVER
-                toast("Cover: fills screen, crops edges")
-            },
-        ))
+        // Fill Screen is a single toggle: ON (default) = COVER, the sign fills
+        // the display with edges cropped; off = CONTAIN, the whole image fits
+        // with letterboxing. Same pattern as the Idle toggle.
+        fillButton = button("Fill Screen: ON") {
+            val fill = sign.fitMode != SignView.FitMode.COVER
+            sign.fitMode = if (fill) SignView.FitMode.COVER else SignView.FitMode.CONTAIN
+            syncFillButton()
+        }
+        page.addView(row(fillButton))
+        syncFillButton()
         page.addView(slider("GIF rate (x)", 0f, 3f, 1f) { sign.rate = it })
 
         page.addView(bigButton("SHOW SIGN") { showSign() })
@@ -429,6 +430,12 @@ class MainActivity : Activity(), ControlReceiver.Handler {
         idleButton.setTextColor(if (idle.enabled) GREEN else FG_DIM)
     }
 
+    private fun syncFillButton() {
+        val fill = sign.fitMode == SignView.FitMode.COVER
+        fillButton.text = if (fill) "Fill Screen: ON" else "Fill Screen: off (Fit)"
+        fillButton.setTextColor(if (fill) GREEN else FG_DIM)
+    }
+
     private fun syncMediaLine() {
         mediaLine.text = "Loaded: ${sign.mediaLabel}"
     }
@@ -487,6 +494,13 @@ class MainActivity : Activity(), ControlReceiver.Handler {
             val err = sign.setMediaFromFile(path)
             if (err != null) toast(err)
             syncMediaLine()
+        }
+    }
+
+    override fun onFit(fill: Boolean) {
+        ui.post {
+            sign.fitMode = if (fill) SignView.FitMode.COVER else SignView.FitMode.CONTAIN
+            syncFillButton()
         }
     }
 

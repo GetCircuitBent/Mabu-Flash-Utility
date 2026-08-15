@@ -39,6 +39,9 @@ import android.util.Log
  *     adb push promo.gif /sdcard/signboard/
  *     adb shell "am broadcast -a com.getcircuitbent.mabu.signboard.SET_MEDIA -p com.getcircuitbent.mabu.signboard --es path /sdcard/signboard/promo.gif --ef rate 0.75"
  *
+ *   Fill the screen (COVER, default) or fit the whole image (CONTAIN):
+ *     adb shell "am broadcast -a com.getcircuitbent.mabu.signboard.FIT -p com.getcircuitbent.mabu.signboard --ez fill false"
+ *
  *   Turn the idle behaviour on or off:
  *     adb shell "am broadcast -a com.getcircuitbent.mabu.signboard.IDLE -p com.getcircuitbent.mabu.signboard --ez on false"
  *
@@ -74,6 +77,7 @@ class ControlReceiver : BroadcastReceiver() {
         const val ACTION_SHOW = "$PKG.SHOW"
         const val ACTION_HIDE = "$PKG.HIDE"
         const val ACTION_SET_MEDIA = "$PKG.SET_MEDIA"
+        const val ACTION_FIT = "$PKG.FIT"
         const val ACTION_IDLE = "$PKG.IDLE"
         const val ACTION_POSE = "$PKG.POSE"
         const val ACTION_GESTURE = "$PKG.GESTURE"
@@ -88,6 +92,7 @@ class ControlReceiver : BroadcastReceiver() {
         fun onShow()
         fun onHide()
         fun onSetMedia(path: String, rate: Float?)
+        fun onFit(fill: Boolean)
         fun onIdle(on: Boolean)
         fun onPose(name: String)
         fun onGesture(name: String)
@@ -121,6 +126,8 @@ class ControlReceiver : BroadcastReceiver() {
                     h.onSetMedia(path, rate)
                 }
             }
+
+            ACTION_FIT -> h.onFit(intent.getBooleanExtra("fill", true))
 
             ACTION_IDLE -> h.onIdle(intent.getBooleanExtra("on", true))
 
