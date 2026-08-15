@@ -553,6 +553,23 @@ function Apply-SELinuxFix {
     Write-PolicySurgical -Dev $Dev -OutFile $outFile | Out-Null
 }
 
+function Wait-DeviceSettled {
+    # adb reappearing after the final reboot is NOT the same as the system being
+    # ready to test: PackageManager still has to re-scan the freshly installed apps
+    # and framework services have to start. Testing in that window fails checks
+    # transiently (a re-run then passes). Wait for sys.boot_completed, then a fixed
+    # settle margin for package/service registration.
+    param([string] $Dev, [int] $BootTimeoutSec = 90, [int] $SettleSec = 20)
+    Info 'Letting the system settle before self-test (boot_completed + margin)...'
+    $deadline = (Get-Date).AddSeconds($BootTimeoutSec)
+    while ((Get-Date) -lt $deadline) {
+        $bc = (& $script:ADB -s $Dev shell getprop sys.boot_completed 2>&1 | Out-String).Trim()
+        if ($bc -eq '1') { break }
+        Start-Sleep -Seconds 3
+    }
+    Start-Sleep -Seconds $SettleSec
+}
+
 function Run-SelfTest {
     param([string] $Dev, [switch] $SkipMabu, [switch] $SkipSELinux)
     Section 'Self-Test'
@@ -1047,8 +1064,15 @@ function Invoke-MabuFlash {
             Info 'Waiting for device to come up for self-test...'
             $testDev = Find-AdbDevice -PreferIp $script:WifiIp -TimeoutSec 120
             if ($testDev) {
+                Wait-DeviceSettled -Dev $testDev
                 & $script:ADB -s $testDev shell 'cmd package set-home-activity app.lawnchair/.LawnchairLauncher' 2>&1 | Out-Null
                 Run-SelfTest -Dev $testDev -SkipMabu:$SkipMabu -SkipSELinux:$SkipSELinux
+                if ($script:LastSelfTestFails -gt 0) {
+                    Warn "Self-test reported $($script:LastSelfTestFails) failure(s) on the first pass;"
+                    Warn 'the system may still have been settling. Waiting 20s and re-testing once...'
+                    Start-Sleep -Seconds 20
+                    Run-SelfTest -Dev $testDev -SkipMabu:$SkipMabu -SkipSELinux:$SkipSELinux
+                }
             }
             else          { Warn 'Self-test skipped: no adb device found after reboot.' }
         }
