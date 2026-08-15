@@ -1,8 +1,8 @@
 # Sample App Function Index
 
-> **Status: in development / untested.** The sample apps below are unbuilt or not
-> yet validated on real hardware. Treat this as a work in progress, not a finished,
-> tested reference.
+> **Status:** Sample App 1 (Signboard) is **hardware-validated (2026-08-15)**.
+> Sample App 2 (Theremin) is built but **not yet hardware-validated**. The built
+> apps live on the `sample-app-1` branch.
 
 Every Mabu capability we have driven on real hardware, in the order a new
 developer should meet them. Each row is a function a sample app should cover.

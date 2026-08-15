@@ -1,8 +1,7 @@
 # Sample App 1: Mabu Signboard
 
-> **Status: in development, not yet hardware-validated.** This is a locked
-> *design* to build against; the app itself has not been built and tested on a
-> real Mabu yet.
+> **Hardware-validated 2026-08-15.** The built, tested app lives on the
+> `sample-app-1` branch; this is its locked design doc.
 
 Locked design. Build to this; changes go through an edit here first.
 
