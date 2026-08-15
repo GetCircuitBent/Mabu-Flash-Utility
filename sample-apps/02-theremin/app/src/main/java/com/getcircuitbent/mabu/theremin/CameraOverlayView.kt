@@ -165,7 +165,7 @@ class CameraOverlayView(context: Context) : View(context) {
         const val WATERMARK_CORNER = "bottom-right"
 
         /** Width as a fraction of the view. 0.18 is present but not shouting. */
-        const val WATERMARK_WIDTH_FRAC = 0.18f
+        const val WATERMARK_WIDTH_FRAC = 0.09f
 
         /** Gap from the edges, as a fraction of view width. */
         const val WATERMARK_MARGIN_FRAC = 0.02f

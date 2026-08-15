@@ -248,6 +248,22 @@ class MainActivity : Activity(), ControlReceiver.Handler, SurfaceHolder.Callback
         page.addView(title("Mabu Theremin"))
         statusLine = body("Link opening...").also { page.addView(it) }
 
+        // ---- Sound controls, up top with the header so ARMED and gain are
+        //      reachable without scrolling past the tall preview ------------
+        page.addView(section("Sound"))
+        sampleLine = body("").also { page.addView(it) }
+        armButton = button("ARMED") { toggleArm() }
+        page.addView(row(
+            armButton,
+            button("Load /sdcard") { loadFromSdcard() },
+        ))
+        page.addView(slider("Master gain", 0f, 1f, audio.masterGain) { audio.masterGain = it })
+        page.addView(body(
+            "Sound is gated on HANDS BEING VISIBLE, not on any volume mapping, so " +
+                "it cannot be configured into screaming. Hands gone: 250 ms grace, " +
+                "then a 150 ms fade, because an instant cut is a click."
+        ))
+
         // ---- Camera + overlay -------------------------------------------
         // Fixed height rather than a 4:3 box: the preview stretches to the
         // surface, and the overlayView maps normalised coordinates to the same
@@ -258,7 +274,7 @@ class MainActivity : Activity(), ControlReceiver.Handler, SurfaceHolder.Callback
             addView(preview, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
             addView(overlayView, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         }
-        page.addView(camBox, LinearLayout.LayoutParams(MATCH_PARENT, dp(240)))
+        page.addView(camBox, LinearLayout.LayoutParams(MATCH_PARENT, dp(440)))
 
         // ---- Mapping -----------------------------------------------------
         page.addView(section("What Each Hand Does"))
@@ -326,21 +342,6 @@ class MainActivity : Activity(), ControlReceiver.Handler, SurfaceHolder.Callback
         page.addView(slider("Hand smoothing", 0.1f, 1f, blobs.smoothing) {
             blobs.smoothing = it
         })
-
-        // ---- Sound -------------------------------------------------------
-        page.addView(section("Sound"))
-        sampleLine = body("").also { page.addView(it) }
-        armButton = button("ARMED") { toggleArm() }
-        page.addView(row(
-            armButton,
-            button("Load /sdcard") { loadFromSdcard() },
-        ))
-        page.addView(slider("Master gain", 0f, 1f, audio.masterGain) { audio.masterGain = it })
-        page.addView(body(
-            "Sound is gated on HANDS BEING VISIBLE, not on any volume mapping, so " +
-                "it cannot be configured into screaming. Hands gone: 250 ms grace, " +
-                "then a 150 ms fade, because an instant cut is a click."
-        ))
 
         // ---- Robot -------------------------------------------------------
         page.addView(section("The Robot"))
@@ -605,7 +606,10 @@ class MainActivity : Activity(), ControlReceiver.Handler, SurfaceHolder.Callback
             setPadding(0, dp(3), 0, dp(3))
         }
         val text = TextView(this).apply {
-            text = "$lbl: %.3f".format(initial)
+            // Pass lbl as a %s arg, not interpolated into the format string: a
+            // label containing '%' (e.g. "Min blob size (%)") would otherwise be
+            // parsed as a format specifier and crash String.format.
+            text = "%s: %.3f".format(lbl, initial)
             setTextColor(FG_DIM)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
         }
@@ -616,7 +620,7 @@ class MainActivity : Activity(), ControlReceiver.Handler, SurfaceHolder.Callback
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(sb: SeekBar, p: Int, fromUser: Boolean) {
                     val v = min + (max - min) * (p / 100f)
-                    text.text = "$lbl: %.3f".format(v)
+                    text.text = "%s: %.3f".format(lbl, v)
                     if (fromUser) onChange(v)
                 }
 
