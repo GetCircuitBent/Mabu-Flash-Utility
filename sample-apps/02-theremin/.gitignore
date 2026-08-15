@@ -1,0 +1,12 @@
+# Gradle / Android build output
+.gradle/
+build/
+app/build/
+.cxx/
+
+# Points at YOUR Android SDK; machine-specific, never committed.
+local.properties
+
+# IDE
+.idea/
+*.iml

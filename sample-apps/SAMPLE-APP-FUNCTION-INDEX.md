@@ -14,8 +14,17 @@ commented, copy-pasteable Android projects that sit alongside the
 [Mabu Flash Utility](../README.md) for people who have just freed a unit and
 want to make it do something.
 
-**In progress:** [Sample App 1: Mabu Signboard](01-signboard/SPEC.md), covering
-Tier 0, Tier 1 and Tier 4.
+**In progress:**
+
+- [Sample App 1: Mabu Signboard](01-signboard/SPEC.md) - Tier 0, Tier 1 and
+  Tier 4. **Built and hardware-validated (2026-08-15).**
+- [Sample App 2: Mabu Theremin](02-theremin/SPEC.md) - Tier 2, Tier 3 and the
+  two Tier 5 rows. Built, **not yet hardware-validated.**
+
+After both, four rows remain uncovered: 11 (motor telemetry), 15 (puppet
+mirroring), 16 (speak), 25 (video). They have little in common, so a third
+sample should come from a concept that wants several of them rather than from
+working backwards through the leftovers.
 
 ## Conventions for Every Sample App
 
@@ -55,7 +64,7 @@ nothing else is still useful.
 | 8 | Blink and wink | The simplest timed sequence: close, hold, open. Introduces the sequencer pattern. | TBD |
 | 9 | Gestures | Nod yes, shake no, head tilt, look away. Keyframe list plus interpolation. | TBD |
 | 10 | Smooth motion architecture | The decoupled tween: detection or input writes targets only, a dedicated 25 Hz thread low-pass filters toward them and owns all serial I/O, and a send-side deadband drops frames that would not move a servo. Without this the servos audibly rattle. | TBD |
-| 11 | Read motor telemetry | The board talks back: idle heartbeat `FA 00 01 00 ED FB` versus position reports `FA 00 09 01 00 <7 bytes>`. A camera-free way to confirm a move landed. Needs a `readBytes()` added to the JNI shim (so far we have only ever read from an adb shell). Warning belongs here: never open `/dev/ttyS1` from adb while an app holds it, because termios is shared and you will clobber the app's settings. | TBD |
+| 11 | Read motor telemetry | The board talks back: idle heartbeat `FA 00 01 00 ED FB` versus position reports `FA 00 09 01 00 <7 bytes>`. A camera-free way to confirm a move landed. Needs a `read()` on the JNI shim alongside the write; that is proven (the Creeper Controller does it), it is just not in any sample yet. Warning belongs here: never open `/dev/ttyS1` from adb while an app holds it, because termios is shared and you will clobber the app's settings. | TBD |
 
 ## Tier 2: Sensing
 
@@ -85,6 +94,16 @@ nothing else is still useful.
 | 23 | Safety card | Short and prominent. Never run `adb reboot` (it has left units with no Wi-Fi and no recovery path). One owner of the serial port at a time. The limp-versus-stiff test for diagnosing a dead motor board, and the two stuck states with their different recovery paths. | TBD |
 | 24 | Display media full-screen | Stills and animated GIF on the 1024x600 panel: immersive mode, keep-screen-on, fit modes, and playback rate. GIF goes through `android.graphics.Movie`, which is deprecated at API 28 but alive at 27 and needs no library. Its manual `setTime()` clock gives exact rate control for free. | TBD |
 | 25 | Play video | Looping video on the panel. `MediaPlayer` with `setLooping`. RK3288 has hardware H.264 decode, but the codec set beyond H.264/MP4 is unverified and `setPlaybackParams` is frequently ignored or throws on embedded decoders, so this needs its own hardware pass. Deliberately held out of sample 1. | TBD |
+
+## Tier 5: Beyond the Basics
+
+Capabilities that are not "basic Mabu" but that a sample has had to solve, and
+that the next person will hit too.
+
+| # | Function | What the Sample Must Show | Sample App |
+|---|---|---|---|
+| 26 | Track hands | There is no hand-tracking library for this device: MediaPipe dropped `armeabi-v7a`, ML Kit has no hand API, and ML Kit Pose cannot share a 100 ms frame budget with face detection. What works is blob tracking, and the sample ships **two** techniques behind one interface, differing only in how they turn a frame into a mask. Motion (running-average background model on luminance) needs no calibration and is inherently indifferent to skin tone, but loses a motionless hand. Tone (chroma match in the YCbCr the camera already gives you) holds a still hand and is precise with a coloured glove, but must be calibrated, and ships **no** colour constants because the textbook fixed skin thresholds are biased toward light skin. Comes with a replay harness and a host-side tone-sweep tool, because a tracker whose behaviour depends on who is standing in front of it needs to be testable without assembling a crowd. A worked example of picking the technique the hardware allows, of keeping technique swappable behind an interface, and of removing a biased step rather than compensating for it. | TBD |
+| 27 | Real-time audio | Building a live instrument rather than playing a file: an `AudioTrack` block loop on its own thread, sample playback with interpolated resampling, pitch as playback rate (and everything else that identity gets you, from varispeed to sampler keyboard mapping), a state-variable filter giving low-pass and high-pass from one structure, and per-block parameter ramps. The control input arrives at 10 Hz and the audio runs at 44.1 kHz, so the same decouple-and-filter pattern that stops servos chattering is what stops audio zippering. | TBD |
 
 ## Deliberately Out of Scope
 

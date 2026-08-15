@@ -22,7 +22,7 @@ Against the [Sample App Function Index](../SAMPLE-APP-FUNCTION-INDEX.md).
 |---|---|---|
 | 0: Foundation | 1, 2, 3, 4, 5 | Complete |
 | 1: Motion | 6, 7, 8, 9, 10 | Complete |
-| 1: Motion | 11 telemetry readback | **Excluded.** Needs a `readBytes()` on the JNI shim that has never been written. Deferred to its own sample |
+| 1: Motion | 11 telemetry readback | **Excluded.** The technique is proven (the Creeper Controller reads the port from inside an app), but it needs a `read()` on this sample's JNI shim and a reason to be here. Deferred to its own sample |
 | 2: Sensing | 12 to 15 | Not this app. No camera |
 | 3: Audio | 16 to 18 | Not this app |
 | 4: Device | 19, 20, 22, 23, 24 | Complete |

@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Needed only to read sign media from /sdcard/signboard/. The bundled
+         default sign lives in assets/ and needs no permission at all, so the
+         app still works if you never grant this.
+         Pre-grant it with:
+           adb shell pm grant com.getcircuitbent.mabu.signboard \
+             android.permission.READ_EXTERNAL_STORAGE -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+
+    <!-- Used only by the optional autostart step (scripts/set-as-home.ps1).
+         Harmless if you never turn autostart on. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <application
+        android:allowBackup="false"
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name"
+        android:theme="@style/Theme.Signboard">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|screenSize|keyboardHidden">
+
+            <!-- Normal launcher entry. Note there is deliberately NO
+                 android.intent.category.HOME here. A sample app that grabs
+                 HOME on install is a sample app you have to fight to get rid
+                 of. Autostart is opt-in and reversible; see
+                 scripts/set-as-home.ps1 and scripts/unset-as-home.ps1. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Row 20: the ADB control surface. Lets you drive the running app
+             from your PC without touching the screen.
+
+             android:exported="true" is required for `am broadcast` to reach a
+             manifest-registered receiver at all. This is a LAN-trust,
+             bench-tool posture: anything on the device can send these too.
+             If you ship a Signboard into an untrusted environment, either
+             delete this receiver or add android:permission to it. -->
+        <receiver
+            android:name=".ControlReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.getcircuitbent.mabu.signboard.SHOW" />
+                <action android:name="com.getcircuitbent.mabu.signboard.HIDE" />
+                <action android:name="com.getcircuitbent.mabu.signboard.SET_MEDIA" />
+                <action android:name="com.getcircuitbent.mabu.signboard.FIT" />
+                <action android:name="com.getcircuitbent.mabu.signboard.IDLE" />
+                <action android:name="com.getcircuitbent.mabu.signboard.POSE" />
+                <action android:name="com.getcircuitbent.mabu.signboard.GESTURE" />
+                <action android:name="com.getcircuitbent.mabu.signboard.MOVE" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+</manifest>
