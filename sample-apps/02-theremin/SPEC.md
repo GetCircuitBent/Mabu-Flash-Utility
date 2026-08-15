@@ -1,5 +1,9 @@
 # Sample App 2: Mabu Theremin
 
+> **Status: in development, not yet hardware-validated.** The design is locked
+> and the app is built, but it has not been tested on a real Mabu. Sample App 1
+> (Signboard) is the hardware-validated one; this is next in line.
+
 Locked design. Build to this; changes go through an edit here first.
 
 Mabu as a playable instrument. The camera tracks your hands and maps their

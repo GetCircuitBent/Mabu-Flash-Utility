@@ -1,5 +1,8 @@
 # Mabu Theremin
 
+> **Status: in development, not yet hardware-validated.** Built, but not yet
+> tested on a real Mabu. Sample App 1 (Signboard) is the validated one.
+
 The second Mabu sample app. The camera watches your hands and maps their
 height onto whatever you choose - volume, pitch, playhead position, a filter -
 while the robot follows your face and blinks at you.

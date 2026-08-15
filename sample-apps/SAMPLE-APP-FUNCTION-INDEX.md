@@ -13,9 +13,9 @@ want to make it do something.
 **In progress:**
 
 - [Sample App 1: Mabu Signboard](01-signboard/SPEC.md) - Tier 0, Tier 1 and
-  Tier 4. Built, awaiting hardware validation.
+  Tier 4. **Built and hardware-validated (2026-08-15).**
 - [Sample App 2: Mabu Theremin](02-theremin/SPEC.md) - Tier 2, Tier 3 and the
-  two Tier 5 rows. Spec only.
+  two Tier 5 rows. Built, **not yet hardware-validated.**
 
 After both, four rows remain uncovered: 11 (motor telemetry), 15 (puppet
 mirroring), 16 (speak), 25 (video). They have little in common, so a third
