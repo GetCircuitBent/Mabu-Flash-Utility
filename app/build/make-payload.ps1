@@ -59,7 +59,12 @@ $IncludeDirs = @(
 $IncludeFiles = @(
     'app\MabuFlashGui.ps1',
     'FLASH-A-NEW-MABU.md',
-    'README.md'
+    'README.md',
+    # The canonical procedure. It ships because the installed copy is what an
+    # operator has in front of them offline, and because every other doc here
+    # is required to agree with it -- shipping those without it leaves the
+    # tiebreaker on GitHub only.
+    'PROCEDURE.md'
 )
 
 # Excluded even inside an included directory. These are the runtime-acquired
