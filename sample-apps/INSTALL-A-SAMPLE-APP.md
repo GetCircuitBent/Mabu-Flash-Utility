@@ -87,7 +87,9 @@ Three ways to get it, easiest first:
    it finishes. If your PowerShell window from the flash is still open, scroll up.
 2. **Look in your router.** Open your router's admin page in a browser and find
    the list of connected devices (often called *DHCP clients*, *Attached Devices*
-   or similar). The Mabu shows up as **`H7R`** or **`rk3288`**.
+   or similar). The Mabu reports its model name, **`H7R`**, so that is what to
+   look for. Some routers show only a MAC address and no name, in which case use
+   method 1 or 3.
 3. **Ask the network.** In PowerShell:
    ```powershell
    arp -a | Select-String '192.168'
