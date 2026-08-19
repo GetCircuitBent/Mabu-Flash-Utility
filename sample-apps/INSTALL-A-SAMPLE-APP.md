@@ -51,8 +51,8 @@ adb version
 **If that prints a version number, you are done with this step.** Skip to step 2.
 
 **If it says `adb` is not recognised**, it is installed but not on this window's
-search path. Paste this line, which looks in both places the flasher puts it and
-makes it available for the rest of this window:
+search path. Paste this line, which looks in the three places the flasher can put
+it and makes it available for the rest of this window:
 
 ```powershell
 $f = Get-ChildItem "$env:LOCALAPPDATA\MabuFlash","$env:LOCALAPPDATA\Microsoft\WinGet\Packages","C:\Mabu-Flash-Utility\tools" -Recurse -Filter adb.exe -ErrorAction SilentlyContinue | Select-Object -First 1; if ($f) { $env:Path += ';' + $f.DirectoryName; "Using $($f.FullName)" } else { "Not found - see below" }
