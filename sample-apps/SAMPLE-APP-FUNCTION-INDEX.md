@@ -1,8 +1,12 @@
 # Sample App Function Index
 
 > **Status:** Sample App 1 (Signboard) is **hardware-validated (2026-08-15)**.
-> Sample App 2 (Theremin) is built but **not yet hardware-validated**. The built
-> apps live on the `sample-app-1` branch.
+> Sample App 2 (Theremin) is built but **not yet hardware-validated**. Both are
+> merged to `main`.
+
+**Just want to run one?** You do not need any of this page. Download the APK and
+install it: [Install a Sample App](INSTALL-A-SAMPLE-APP.md). This index is for
+people writing their own.
 
 Every Mabu capability we have driven on real hardware, in the order a new
 developer should meet them. Each row is a function a sample app should cover.
@@ -38,6 +42,11 @@ working backwards through the leftovers.
 - **Per-unit calibration is called out, not hidden.** Motor polarity and
   neutrals differ between units. Anything unit-specific gets a comment saying
   "recalibrate this on your unit".
+- **Ships a built APK.** Every sample publishes a release-signed
+  `mabu-<name>.apk` as a GitHub release asset, so someone who has just flashed a
+  unit can run it without a build toolchain. See
+  [Shipping a Sample App](#shipping-a-sample-app). A sample that only builds from
+  source is not finished.
 
 Protocol details behind these rows live in
 [MABU_MOTOR_GUIDE.md](../guides/MABU_MOTOR_GUIDE.md).
@@ -90,7 +99,7 @@ nothing else is still useful.
 | 19 | Device status | Battery percentage and temperature from `ACTION_BATTERY_CHANGED`, uptime, and the current IP address. The IP matters because Wi-Fi ADB is the only way onto the device. | TBD |
 | 20 | Control over ADB | A `BroadcastReceiver` that lets you drive the app headlessly from a PC. Broadcasts must target the package (`-p com.example.app`) or Android 8.0 and up drops them. Makes the whole sample scriptable. | TBD |
 | 21 | Autostart as the home launcher | How your app becomes the thing the robot boots into. Includes the rule that only one process may hold `/dev/ttyS1`, so whatever launcher is already installed has to be stopped first. | TBD |
-| 22 | Build and deploy | `minSdk 24`, `targetSdk 28`, `compileSdk 34`, `abiFilters = ["armeabi-v7a"]`, an install script that goes over Wi-Fi ADB, and pre-granting runtime permissions with `pm grant`. | TBD |
+| 22 | Build and deploy | `minSdk 24`, `targetSdk 28`, `compileSdk 34`, `abiFilters = ["armeabi-v7a"]`, an install script that goes over Wi-Fi ADB, and pre-granting runtime permissions with `pm grant`. Also the release side: a signed `mabu-<name>.apk` published as a release asset, because most people who flash a Mabu are not going to install a JDK to see it move. | TBD |
 | 23 | Safety card | Short and prominent. Never run `adb reboot` (it has left units with no Wi-Fi and no recovery path). One owner of the serial port at a time. The limp-versus-stiff test for diagnosing a dead motor board, and the two stuck states with their different recovery paths. | TBD |
 | 24 | Display media full-screen | Stills and animated GIF on the 1024x600 panel: immersive mode, keep-screen-on, fit modes, and playback rate. GIF goes through `android.graphics.Movie`, which is deprecated at API 28 but alive at 27 and needs no library. Its manual `setTime()` clock gives exact rate control for free. | TBD |
 | 25 | Play video | Looping video on the panel. `MediaPlayer` with `setLooping`. RK3288 has hardware H.264 decode, but the codec set beyond H.264/MP4 is unverified and `setPlaybackParams` is frequently ignored or throws on embedded decoders, so this needs its own hardware pass. Deliberately held out of sample 1. | TBD |
@@ -304,3 +313,59 @@ downtime.
    every command right after boot. If that is what you are seeing, force-stop it
    and redo the wake sequence before assuming your frames are wrong. Not yet
    confirmed, but it costs nothing to rule out.
+
+
+## Shipping a Sample App
+
+A sample is not done when it builds. It is done when someone who has just
+flashed their first Mabu can run it. That means a **built, signed APK on the
+releases page**, because the alternative is asking a person who wanted to see a
+robot move to install a JDK, an SDK and Gradle first.
+
+The end-user side of this is [Install a Sample App](INSTALL-A-SAMPLE-APP.md).
+This section is the producer side of the same contract: if you change the file
+names, the package names or the permissions, that page has to change with them.
+
+### The Release Checklist
+
+1. **Bump `versionCode`** in `app/build.gradle.kts`. Android refuses to install
+   over a higher one, and a same-code rebuild forces users into an uninstall.
+   `versionName` is for humans; `versionCode` is what the device enforces.
+2. **Build a release APK, not the debug one.**
+   ```powershell
+   ./gradlew.bat assembleRelease
+   ```
+   The debug APK is signed with the throwaway debug key, which differs per
+   machine. Ship one and the next release from a different PC fails to install
+   over it with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, and every user has to
+   uninstall by hand to recover. It is also marked debuggable.
+3. **Sign it with the sample-apps release key.** One keystore for all samples, so
+   users can update any of them without uninstalling. The keystore and its
+   passwords are **not in this repo and must never be committed**; point the
+   build at it through `signingConfigs` reading environment variables or an
+   untracked `keystore.properties`. If a keystore does not exist yet, create one
+   and record where it lives, because losing it means every installed copy of
+   every sample has to be uninstalled before it can be updated again.
+4. **Name the file `mabu-<name>.apk`** — `mabu-signboard.apk`,
+   `mabu-theremin.apk`. Not `app-release.apk`, which tells a user nothing and
+   collides with the other samples in their Downloads folder.
+5. **Install it on a real, freshly flashed Mabu from the file you are about to
+   publish.** Not from Gradle, not from `install.ps1`. This is the step that
+   catches the missing permission grant, the wrong ABI, and the signing mistake,
+   and it is the whole reason the APK requirement exists.
+6. **Attach it to the GitHub release** alongside the flasher, and publish the
+   SHA-256 next to it.
+7. **Update the app table** in [Install a Sample App](INSTALL-A-SAMPLE-APP.md)
+   with the file name and the app's real hardware-validation status. A sample
+   that has not been run on hardware says so there, in the table, not only in its
+   own README.
+
+### What the APK Has to Be
+
+| Property | Value | Why |
+|---|---|---|
+| ABI | `armeabi-v7a` only | The RK3288 is 32-bit ARMv7. An arm64 library will not load, and shipping both only bloats a file a user downloads over a home connection. |
+| `minSdk` / `targetSdk` | 24 / 28 | The Mabu is API 27. Anything above 27 will not install at all. |
+| Signing | Release key, shared across samples | Debug keys are per-machine and strand users on `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. |
+| Permissions | Declared, and listed in the install guide | Users pre-grant them with `pm grant`; an undeclared grant fails and a silent prompt stops a headless demo dead. |
+| Size | Small enough to say so | The install guide tells people it is a small download. Keep that true, or change the sentence. |

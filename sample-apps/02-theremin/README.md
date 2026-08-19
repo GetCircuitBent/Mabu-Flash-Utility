@@ -16,6 +16,13 @@ Covers Tier 2 (camera, face detection, face following), Tier 3 (audio out,
 and mic as an opt-in add-on), and both Tier 5 rows of the
 [Sample App Function Index](../SAMPLE-APP-FUNCTION-INDEX.md).
 
+## Just Want to Run It?
+
+Download `mabu-theremin.apk` from the
+[latest release](https://github.com/GetCircuitBent/Mabu-Flash-Utility/releases/latest)
+and follow [Install a Sample App](../INSTALL-A-SAMPLE-APP.md). No build tools
+needed. The rest of this page is for reading and changing the code.
+
 ## Getting It Running
 
 You need a flashed Mabu on the same Wi-Fi as your PC. See

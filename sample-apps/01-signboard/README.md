@@ -13,6 +13,14 @@ Covers 16 of the 25 rows in the
 (foundation), all of Tier 1 (motion) except telemetry readback, and all of
 Tier 4 (device and integration).
 
+## Just Want to Run It?
+
+You do not need any of what follows. Download `mabu-signboard.apk` from the
+[latest release](https://github.com/GetCircuitBent/Mabu-Flash-Utility/releases/latest)
+and follow [Install a Sample App](../INSTALL-A-SAMPLE-APP.md): no toolchain, no
+build, about ten minutes. The rest of this page is for reading and changing the
+code.
+
 ## Before You Start
 
 You need a Mabu that has already been through the

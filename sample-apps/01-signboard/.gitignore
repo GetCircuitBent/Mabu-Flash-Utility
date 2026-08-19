@@ -10,3 +10,10 @@ local.properties
 # IDE
 .idea/
 *.iml
+
+# Release signing. NEVER commit either of these: the keystore is the identity
+# every published sample APK is signed with, and losing or leaking it means
+# every installed copy has to be uninstalled before it can be updated again.
+keystore.properties
+*.jks
+*.keystore

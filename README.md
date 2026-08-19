@@ -138,6 +138,15 @@ When it's done you'll see a **`Done`** banner and a **self-test summary** (passe
 
 ---
 
+## Now Make It Do Something
+A freed Mabu boots to a normal home screen with an app store on it, and nothing telling it to move. The **sample apps** are ready-made apps that use the robot: **Signboard** turns it into a living sign that keeps moving on its own, and **Theremin** watches your hands and turns them into sound.
+
+You don't need to write or build anything. Download the app, send it over your Wi-Fi network, run it: **[Install a Sample App](sample-apps/INSTALL-A-SAMPLE-APP.md)** — about ten minutes.
+
+If you'd rather write your own, the [Sample App Function Index](sample-apps/SAMPLE-APP-FUNCTION-INDEX.md) is the map of everything the hardware can do, and the samples are commented to be read and copied.
+
+---
+
 ## Troubleshooting
 **The PC can't see the Mabu at all?** Start here. This read-only diagnostic reports which driver is bound to each Rockchip USB ID and what's missing. It changes nothing:
 ```powershell
@@ -188,6 +197,8 @@ The harness uses a 30-pin IDC ribbon cable (2.0 mm pitch); pin 1 is at the GND/U
 
 ## More Documentation
 - **Detailed walkthrough**: background on each phase, the full 30-pin header pin-out, recovery for unusual unit states, and the permanent SELinux fix: [FLASH-A-NEW-MABU.md](FLASH-A-NEW-MABU.md).
+- **Running an app on your Mabu**: download an APK and install it over Wi-Fi, no build tools needed: [Install a Sample App](sample-apps/INSTALL-A-SAMPLE-APP.md).
+- **Writing your own app**: every capability the hardware has, and the two commented sample projects that demonstrate them: [Sample App Function Index](sample-apps/SAMPLE-APP-FUNCTION-INDEX.md).
 - **The GUI edition**: design, the UI contract shared by both front-ends, threading model, and build steps: [app/EXECUTABLE.md](app/EXECUTABLE.md).
 
 ---
