@@ -43,7 +43,7 @@ There are **no prerequisites**: no PowerShell, no execution policy to change, no
 
 > **Not yet hardware-validated.** This build is verified on a developer machine but has not flashed a real tablet. Treat the first run as a test.
 
-Now connect the harness and power on the Mabu (see [Flash a Mabu](#flash-a-mabu), steps 1 and 2), then follow the prompts.
+Now connect the harness and follow [Flash a Mabu](#flash-a-mabu) from step 1. If this is the **first** Mabu you've flashed from this PC, note that step 3 tells you to boot the tablet into Android rather than hold ADKEY — ADKEY can't work until the drivers are in.
 
 ---
 
@@ -101,7 +101,7 @@ That's it. You won't need to repeat setup on this PC.
 Plug the USB harness into the Mabu's internal header and into a USB port on your PC. **Use the same USB port every time**; the driver binding is tied to the port, and switching ports means redoing the Zadig step once.
 
 ### Step 2: Start the Flash
-**Installer:** the GUI is already open; click **Flash**.
+**Installer:** the GUI is already open; click **Start Flashing**.
 
 **Scripts:** in the same **Administrator** PowerShell window, from the repo folder:
 ```powershell
@@ -109,7 +109,17 @@ Plug the USB harness into the Mabu's internal header and into a USB port on your
 ```
 That's the whole command; no options are needed. This is the same flasher the GUI drives. It immediately starts watching for the Loader.
 
-### Step 3: Boot the Mabu Holding ADKEY
+### Step 3: Get into the Loader
+How you do this depends on whether this PC has flashed a Mabu before.
+
+#### First time on this PC: boot into Android, and don't touch ADKEY
+Holding ADKEY **cannot** catch the Loader yet. Catching it depends on this PC's USB drivers, and on a fresh PC they aren't installed, so there's nothing to catch it with.
+
+Instead, boot the tablet normally into **Android** and join it to **Wi-Fi** on its own screen. The flasher then walks you through installing the **Android USB driver** (see step 3 of [What Happens During a Flash](#what-happens-during-a-flash), including what to do if Windows refuses it) and the **Zadig** rebind, reads the unit's state, and enters the Loader **over adb** — no timing to get right and nothing to hold.
+
+That's a one-off. Once it's done this PC is set up, and the ADKEY route below works from then on.
+
+#### This PC has flashed a Mabu before: boot holding ADKEY
 With the flash already running, boot the tablet **while holding ADKEY** (short header pin 4 to GND). Either way of booting works, unplug and replug the harness or use the power button; just keep ADKEY held through the boot. The flasher catches the Rockchip Loader as the unit comes up and moves straight into the flash.
 
 **If the Loader does not catch** (the tablet boots to Android, or lands on the recovery "No command" screen), reboot it to Android, then unplug and replug the harness USB and listen for the Windows **"new USB device" chime**:
@@ -165,7 +175,8 @@ If you'd rather write your own, the [Sample App Function Index](sample-apps/SAMP
 | SmartScreen blocks `MabuFlashSetup.exe` | Click **More info**, then **Run anyway**. The installer isn't code-signed yet |
 | Script says `adb.exe not found` | Let it auto-install, or run `winget install Google.PlatformTools` and restart PowerShell |
 | `rkdeveloptool.exe not found` | You're running from the wrong folder, or the download was incomplete. Run `.\scripts\install-tools.ps1` from the folder containing `scripts\` |
-| Loader never appears | Boot the tablet **while holding ADKEY** (pin 4 to GND) with the flash already running. If it still doesn't catch, reboot to Android, replug the harness USB, and listen for the Windows **"new USB device" chime**: **no chime = hardware** (check connections and the USB cable, see wiring below); **chime = retry** the ADKEY boot |
+| Loader never appears, and this is the **first** flash from this PC | Expected. ADKEY can't catch a Loader this PC has no driver for. Boot the tablet into Android instead and let the flasher install the driver; see [Step 3](#step-3-get-into-the-loader) |
+| Loader never appears, on a PC that has flashed before | Boot the tablet **while holding ADKEY** (pin 4 to GND) with the flash already running. If it still doesn't catch, reboot to Android, replug the harness USB, and listen for the Windows **"new USB device" chime**: **no chime = hardware** (check connections and the USB cable, see wiring below); **chime = retry** the ADKEY boot |
 | Windows shows the Mabu (as "H7R", "ADB Interface" or "MTP") but you get `No adb device and no Loader` | Zadig was pointed at the Android-mode device at some point, which stops ADB from seeing it. The flasher detects this and repairs it in place, so run it again first. If it still reports the misbinding, follow the undo steps it prints |
 | Stuck at the Wi-Fi step | Touch the Mabu's screen and join it to your Wi-Fi, then continue; it picks up automatically once the Mabu is online |
 | The motor fix "needs the WSL reflash fallback" | This only happens on the rare unit whose policy patch changes size. Run `.\scripts\install-tools.ps1 -InstallWsl` as Administrator to install WSL/Ubuntu (restart if asked), then re-run the flash with `-NoWipe` |

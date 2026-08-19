@@ -132,9 +132,35 @@ if (-not $sync.AppDir) {
              and on a short window (or at 150% display scaling, where 720 DIP is
              1080 physical pixels) the last steps used to be cut off with no way
              to reach them. -->
+        <DockPanel>
+        <!-- ConnectStatus is pinned OUTSIDE the scroller: it is live feedback
+             about whether the app can see the tablet, so it must never be a
+             scroll away. It was fully clipped before, at the default size. -->
+        <TextBlock x:Name="ConnectStatus" DockPanel.Dock="Bottom" Margin="0,14,0,0"
+                   FontSize="13.5" FontWeight="SemiBold" Foreground="#FFB020"
+                   Text="Waiting for device..." TextWrapping="Wrap"/>
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel>
-          <TextBlock Text="Catch the Loader" FontSize="16" FontWeight="SemiBold" Foreground="#61CE70" Margin="0,0,0,12" TextWrapping="Wrap"/>
+          <!-- First-time-on-this-PC comes FIRST on purpose. Holding ADKEY cannot
+               catch the Loader until this PC's USB drivers are installed, so a
+               first-timer who reads the ADKEY steps first follows them and
+               fails. See PROCEDURE.md: booting to Android is the first-time
+               route, not a shortcut. -->
+          <TextBlock Text="First, which is this?" FontSize="16" FontWeight="SemiBold"
+                     Foreground="#61CE70" Margin="0,0,0,12" TextWrapping="Wrap"/>
+
+          <TextBlock Text="If this is the first time flashing a Mabu from this PC" FontSize="13.5"
+                     FontWeight="SemiBold" Foreground="#FFB020" Margin="0,0,0,6" TextWrapping="Wrap"/>
+          <TextBlock Foreground="#F1F3F5" FontSize="13.5" TextWrapping="Wrap" Margin="0,0,0,8"
+                     Text="Do NOT hold ADKEY. It cannot catch the Loader yet: that depends on this PC's USB drivers, and they are not installed."/>
+          <TextBlock Foreground="#F1F3F5" FontSize="13.5" TextWrapping="Wrap" Margin="0,0,0,8"
+                     Text="Instead: boot the unit into Android, join it to Wi-Fi, then click Start Flashing. This app walks you through installing the Windows Android USB driver, then reads the unit's state and enters the Loader over adb, with no timing to get right."/>
+          <TextBlock Foreground="#A5B0B7" FontSize="12.5" TextWrapping="Wrap" Margin="0,0,0,8"
+                     Text="That is a one-off. Once it is done, this PC is set up and the ADKEY method below works from then on."/>
+
+          <Border Background="#33454F" Height="1" Margin="0,12,0,10"/>
+          <TextBlock Text="If this PC has flashed a Mabu before: catch the Loader" FontSize="13.5"
+                     FontWeight="SemiBold" Foreground="#FFB020" Margin="0,0,0,8" TextWrapping="Wrap"/>
           <TextBlock Foreground="#F1F3F5" FontSize="13.5" TextWrapping="Wrap" Margin="0,0,0,8"
                      Text="1.  Plug the harness straight into this PC, no hub. Use the SAME USB port every time: the Loader driver binding is per port."/>
           <TextBlock Foreground="#F1F3F5" FontSize="13.5" TextWrapping="Wrap" Margin="0,0,0,8"
@@ -148,16 +174,9 @@ if (-not $sync.AppDir) {
           <TextBlock Foreground="#F1F3F5" FontSize="13.5" TextWrapping="Wrap" Margin="0,0,0,8"
                      Text="6.  Click Start Flashing promptly: an idle Loader drops back to Android. Caught this way the unit's state cannot be read, so /data is wiped by default."/>
 
-          <Border Background="#33454F" Height="1" Margin="0,12,0,10"/>
-          <TextBlock Text="Quicker, if adb already sees the tablet" FontSize="13.5" FontWeight="SemiBold"
-                     Foreground="#FFB020" Margin="0,0,0,6" TextWrapping="Wrap"/>
-          <TextBlock Foreground="#A5B0B7" FontSize="12.5" TextWrapping="Wrap"
-                     Text="Boot the unit into Android, join it to Wi-Fi, then click Start Flashing: the app reads the unit's state and enters the Loader over adb, with no timing to get right. It needs the Windows Android USB driver, which it will walk you through installing on the first run."/>
-
-          <TextBlock x:Name="ConnectStatus" Margin="0,14,0,0" FontSize="13.5" FontWeight="SemiBold"
-                     Foreground="#FFB020" Text="Waiting for device..." TextWrapping="Wrap"/>
         </StackPanel>
         </ScrollViewer>
+        </DockPanel>
       </Border>
       <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
         <Button x:Name="StartBtn" Content="Start Flashing" IsEnabled="False"/>
