@@ -170,7 +170,10 @@ Copy-Item $BuiltApk $final -Force
 
 $hash = (Get-FileHash $final -Algorithm SHA256).Hash.ToLower()
 $sizeMb = [math]::Round((Get-Item $final).Length / 1MB, 2)
-"$hash  $AppName.apk" | Set-Content -Path "$final.sha256" -Encoding utf8
+# WriteAllText with an explicit no-BOM encoder, not Set-Content -Encoding utf8:
+# Windows PowerShell 5.1 writes a BOM, which lands as a stray character at the
+# front of the hash when someone opens the file to compare it by eye.
+[IO.File]::WriteAllText("$final.sha256", "$hash  $AppName.apk`n", (New-Object Text.UTF8Encoding $false))
 
 Ok "$final  ($sizeMb MB)"
 Write-Host "    SHA-256: $hash" -ForegroundColor Gray
