@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Adaptive launcher icon background: GCB bluewood-900 (matches app dark base). -->
+    <color name="ic_launcher_background">#1A242D</color>
+</resources>
