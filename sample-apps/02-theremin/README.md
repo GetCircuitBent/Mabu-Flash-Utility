@@ -18,10 +18,11 @@ and mic as an opt-in add-on), and both Tier 5 rows of the
 
 ## Just Want to Run It?
 
-Download `mabu-theremin.apk` from the
-[latest release](https://github.com/GetCircuitBent/Mabu-Flash-Utility/releases/latest)
-and follow [Install a Sample App](../INSTALL-A-SAMPLE-APP.md). No build tools
-needed. The rest of this page is for reading and changing the code.
+Not yet: `mabu-theremin.apk` is **not published**, because this app has not been
+run on real hardware and shipping a download of something untested is how you
+waste someone's afternoon. Build it from source with the steps below. Once it is
+hardware-validated it gets an APK on the releases page, and
+[Install a Sample App](../INSTALL-A-SAMPLE-APP.md) becomes the way in.
 
 ## Getting It Running
 

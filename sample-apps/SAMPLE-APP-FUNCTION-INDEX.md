@@ -328,24 +328,39 @@ names, the package names or the permissions, that page has to change with them.
 
 ### The Release Checklist
 
+Signboard has this wired up already: `scripts/build-release.ps1` does steps 2, 4
+and 6, and enforces the whole of "What the APK Has to Be" below. Copy it when you
+add a sample. The steps are spelled out anyway, because the script can only check
+what it can see, and steps 1 and 5 are on you.
+
 1. **Bump `versionCode`** in `app/build.gradle.kts`. Android refuses to install
    over a higher one, and a same-code rebuild forces users into an uninstall.
    `versionName` is for humans; `versionCode` is what the device enforces.
 2. **Build a release APK, not the debug one.**
    ```powershell
-   ./gradlew.bat assembleRelease
+   ./scripts/build-release.ps1
    ```
    The debug APK is signed with the throwaway debug key, which differs per
    machine. Ship one and the next release from a different PC fails to install
    over it with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, and every user has to
-   uninstall by hand to recover. It is also marked debuggable.
+   uninstall by hand to recover. It is also marked debuggable. The script
+   refuses to stage a debug-signed or unsigned APK.
 3. **Sign it with the sample-apps release key.** One keystore for all samples, so
    users can update any of them without uninstalling. The keystore and its
    passwords are **not in this repo and must never be committed**; point the
    build at it through `signingConfigs` reading environment variables or an
-   untracked `keystore.properties`. If a keystore does not exist yet, create one
-   and record where it lives, because losing it means every installed copy of
-   every sample has to be uninstalled before it can be updated again.
+   untracked `keystore.properties`. The key exists: it is
+   `mabu-samples-release.jks`, alias `mabu-samples`, RSA 2048, valid to 2056,
+   and the build finds it at `~/.mabu-keys/keystore.properties` without any
+   per-clone setup. **Back it up somewhere off this machine.** Losing it means
+   every installed copy of every sample has to be uninstalled before it can be
+   updated again, and nobody can publish an update in the meantime.
+
+   Its certificate fingerprint, so you can tell a genuine build from someone
+   else's:
+   ```
+   SHA-256 e0:6a:f0:0c:12:08:d1:bf:ca:57:d0:7a:e2:5a:e8:3f:b1:36:93:26:9f:8b:53:05:83:1e:32:1a:50:f0:65:3a
+   ```
 4. **Name the file `mabu-<name>.apk`** — `mabu-signboard.apk`,
    `mabu-theremin.apk`. Not `app-release.apk`, which tells a user nothing and
    collides with the other samples in their Downloads folder.
@@ -353,8 +368,15 @@ names, the package names or the permissions, that page has to change with them.
    publish.** Not from Gradle, not from `install.ps1`. This is the step that
    catches the missing permission grant, the wrong ABI, and the signing mistake,
    and it is the whole reason the APK requirement exists.
-6. **Attach it to the GitHub release** alongside the flasher, and publish the
-   SHA-256 next to it.
+6. **Attach it to the current GitHub release** alongside the flasher, with its
+   `.sha256` next to it:
+   ```powershell
+   gh release upload <tag> dist\mabu-signboard.apk dist\mabu-signboard.apk.sha256
+   ```
+   Attach to the existing release rather than cutting a new one for the app. The
+   install guide and the flasher README both send people to `/releases/latest`,
+   so a sample-app-only release would make the flasher stop being the thing they
+   land on.
 7. **Update the app table** in [Install a Sample App](INSTALL-A-SAMPLE-APP.md)
    with the file name and the app's real hardware-validation status. A sample
    that has not been run on hardware says so there, in the table, not only in its

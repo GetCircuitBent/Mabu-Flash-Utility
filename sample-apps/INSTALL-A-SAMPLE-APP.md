@@ -18,7 +18,7 @@ If you would rather build from source and change the code, skip to
 | App | What it does | Status |
 |---|---|---|
 | [**Signboard**](01-signboard/) | Mabu as a living sign. A picture or looping animation on the screen while the body keeps moving on its own. Start here. | Tested on real hardware |
-| [**Theremin**](02-theremin/) | The camera watches your hands and turns them into sound, while the robot follows your face. | Built, not yet tested on hardware |
+| [**Theremin**](02-theremin/) | The camera watches your hands and turns them into sound, while the robot follows your face. | Built, not yet tested on hardware, **no APK published yet** — build it from source for now |
 
 ---
 
@@ -129,13 +129,22 @@ robot moves and loses signal. That is normal. Just run the two commands again.
 Go to the [latest release](https://github.com/GetCircuitBent/Mabu-Flash-Utility/releases/latest)
 and download the `.apk` file for the app you want:
 
-| App | File |
-|---|---|
-| Signboard | `mabu-signboard.apk` |
-| Theremin | `mabu-theremin.apk` |
+| App | File | Size |
+|---|---|---|
+| Signboard | `mabu-signboard.apk` | about 3 MB |
+| Theremin | `mabu-theremin.apk` | not published yet |
 
-Save it somewhere you can find it, like your **Downloads** folder. It is a small
-file and it is the only thing you need to download.
+Save it somewhere you can find it, like your **Downloads** folder. That one file
+is all you need.
+
+There is a matching `.sha256` file next to it. You can ignore it; it is there so
+you can confirm the download is intact if you want to:
+
+```powershell
+Get-FileHash "$env:USERPROFILE\Downloads\mabu-signboard.apk" -Algorithm SHA256
+```
+
+The number it prints should match the contents of the `.sha256` file.
 
 > Your browser may warn that `.apk` files can harm your device, because it is an
 > Android app arriving outside an app store. That warning is generic. Keep the
