@@ -167,7 +167,22 @@ function Confirm-AndroidAdbDriver {
              "5. Pick `"$model`"`r`n" +
              "6. Accept the unsigned-driver warning`r`n`r`n" +
              "If step 4 says the folder has no compatible driver, go back and untick " +
-             "`"Show compatible hardware`" first.`r`n`r`nPress Continue when it is installed.") `
+             "`"Show compatible hardware`" first.`r`n`r`n" +
+             "IF WINDOWS REFUSES IT OUTRIGHT`r`n" +
+             "On 64-bit Windows you may get `"The third-party INF does not contain digital " +
+             "signature information`" (error 0xE0000247) with no option to continue. That is " +
+             "driver signature enforcement, and it has to be off to install this driver. " +
+             "Patching the INF to match your unit invalidates Google's signature, which is " +
+             "why there is nothing to verify.`r`n`r`n" +
+             "To turn it off for one boot:`r`n" +
+             "  a. Hold Shift and click Start > Power > Restart`r`n" +
+             "  b. Troubleshoot > Advanced options > Startup Settings > Restart`r`n" +
+             "  c. Press 7 (Disable driver signature enforcement)`r`n" +
+             "  d. Run this app again and come back to this step`r`n`r`n" +
+             "It reverts by itself on the next normal boot, and the driver stays installed: " +
+             "only the INF was unsigned, and the driver it points at (Microsoft's WinUSB) is " +
+             "signed. You should not need to do this twice.`r`n`r`n" +
+             "Press Continue when it is installed.") `
             @('Continue','Skip')
         if ($choice -eq 'Skip') {
             Warn 'Driver install skipped. adb will stay blind, and the flash will stall at the'

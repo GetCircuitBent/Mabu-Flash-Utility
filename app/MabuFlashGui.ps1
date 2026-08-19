@@ -60,9 +60,10 @@ if (-not $sync.AppDir) {
 [xml]$xaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Mabu Flash Utility" Height="720" Width="760"
+        Title="Mabu Flash Utility" Height="800" Width="760"
+        MinHeight="420" MinWidth="560"
         WindowStartupLocation="CenterScreen" Background="#1A242D"
-        FontFamily="Segoe UI" ResizeMode="CanMinimize">
+        FontFamily="Segoe UI" ResizeMode="CanResize">
   <Window.Resources>
     <Style TargetType="Button">
       <Setter Property="Background" Value="#179E19"/>
@@ -101,15 +102,20 @@ if (-not $sync.AppDir) {
 
     <!-- ===================== BRAND HEADER ===================== -->
     <Border Grid.Row="0" Background="#1A242D" BorderBrush="#33454F" BorderThickness="0,0,0,1" Padding="30,16">
-      <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-        <Image x:Name="BrandLogo" Height="50" Margin="0,0,18,0"
+      <!-- DockPanel, not a horizontal StackPanel: a StackPanel measures its
+           children with infinite width on the stacking axis, so TextWrapping
+           never engages and the title just runs off the edge. Docking the logo
+           gives the text block the real remaining width to wrap into. -->
+      <DockPanel VerticalAlignment="Center" LastChildFill="True">
+        <Image x:Name="BrandLogo" DockPanel.Dock="Left" Height="50" Margin="0,0,18,0"
                Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
         <StackPanel VerticalAlignment="Center">
-          <TextBlock Text="Mabu Flash Utility" FontSize="25" FontWeight="Bold" Foreground="#FFFFFF"/>
+          <TextBlock Text="Mabu Flash Utility" FontSize="25" FontWeight="Bold" Foreground="#FFFFFF"
+                     TextWrapping="Wrap"/>
           <TextBlock Text="Welcome to the Mabu Liberation Front!" FontSize="13.5"
                      Foreground="#FF4F00" Margin="0,3,0,0" TextWrapping="Wrap"/>
         </StackPanel>
-      </StackPanel>
+      </DockPanel>
     </Border>
 
     <!-- ===================== CONNECT SCREEN ===================== -->
@@ -118,12 +124,17 @@ if (-not $sync.AppDir) {
         <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
         <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
-      <TextBlock Grid.Row="0" Text="Connect Your Mabu" FontSize="22" FontWeight="SemiBold" Foreground="#FFFFFF"/>
+      <TextBlock Grid.Row="0" Text="Connect Your Mabu" FontSize="22" FontWeight="SemiBold" Foreground="#FFFFFF" TextWrapping="Wrap"/>
       <TextBlock Grid.Row="1" Margin="0,4,0,20" FontSize="14" Foreground="#A5B0B7" TextWrapping="Wrap"
                  Text="Liberate &amp; Provision a Mabu Tablet."/>
       <Border Grid.Row="2" Background="#283845" CornerRadius="8" Padding="22">
+        <!-- Scrolls rather than clips. This card is the longest text in the app,
+             and on a short window (or at 150% display scaling, where 720 DIP is
+             1080 physical pixels) the last steps used to be cut off with no way
+             to reach them. -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel>
-          <TextBlock Text="Catch the Loader" FontSize="16" FontWeight="SemiBold" Foreground="#61CE70" Margin="0,0,0,12"/>
+          <TextBlock Text="Catch the Loader" FontSize="16" FontWeight="SemiBold" Foreground="#61CE70" Margin="0,0,0,12" TextWrapping="Wrap"/>
           <TextBlock Foreground="#F1F3F5" FontSize="13.5" TextWrapping="Wrap" Margin="0,0,0,8"
                      Text="1.  Plug the harness straight into this PC, no hub. Use the SAME USB port every time: the Loader driver binding is per port."/>
           <TextBlock Foreground="#F1F3F5" FontSize="13.5" TextWrapping="Wrap" Margin="0,0,0,8"
@@ -139,13 +150,14 @@ if (-not $sync.AppDir) {
 
           <Border Background="#33454F" Height="1" Margin="0,12,0,10"/>
           <TextBlock Text="Quicker, if adb already sees the tablet" FontSize="13.5" FontWeight="SemiBold"
-                     Foreground="#FFB020" Margin="0,0,0,6"/>
+                     Foreground="#FFB020" Margin="0,0,0,6" TextWrapping="Wrap"/>
           <TextBlock Foreground="#A5B0B7" FontSize="12.5" TextWrapping="Wrap"
                      Text="Boot the unit into Android, join it to Wi-Fi, then click Start Flashing: the app reads the unit's state and enters the Loader over adb, with no timing to get right. It needs the Windows Android USB driver, which it will walk you through installing on the first run."/>
 
           <TextBlock x:Name="ConnectStatus" Margin="0,14,0,0" FontSize="13.5" FontWeight="SemiBold"
                      Foreground="#FFB020" Text="Waiting for device..." TextWrapping="Wrap"/>
         </StackPanel>
+        </ScrollViewer>
       </Border>
       <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
         <Button x:Name="StartBtn" Content="Start Flashing" IsEnabled="False"/>
@@ -159,7 +171,7 @@ if (-not $sync.AppDir) {
         <RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/>
         <RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
-      <TextBlock Grid.Row="0" x:Name="PhaseTitle" Text="Flashing..." FontSize="24" FontWeight="Bold" Foreground="#FFFFFF"/>
+      <TextBlock Grid.Row="0" x:Name="PhaseTitle" Text="Flashing..." FontSize="24" FontWeight="Bold" Foreground="#FFFFFF" TextWrapping="Wrap"/>
 
       <StackPanel Grid.Row="1" Margin="0,22,0,0">
         <DockPanel Margin="0,0,0,6">
@@ -167,7 +179,7 @@ if (-not $sync.AppDir) {
           <TextBlock x:Name="FlashPctText" Text="0%" Foreground="#A5B0B7" FontSize="13" HorizontalAlignment="Right"/>
         </DockPanel>
         <ProgressBar x:Name="FlashBar" Minimum="0" Maximum="100" Value="0"/>
-        <TextBlock x:Name="FlashLabel" Text="" Foreground="#61CE70" FontSize="12.5" Margin="0,5,0,0"/>
+        <TextBlock x:Name="FlashLabel" Text="" Foreground="#61CE70" FontSize="12.5" Margin="0,5,0,0" TextWrapping="Wrap"/>
       </StackPanel>
 
       <StackPanel Grid.Row="2" Margin="0,20,0,0">
@@ -176,7 +188,7 @@ if (-not $sync.AppDir) {
           <TextBlock x:Name="ValidatePctText" Text="0%" Foreground="#A5B0B7" FontSize="13" HorizontalAlignment="Right"/>
         </DockPanel>
         <ProgressBar x:Name="ValidateBar" Minimum="0" Maximum="100" Value="0" Foreground="#61CE70"/>
-        <TextBlock x:Name="ValidateLabel" Text="" Foreground="#61CE70" FontSize="12.5" Margin="0,5,0,0"/>
+        <TextBlock x:Name="ValidateLabel" Text="" Foreground="#61CE70" FontSize="12.5" Margin="0,5,0,0" TextWrapping="Wrap"/>
       </StackPanel>
 
       <Border Grid.Row="3" Margin="0,22,0,0" Background="#141C24" CornerRadius="8">
@@ -194,13 +206,21 @@ if (-not $sync.AppDir) {
 
     <!-- ===================== PROMPT OVERLAY ===================== -->
     <Grid x:Name="PromptOverlay" Grid.RowSpan="2" Background="#CC0D141B" Visibility="Collapsed">
-      <Border Background="#283845" CornerRadius="10" Padding="28" MaxWidth="520"
-              VerticalAlignment="Center" HorizontalAlignment="Center">
-        <StackPanel>
-          <TextBlock x:Name="PromptTitle" FontSize="18" FontWeight="Bold" Foreground="#FFFFFF" Margin="0,0,0,10"/>
-          <TextBlock x:Name="PromptBody" FontSize="13.5" Foreground="#F1F3F5" TextWrapping="Wrap" Margin="0,0,0,20"/>
-          <StackPanel x:Name="PromptButtons" Orientation="Horizontal" HorizontalAlignment="Right"/>
-        </StackPanel>
+      <!-- Margin keeps the card off the window edges at any size; the body
+           scrolls so a long prompt (the driver walkthrough is the longest)
+           can never push its own buttons off-screen. The buttons live OUTSIDE
+           the ScrollViewer so they stay reachable without scrolling. -->
+      <Border Background="#283845" CornerRadius="10" Padding="28" MaxWidth="560"
+              Margin="24" VerticalAlignment="Center" HorizontalAlignment="Center">
+        <DockPanel>
+          <TextBlock x:Name="PromptTitle" DockPanel.Dock="Top" FontSize="18" FontWeight="Bold"
+                     Foreground="#FFFFFF" Margin="0,0,0,10" TextWrapping="Wrap"/>
+          <StackPanel x:Name="PromptButtons" DockPanel.Dock="Bottom" Orientation="Horizontal"
+                      HorizontalAlignment="Right" Margin="0,20,0,0"/>
+          <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <TextBlock x:Name="PromptBody" FontSize="13.5" Foreground="#F1F3F5" TextWrapping="Wrap"/>
+          </ScrollViewer>
+        </DockPanel>
       </Border>
     </Grid>
   </Grid>
@@ -210,6 +230,23 @@ if (-not $sync.AppDir) {
 $reader = New-Object System.Xml.XmlNodeReader $xaml
 $Window = [Windows.Markup.XamlReader]::Load($reader)
 $sync.Window = $Window
+
+# Fit the window to the screen it actually opens on.
+#
+# The XAML asks for 720x760 DIP. That is fine at 100% scaling on a 1080p panel
+# and too tall at 150%, where the same 720 DIP is 1080 physical pixels and the
+# bottom of the window (with the taskbar taking its cut) lands off-screen. The
+# window used to be ResizeMode=CanMinimize, so a user could not even drag it
+# back into range -- the text was simply gone.
+#
+# WorkArea is already in DIP and already excludes the taskbar, so this is a
+# straight comparison. Clamp, never grow: a small window on a big monitor is
+# the user's choice to make.
+try {
+    $wa = [Windows.SystemParameters]::WorkArea
+    if ($Window.Height -gt $wa.Height) { $Window.Height = [math]::Max($Window.MinHeight, $wa.Height - 40) }
+    if ($Window.Width  -gt $wa.Width)  { $Window.Width  = [math]::Max($Window.MinWidth,  $wa.Width  - 40) }
+} catch { }
 
 foreach ($n in 'ConnectScreen','ConnectStatus','StartBtn','ProgressScreen','PhaseTitle',
                 'FlashBar','FlashPctText','FlashLabel','ValidateBar','ValidatePctText','ValidateLabel',

@@ -126,11 +126,15 @@ In order, the flasher will:
 
 1. **Repair the USB driver binding** if a previous Zadig run left the tablet invisible to ADB.
 2. **Figure out the unit automatically** and decide whether a data wipe is needed (a factory-locked unit gets wiped; an already-freed one doesn't).
-3. **(First PC only) Launch Zadig** to install the driver the Loader needs. When Zadig opens: **Options → List All Devices**, then **Options → uncheck Ignore Hubs or Composite Parents**, pick the device with **USB ID `2207 320A`**, set the driver to **WinUSB**, and click **Replace Driver**. Then continue. This happens once per PC, per USB port.
+3. **Install the Android USB driver** through Device Manager, on the first PC. The flasher patches Google's `android_winusb.inf` to add the hardware ID your unit actually reports, then walks you through the Have Disk steps.
+   > **Windows may refuse this driver outright**, with *"The third-party INF does not contain digital signature information"* (error `0xE0000247`) and no "install anyway" button. That is **driver signature enforcement**: patching the INF invalidates Google's catalog signature, so on 64-bit Windows there is nothing left to verify. Turn enforcement off for one boot: hold **Shift** and click **Start → Power → Restart**, then **Troubleshoot → Advanced options → Startup Settings → Restart**, and press **7**. Re-run the flash and repeat the step.
+   >
+   > It reverts on the next normal boot and the driver stays installed — only the INF was unsigned; the driver it points at (Microsoft's in-box WinUSB) is signed, so enforcement only gates the install. Don't reach for `bcdedit /set testsigning on`: that permits test-*signed* drivers, which this isn't, and it's permanent rather than a one-off.
+4. **(First PC only) Launch Zadig** to install the driver the Loader needs. When Zadig opens: **Options → List All Devices**, then **Options → uncheck Ignore Hubs or Composite Parents**, pick the device with **USB ID `2207 320A`**, set the driver to **WinUSB**, and click **Replace Driver**. Then continue. This happens once per PC, per USB port.
    > **Only ever replace the driver on `2207 320A`.** If that USB ID is not listed, close Zadig without replacing anything. The other Rockchip IDs (`2207 0006`, and `2207 0010` through `0015`, shown as "ADB Interface" or "MTP") are the Mabu's Android-mode interfaces, and rebinding one stops ADB from seeing the tablet until it is undone. The flasher will not open Zadig unless the Loader is actually present.
-4. **Apply the liberation patches** and, if needed, wipe and reboot the unit.
-5. **If it wiped the unit, ask you to join it to Wi-Fi.** When the Mabu's screen comes up, connect it to your Wi-Fi network by touching the screen, then continue. Installs run over Wi-Fi from here.
-6. **Install the apps** (F-Droid app store, the Lawnchair home screen, and Mabu Factory Mode), **patch the motor-access policy, reboot, and run a self-check.**
+5. **Apply the liberation patches** and, if needed, wipe and reboot the unit.
+6. **If it wiped the unit, ask you to join it to Wi-Fi.** When the Mabu's screen comes up, connect it to your Wi-Fi network by touching the screen, then continue. Installs run over Wi-Fi from here.
+7. **Install the apps** (F-Droid app store, the Lawnchair home screen, and Mabu Factory Mode), **patch the motor-access policy, reboot, and run a self-check.**
 
 When it's done you'll see a **`Done`** banner and a **self-test summary** (passed / failed / warnings). If anything fails, it stops with a message explaining what went wrong.
 
@@ -166,6 +170,7 @@ If you'd rather write your own, the [Sample App Function Index](sample-apps/SAMP
 | Stuck at the Wi-Fi step | Touch the Mabu's screen and join it to your Wi-Fi, then continue; it picks up automatically once the Mabu is online |
 | The motor fix "needs the WSL reflash fallback" | This only happens on the rare unit whose policy patch changes size. Run `.\scripts\install-tools.ps1 -InstallWsl` as Administrator to install WSL/Ubuntu (restart if asked), then re-run the flash with `-NoWipe` |
 | App installs fail | Make sure the Mabu and the PC are on the same Wi-Fi network |
+| Driver install fails with `The third-party INF does not contain digital signature information` (`0xE0000247`), and there's no "install anyway" button | Driver signature enforcement. Reboot with it off for one boot: **Shift** + **Start → Power → Restart**, then **Troubleshoot → Advanced options → Startup Settings → Restart**, press **7**. Re-run the flash. It reverts on the next normal boot and the driver stays installed |
 | "device descriptor request failed" | The D+ and D- wires are swapped; see the wiring note below |
 
 ---

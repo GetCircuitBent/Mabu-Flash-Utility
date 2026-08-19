@@ -307,6 +307,22 @@ Write-Host "    7. Pick `"$modelName`"."
 Write-Host '    8. Windows will warn the driver is not signed - click "Install this driver software anyway".'
 Write-Host '    9. After install completes, run: adb devices'
 Write-Host ''
+Write-Host '  If step 8 gives you NO "install anyway" option and refuses outright:' -ForegroundColor White
+Write-Host '    The third-party INF does not contain digital signature information  (0xE0000247)' -ForegroundColor Yellow
+Write-Host '  That is driver signature enforcement, not a broken download. Patching the INF to add'
+Write-Host '  your unit''s hardware ID invalidates Google''s catalog signature, so on 64-bit Windows'
+Write-Host '  there is nothing left for it to verify and no override prompt. Turn enforcement off'
+Write-Host '  for a single boot:' -ForegroundColor White
+Write-Host '    a. Hold Shift and click Start > Power > Restart'
+Write-Host '    b. Troubleshoot > Advanced options > Startup Settings > Restart'
+Write-Host '    c. Press 7 (Disable driver signature enforcement)'
+Write-Host '    d. Re-run this script and repeat the steps above'
+Write-Host '  It reverts on the next normal boot and the driver stays installed: only the INF was'
+Write-Host '  unsigned, and the driver it points at (Microsoft''s in-box WinUSB) is signed, so'
+Write-Host '  enforcement only gates the install. You should not need to do this more than once.'
+Write-Host '  Do NOT use "bcdedit /set testsigning on" for this: it permits test-SIGNED drivers,'
+Write-Host '  which this is not, and it is a permanent change rather than a one-off.' -ForegroundColor Gray
+Write-Host ''
 Write-Host '  If step 6 still says "The folder you specified doesn''t contain a compatible software'
 Write-Host '  driver", the INF has no line matching that node. Two ways out:' -ForegroundColor White
 Write-Host '    a. Re-run this script WITH the tablet plugged in -- it adds the hardware ID your unit'
