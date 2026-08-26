@@ -104,25 +104,55 @@ function Confirm-AndroidAdbDriver {
 
     if ($adbNode -and $adbNode.AdbDriverOk) {
         # Right driver, still no device: the tablet has not authorized this PC. On
-        # a Mabu the "Allow USB debugging?" dialog frequently NEVER appears (the
-        # Esper launcher suppresses system dialogs), so telling the user only to
-        # "accept the prompt" dead-ends them. Give the no-prompt fallback too.
+        # a Mabu that is normally the END of the adb road, not a timing problem --
+        # the Esper launcher suppresses the "Allow USB debugging?" dialog and
+        # USB debugging is DPM-locked (no_debugging_features), so there is often no
+        # prompt to accept and no way to raise one.
+        #
+        # This used to offer Continue/Skip. That was a false choice: the return
+        # value is discarded by the caller, so the only difference was whether the
+        # operator sat through a 20s adb re-probe that was never going to succeed.
+        # Worse, the Skip text told them to power off and hold ADKEY, then raced
+        # straight into Loader Detection without waiting for them to do it.
+        #
+        # There is only one real move here, so present only that, and actually
+        # perform the wait the text promises. The driver is installed by this
+        # point, which is the whole reason this step exists -- adb was only ever
+        # the means of entering the Loader on a PC that could not yet catch it.
+        # This PC can catch it now.
         Warn 'The Android ADB driver is bound, but the tablet has not authorized this PC.'
-        Warn 'On many Mabu units the "Allow USB debugging?" dialog never pops up on its own.'
-        $choice = & $script:Ui.Prompt 'Authorize This PC on the Tablet' `
-            ("The driver is installed, but the tablet reports 'unauthorized' -- it has not " +
-             "trusted this PC yet.`r`n`r`n" +
-             "If an 'Allow USB debugging?' dialog is on the tablet screen: tap Allow (tick " +
-             "'Always allow from this computer'), then press Continue.`r`n`r`n" +
-             "If NO dialog appears (common on Mabu units):`r`n" +
-             "  - Wake the screen and pull down the notification shade; it can be hidden there.`r`n" +
-             "  - Unplug and replug the harness with the screen awake to re-trigger it.`r`n" +
-             "  - If it still never appears, press Skip. The flash will catch the Loader " +
-             "directly instead (power the tablet fully OFF, then hold ADKEY = header pin 4 " +
-             "shorted to GND through power-on), which needs no adb authorization.") `
-            @('Continue','Skip')
-        if ($choice -eq 'Skip') { return $false }
-        return [bool](Find-AdbDevice -TimeoutSec 20)
+        Warn 'On a Mabu that is usually permanent: the "Allow USB debugging?" dialog is'
+        Warn 'suppressed and USB debugging is locked by device policy. Not worth waiting on.'
+        Ok   'The driver is installed, though -- which is what this step was for.'
+        [void](& $script:Ui.Prompt 'Boot the Tablet While Holding ADKEY' `
+            ("The tablet reports 'unauthorized', so this flash will not go in over adb. " +
+             "It does not need to: the USB driver is now installed on this PC, which is " +
+             "what lets it catch the Rockchip Loader directly.`r`n`r`n" +
+             "On the tablet, in this order:`r`n" +
+             "  1. Power it fully OFF (not sleep -- all the way off).`r`n" +
+             "  2. Hold ADKEY: header pin 4 shorted to GND.`r`n" +
+             "  3. Keep holding it and power the tablet on.`r`n`r`n" +
+             "Then press the button below and keep holding ADKEY. There is a 60 second " +
+             "window to catch the Loader, so there is no rush and no need to time it.") `
+            @('Watch for the Loader (60s)'))
+
+        Section 'Waiting for the Loader'
+        Info 'Watching for the Rockchip Loader (USB ID 2207 320A) for up to 60 seconds...'
+        if (Wait-Loader -TimeoutSec 60) {
+            Ok 'Loader caught. Continuing.'
+            return $true
+        }
+
+        # Not caught. The diagnostic here is the chime test, NOT a driver hunt --
+        # see PROCEDURE.md. Say so, because the instinct is to re-chase drivers.
+        Warn 'No Loader appeared in 60 seconds.'
+        Warn 'Before changing anything: reboot the tablet to Android, then unplug and replug'
+        Warn 'the harness and listen for the Windows "new USB device" chime.'
+        Warn '  - No chime  = hardware. Check the harness connections and the USB cable.'
+        Warn '                Do NOT chase drivers, ports or hubs for a link that never chimes.'
+        Warn '  - Chime     = the link is fine and the Loader window was just missed.'
+        Warn '                Retry the ADKEY boot.'
+        return $false
     }
 
     if (-not $nodes.Count) {
