@@ -1264,13 +1264,30 @@ if ($doWipe) {
 # unit, so we switch it on over USB and discover the (possibly new) DHCP IP.
 # USB is used ONLY for this one switch-over; installs then run over WiFi.
 Info 'Acquiring adb after reset (USB to switch on WiFi, or WiFi if already up)...'
+# A failed acquisition here used to Die, which contradicted the best-effort note
+# above and -- worse -- took Phase 7 (the SELinux fix, and with -KeepRoot the
+# permissive-shell rule) down with it, even though Phase 7 acquires its OWN device
+# and could well have succeeded a minute later. USB enumeration on this hardware is
+# flaky enough that both -KeepRoot runs died right here with root never finished.
+# So: retry on the operator's cue, and if adb still never comes back, carry on to
+# the phases that re-acquire for themselves rather than abandoning the run.
 $acq = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 180   # WiFi if already listening, else USB
-if (-not $acq) {
-    Die 'No adb (USB or WiFi) after reset.' `
-        'Re-seat the USB harness (or fix the tablet WiFi), then finish with:' `
-        '  .\scripts\flash-mabu.ps1 -NoWipe'
+while (-not $acq) {
+    Warn 'No adb (USB or WiFi) after reset.'
+    Warn 'Re-seat the USB harness (or fix the tablet WiFi) and retry -- the Loader work'
+    Warn 'is already done, so there is nothing destructive left to lose here.'
+    $ans = Read-Host 'Press Enter to retry, or type S to skip provisioning and continue'
+    if ($ans -match '^\s*[sS]') { break }
+    $acq = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 180
 }
-if ($acq -match ':5555$') {
+if (-not $acq) {
+    $dev = $null
+    Warn 'Continuing without a provisioning device: app installs will be skipped, but the'
+    Warn 'later phases (SELinux/root, self-test, branding) each acquire adb on their own'
+    Warn 'and still get their chance. Finish any skipped work later with:'
+    Warn '  .\scripts\flash-mabu.ps1 -NoWipe'
+}
+elseif ($acq -match ':5555$') {
     $dev = $acq                                   # WiFi adb already up (persist survived a no-wipe run)
     Ok "WiFi adb already up: $dev"
 } else {
@@ -1282,14 +1299,18 @@ if ($acq -match ':5555$') {
         $dev = $acq
     }
 }
-Ok "Provisioning over: $dev"
+if ($dev) { Ok "Provisioning over: $dev" }
 
 # Quick audit
+if ($dev) {
 Section 'Post-boot audit'
 $audit = & $ADB -s $dev shell 'echo DO=$(getprop ro.device_owner); echo SDOSVC=$(getprop init.svc.set-device-owner); dumpsys device_policy 2>/dev/null | grep -E "Device managed|provisioningState" | head -3; pm list packages 2>/dev/null | grep -iE "esper|shoonya" | head -5' 2>&1
 $audit | ForEach-Object { Info $_ }
+}
 
 # --- Phase 5: Install user-facing apps ---
+if (-not $dev) { Section 'Installing user apps'; Warn 'Skipped: no adb device from the provisioning phase.' }
+else {
 Section 'Installing user apps'
 if (-not (Test-Path (Join-Path $Root $FDroidApk))) { Warn "Missing APK: $FDroidApk -- skipping" }
 elseif ((& $ADB -s $dev shell 'pm list packages org.fdroid.fdroid 2>/dev/null' 2>&1) -match 'package:') { Ok 'F-Droid already installed -- skipping.' }
@@ -1306,12 +1327,17 @@ else {
 }
 & $ADB -s $dev shell 'cmd package set-home-activity app.lawnchair/.LawnchairLauncher' 2>&1 | Out-Null
 Ok 'Lawnchair set as default launcher.'
+} # end if ($dev) -- user app installs
 
 # --- Phase 6: Mabu factory mode + assets ---
 # -SkipMabu drops just this phase and leaves F-Droid/Lawnchair alone, which
 # -SkipApps cannot do (it skips the whole userspace install). Ported from the
 # gui-executable flasher so both editions take the same flags.
-if (-not $SkipApps -and -not $SkipMabu) {
+if (-not $SkipApps -and -not $SkipMabu -and -not $dev) {
+    Section 'Installing Mabu factory mode + assets'
+    Warn 'Skipped: no adb device from the provisioning phase.'
+}
+elseif (-not $SkipApps -and -not $SkipMabu) {
     Section 'Installing Mabu factory mode + assets'
     $installed = (& $ADB -s $dev shell 'pm list packages | grep -i catalia') 2>&1
     if ($installed -match 'com.catalia.factorymode') {
@@ -1341,12 +1367,26 @@ if (-not $SkipApps -and -not $SkipMabu) {
 }
 
 # --- Phase 7: SELinux policy fix ---
+$selinuxSkipped = $false
 if (-not $SkipApps -and -not $SkipSELinux) {
     # Find a live adb device for the on-device patch step. WiFi may be down after
     # the assets push, so allow USB fallback -- SELinux only does small shell ops.
     $selinuxDev = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 120
     if (-not $selinuxDev) { $selinuxDev = $dev }
-    Apply-SELinuxFix -Dev $selinuxDev -PermissiveShell:$KeepRoot
+    # With -KeepRoot this phase carries the permissive-shell rule, so do not let a
+    # missing device pass silently -- give the operator the same retry cue as above.
+    while (-not $selinuxDev -and $KeepRoot) {
+        Warn 'Phase 7 (-KeepRoot: permissive shell) needs adb and no device was found.'
+        $ans = Read-Host 'Press Enter to retry, or type S to skip the SELinux/root phase'
+        if ($ans -match '^\s*[sS]') { break }
+        $selinuxDev = Find-AdbDevice -PreferIp $WifiIp -TimeoutSec 120
+    }
+    if ($selinuxDev) { Apply-SELinuxFix -Dev $selinuxDev -PermissiveShell:$KeepRoot }
+    else {
+        Warn 'SELinux fix skipped: no adb device. Re-run later with (idempotent):'
+        Warn '  .\scripts\flash-mabu.ps1 -NoWipe'
+        $selinuxSkipped = $true
+    }
 }
 
 # --- Phase 8: Self-test ---
@@ -1377,6 +1417,13 @@ if ($Branded) {
 }
 
 Section 'Done'
+if (-not $dev) {
+    Warn 'Loader-side patches are applied, but provisioning never got an adb device,'
+    Warn 'so the app installs did not run. Nothing destructive is outstanding.'
+    Warn 'Fix the harness or the tablet WiFi, then finish with:'
+    Warn '  .\scripts\flash-mabu.ps1 -NoWipe'
+    exit 1
+}
 Ok "Unit at $dev liberated and provisioned. Verify on-device:"
 Info '  - Home screen = Lawnchair (long-press to customize)'
 Info '  - F-Droid available for additional apps'
@@ -1384,6 +1431,9 @@ if (-not $SkipApps) {
     Info '  - Mabu Factory Mode launches motor diagnostics'
     Info '  - Open Trouble Shooting/Motor Debug to recalibrate motors'
 }
-if (-not $SkipSELinux) {
+if (-not $SkipSELinux -and -not $selinuxSkipped) {
     Info '  - SELinux fix applied: untrusted_app can open serial_device (motors)'
+}
+elseif ($selinuxSkipped) {
+    Warn '  - SELinux fix NOT applied (no adb device at Phase 7) -- re-run with -NoWipe'
 }
