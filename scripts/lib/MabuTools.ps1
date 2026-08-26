@@ -298,6 +298,35 @@ $script:MabuAndroidClassGuid = '{3f966bd9-fa04-4ec5-991c-d326973b5128}'
 # object failed"), and Zadig is what creates that binding.
 $script:MabuLoaderHardwareId = 'VID_2207&PID_320A'
 
+function Test-MabuInboxAdbSupport {
+    # Does this Windows bind ADB interfaces on its own?
+    #
+    # Windows 10's inbox winusb.inf carries a GENERIC match on the ADB interface
+    # triple -- class ff, subclass 42, protocol 01 -- and its ADB.HW.AddReg writes
+    # the ADB device-interface GUID:
+    #
+    #   %USB\MS_COMP_ADB.DeviceDesc% = ADB, USB\Class_ff&SubClass_42&Prot_01
+    #   HKR,,DeviceInterfaceGUIDs,0x10000,"{F72FE0D4-CBCB-407d-8814-9ED673D0DD6B}"
+    #
+    # That is a complete, Microsoft-signed ADB driver, already present, needing no
+    # install. Where it applies, patching Google's android_winusb.inf is not just
+    # unnecessary but harmful: an explicit hardware-ID match outranks a compatible-ID
+    # match, so installing the patched INF DISPLACES a driver that already worked --
+    # and it is the patch that invalidates Google's catalog and drags in signature
+    # enforcement (0xE0000247) and the one-boot F7 workaround.
+    $inf = Join-Path $env:WINDIR 'INF\winusb.inf'
+    if (-not (Test-Path $inf)) { return $false }
+    $body = try { Get-Content -LiteralPath $inf -Raw -ErrorAction Stop } catch { return $false }
+    return ($body -match 'MS_COMP_ADB' -or $body -match 'Class_ff&SubClass_42&Prot_01')
+}
+
+function Invoke-MabuDeviceRescan {
+    # Ask PnP to re-evaluate the bus so a node with no driver gets another shot at
+    # matching one. Cheap, and the way to let the inbox generic ADB match apply
+    # after a competing package has been removed.
+    try { & pnputil /scan-devices 2>&1 | Out-Null } catch { }
+}
+
 function Get-MabuRockusbInf {
     # Rockchip's own rockusb.inf, from the bundled DriverAssistant. It claims
     # USB\VID_2207&PID_320A directly, so once staged Windows binds the Loader the

@@ -167,9 +167,56 @@ function Confirm-AndroidAdbDriver {
         return $false
     }
 
-    # Something is there but not usable as adb. Prepare the patched INF -- this is
-    # the part that can be automated, and it adds the hardware ID THIS unit
+    # Something is there but not usable as adb yet. Try the two routes that need no
+    # driver package, no signature consent and no clicks, BEFORE the Device Manager
+    # walkthrough. On Windows 10+ one of these almost always resolves it, which is
+    # why the walkthrough below is now a last resort rather than the main path.
+    Section 'Binding adb (no driver install needed)'
+
+    # Route 1: the node is already on WinUSB and is only missing the ADB interface
+    # GUID. One registry value, no INF, no signing. This is what Zadig leaves behind
+    # when it is pointed at the tablet, and it is a one-line fix.
+    $repaired = $false
+    foreach ($n in ($nodes | Where-Object { $_.Role -eq 'adb' -and -not $_.AdbDriverOk -and $_.Service -match 'WinUSB' })) {
+        Info "Registering the ADB interface GUID on: $($n.Name)"
+        if (Repair-MabuAdbBinding -Node $n) { $repaired = $true }
+    }
+
+    # Route 2: let Windows bind it. The inbox winusb.inf matches the ADB interface
+    # triple generically and writes the same GUID, and it is Microsoft-signed and
+    # already installed. If nothing has claimed the node, a rescan is all it takes.
+    if (Test-MabuInboxAdbSupport) {
+        Info 'This Windows binds ADB interfaces natively (inbox winusb.inf, Microsoft-signed).'
+        Info 'Rescanning the bus to let it claim the interface...'
+        Invoke-MabuDeviceRescan
+    } else {
+        Warn 'This Windows has no inbox generic ADB match, so a driver package is needed.'
+    }
+
+    if ($repaired -or (Test-MabuInboxAdbSupport)) {
+        Reset-AdbServer
+        if (Find-AdbDevice -TimeoutSec 20) { Ok 'adb can see the tablet. No driver install needed.'; return $true }
+        $nodes   = @(Get-MabuAndroidUsbNode)
+        $adbNode = $nodes | Where-Object { $_.Role -eq 'adb' } | Select-Object -First 1
+        if ($adbNode -and $adbNode.AdbDriverOk) {
+            Ok 'The adb interface is bound correctly now (no driver install needed).'
+            Info 'If adb still shows nothing, the tablet is unauthorized rather than unbound --'
+            Info 'that is handled by the Loader route and needs no adb.'
+            return $true
+        }
+    }
+
+    # Last resort. Prepare the patched INF -- it adds the hardware ID THIS unit
     # reports, which is what makes Have Disk accept the folder.
+    #
+    # Avoid this where possible. Patching Google's INF invalidates their catalog, so
+    # 64-bit Windows refuses it (0xE0000247) and the operator has to reboot with
+    # signature enforcement off. It also OUTRANKS the inbox generic match, because an
+    # explicit hardware ID beats a compatible ID -- so on Windows 10+ it can displace
+    # a signed driver that was already working.
+    Warn 'Falling back to the patched Android USB driver (Device Manager, unsigned INF).'
+    Warn 'On Windows 10+ this is rarely necessary -- if you got here, the inbox generic'
+    Warn 'ADB match did not apply to this node.'
     Info 'Preparing the Android USB driver (download, verify, patch the INF)...'
     Invoke-Child 'scripts/install-android-driver.ps1' @{ PrepareOnly = $true }
 
