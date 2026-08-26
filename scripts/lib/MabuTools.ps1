@@ -341,11 +341,27 @@ function Get-MabuAndroidUsbNode {
             Provider    = "$(& $prop 'DEVPKEY_Device_DriverProvider')".Trim()
             HardwareIds = @(& $prop 'DEVPKEY_Device_HardwareIds')
             ClassGuid   = $cls
-            # The one test that matters for adb: is the Android ADB driver bound?
-            # Not "is it WinUSB" -- android_winusb.inf is itself a WinUSB driver, so
-            # the service name cannot tell the right binding from Zadig's generic one.
-            # The class can.
-            AdbDriverOk = ($cls -eq $script:MabuAndroidClassGuid)
+            AdbGuidOk   = (Test-MabuAdbInterfaceGuid -InstanceId $d.InstanceId)
+            # The one test that matters for adb: can adb.exe enumerate this node?
+            #
+            # That is decided by ONE thing -- whether the ADB device-interface GUID is
+            # registered under the node's Device Parameters. The class GUID is a proxy
+            # for it: install the patched android_winusb.inf and you get the Android
+            # Device class AND the value, so the class alone used to look sufficient.
+            #
+            # It is not, and testing the class ALONE was a self-inflicted loop. A node
+            # on Microsoft's inbox winusb.inf keeps the generic USBDevice class no
+            # matter what, so Repair-MabuAdbBinding -- which writes exactly that GUID
+            # and deliberately never touches the class -- produced a node adb could
+            # see but that this test still called unbound. The repair could never
+            # satisfy the check it was supposed to satisfy, so the caller sent the
+            # operator back to Device Manager to reinstall a driver that was already
+            # working, on every single run.
+            #
+            # Accept either: the Android class (a real android_winusb.inf install) or
+            # the registered GUID (inbox WinUSB plus the repair). Both mean adb works.
+            AdbDriverOk = (($cls -eq $script:MabuAndroidClassGuid) -or
+                           (Test-MabuAdbInterfaceGuid -InstanceId $d.InstanceId))
             # A composite parent must stay on usbccgp. If Zadig replaced the PARENT
             # (which our own instructions invite by saying to untick "Ignore Hubs or
             # Composite Parents"), the child interfaces are never created at all --
@@ -389,6 +405,25 @@ function Get-MabuMisboundAdbNode {
 # one REG_MULTI_SZ away from being an adb device, with no INF, no driver install,
 # and no code-signing involved.
 $script:MabuAdbInterfaceGuid = '{F72FE0D4-CBCB-407D-8814-9ED673D0DD6B}'
+
+function Test-MabuAdbInterfaceGuid {
+    # Is the ADB device-interface GUID registered on this node? This is the actual
+    # precondition for adb.exe seeing the device, whichever driver put it there --
+    # the patched android_winusb.inf writes it, and so does Repair-MabuAdbBinding.
+    #
+    # Reading HKLM\...\Enum does not need elevation (writing it does), so this is
+    # safe to call from the un-elevated probe paths too. Case-insensitive: INFs and
+    # libwdi disagree about the case of the hex digits.
+    param([Parameter(Mandatory)][string] $InstanceId)
+    $key = "HKLM:\SYSTEM\CurrentControlSet\Enum\$InstanceId\Device Parameters"
+    try {
+        $cur = (Get-ItemProperty -Path $key -Name 'DeviceInterfaceGUIDs' -ErrorAction Stop).DeviceInterfaceGUIDs
+    } catch { return $false }
+    foreach ($g in @($cur)) {
+        if ($g -and $g.ToUpper() -eq $script:MabuAdbInterfaceGuid.ToUpper()) { return $true }
+    }
+    return $false
+}
 
 function Repair-MabuAdbBinding {
     # Make an already-WinUSB-bound adb interface visible to adb by registering the
