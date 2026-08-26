@@ -341,6 +341,86 @@ function Test-Winget {
 # class this project keeps hitting. The module falls back to a hash-pinned
 # direct download. Dot-sourced inside Invoke-MabuFlash, once $script:Root is known.
 
+function Confirm-LoaderDriverStaged {
+    # Pre-flight, deliberately run BEFORE the operator is asked to catch a Loader.
+    #
+    # The old shape ambushed them: the Loader was caught by holding ADKEY, and only
+    # THEN -- with the unit sitting in a state that does not last -- did Zadig open,
+    # needing List All Devices, a dropdown hunt for an entry that often shows as
+    # "Unknown Device", a driver selection and a click. Observed 2026-08-25: the
+    # tablet left Loader before that could be finished, and Zadig's list (it does
+    # not rescan) fell back to the tablet's ADB interface, which is the one device
+    # it must never be pointed at.
+    #
+    # None of that work needs the Loader present. Windows binds by hardware ID, so
+    # staging the package with the tablet POWERED OFF makes PnP bind the Loader
+    # automatically when it next enumerates. Zadig stages an absent device through
+    # the Edit checkbox: tick it, type the USB ID by hand, install.
+    #
+    # Advisory, like the Android driver step: a $false return is not fatal, because
+    # Confirm-LoaderWinUsb still guards the actual write path later on.
+    Section 'Loader Driver Staging (WinUSB)'
+
+    $st = Test-MabuLoaderDriverStaged
+    if ($st.Bound) {
+        Ok "The Loader is on the bus and bound to '$($st.Service)'. Nothing to stage."
+        return $true
+    }
+    if ($st.Staged) {
+        Ok "WinUSB is already staged for USB ID 2207 320A (via $($st.InfName))."
+        Info 'Windows will bind the Loader automatically when it appears -- no Zadig, nothing to click.'
+        return $true
+    }
+
+    Warn 'WinUSB is NOT staged for the Loader (USB ID 2207 320A) on this PC.'
+    Warn 'Doing this now, with the tablet powered off, means the ADKEY boot later has'
+    Warn 'nothing to click and no window to beat. It is one-time per PC.'
+
+    $zadig = Install-MabuZadig -RepoRoot $script:Root
+    if (-not $zadig) {
+        Warn 'Zadig could not be found or downloaded.'
+        Warn 'Get it from https://zadig.akeo.ie/ and place zadig.exe at:'
+        Warn "  $(Join-Path $script:Root 'tools\zadig.exe')"
+        return $false
+    }
+
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        try { Start-Process $zadig } catch { Warn "Could not launch Zadig: $_" }
+        $choice = & $script:Ui.Prompt 'Stage the Loader Driver (one-time)' `
+            ("Zadig is open. You do NOT need the tablet in Loader for this -- it is " +
+             "better if the tablet is powered off, so nothing is racing you.`r`n`r`n" +
+             "1. Options -> List All Devices`r`n" +
+             "2. Tick the 'Edit' box to the right of the device dropdown`r`n" +
+             "3. Type the USB ID by hand:  2207  320A`r`n" +
+             "4. Set the target driver to WinUSB`r`n" +
+             "5. Click Install Driver (it may read 'Replace Driver')`r`n`r`n" +
+             "Windows binds drivers by hardware ID, so this takes effect the next " +
+             "time the Loader appears -- automatically, with nothing to click.`r`n`r`n" +
+             "DO NOT pick 'ADB Interface', 'Android Composite ADB Interface' or MTP. " +
+             "Zadig is only ever for 2207 320A; pointing it at the tablet's Android " +
+             "interfaces leaves adb permanently blind.") `
+            @('Done - check it','Skip')
+
+        if ($choice -eq 'Skip') {
+            Warn 'Skipped. Zadig will be needed later, while the Loader is caught and the clock'
+            Warn 'is running. Re-run the flash to get this offer again.'
+            return $false
+        }
+
+        $st = Test-MabuLoaderDriverStaged
+        if ($st.Staged -or $st.Bound) {
+            Ok "Staged (via $($st.InfName)). The Loader will bind automatically from now on."
+            return $true
+        }
+        Warn "Still not staged (attempt $attempt of 3)."
+        Warn 'Check the USB ID reads exactly 2207 / 320A, and that Edit was ticked before typing.'
+    }
+
+    Warn 'Giving up on staging; carrying on. The flash can still work -- it will fall back'
+    Warn 'to opening Zadig once the Loader is caught, which is the timing-sensitive route.'
+    return $false
+}
+
 function Confirm-LoaderWinUsb {
     # Gate before any Loader read/write: ensure PID 320A is bound to WinUSB.
     Section 'Loader Driver Binding (WinUSB)'
@@ -359,7 +439,10 @@ function Confirm-LoaderWinUsb {
             'Do NOT run Zadig now. With no Loader present its list shows only the tablet''s' `
             'Android interfaces, and replacing the driver on one of those breaks adb until it' `
             'is explicitly undone.' `
-            'Catch Loader first (power off, hold ADKEY through power-on), then re-run.'
+            'Catch Loader first (power off, hold ADKEY through power-on), then re-run.' `
+            'Better: re-run now with the tablet OFF and take the Loader Driver Staging step' `
+            'this flash offered earlier. Staging binds the Loader automatically when it' `
+            'appears, so there is no window to beat and nothing to click while it is caught.'
     }
 
     Warn "PID 320A is bound to '$svc', not WinUSB."
@@ -826,6 +909,14 @@ function Invoke-MabuFlash {
         # Advisory: its return value is deliberately not fatal (see the function).
         [void](Confirm-AndroidAdbDriver)
         & $Ui.Flash 6 'Driver checked'
+
+        # --- Phase 0c: stage the Loader's WinUSB binding ---
+        # Before Loader Detection on purpose. This is the step that used to happen
+        # DURING the ADKEY window, where it competes with a device state that does
+        # not last. Staged here, the Loader binds itself when it shows up.
+        # Advisory: Confirm-LoaderWinUsb still gates the writes further down.
+        [void](Confirm-LoaderDriverStaged)
+        & $Ui.Flash 8 'Loader driver staged'
 
         # --- Phase 1: Catch / verify Loader, auto-detect Esper state ---
         Section 'Loader Detection'

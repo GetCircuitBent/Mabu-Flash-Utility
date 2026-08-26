@@ -293,6 +293,54 @@ $script:MabuAndroidPids = @('0006','0010','0011','0012','0013','0014','0015')
 # to adb no matter how healthy Device Manager says it is.
 $script:MabuAndroidClassGuid = '{3f966bd9-fa04-4ec5-991c-d326973b5128}'
 
+# The Rockchip Loader's hardware ID. rkdeveloptool can only write to it once it is
+# bound to WinUSB (on rockusb.sys `ld` succeeds but writes fail with "creating comm
+# object failed"), and Zadig is what creates that binding.
+$script:MabuLoaderHardwareId = 'VID_2207&PID_320A'
+
+function Test-MabuLoaderDriverStaged {
+    # Is WinUSB going to be on the Loader when it next appears?
+    #
+    # Two independent ways for that to be true, and the second is the useful one:
+    #
+    #   Bound  - the Loader is on the bus RIGHT NOW with WinUSB on it. Only knowable
+    #            while the tablet sits in Loader, which is a window measured in
+    #            seconds and the whole problem we are trying to design around.
+    #   Staged - a driver package covering this hardware ID is in the driver store.
+    #            Windows binds by hardware ID, not by device instance, so once the
+    #            package is staged PnP binds the Loader automatically the moment it
+    #            enumerates -- with nobody watching and nothing to click.
+    #
+    # Staged is checkable with the tablet powered off, which is what lets the Zadig
+    # step move out of the ADKEY window and into unhurried setup.
+    #
+    # Third-party packages land in %WINDIR%\INF as oem*.inf, so the hardware ID
+    # appearing in one of those means some package claims this device. Reading that
+    # directory does not need elevation.
+    param([string] $HardwareId = $script:MabuLoaderHardwareId)
+
+    $dev = Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
+           Where-Object { $_.InstanceId -match [regex]::Escape($HardwareId) } | Select-Object -First 1
+    $svc = if ($dev) {
+        "$((Get-PnpDeviceProperty -InstanceId $dev.InstanceId -KeyName 'DEVPKEY_Device_Service' -ErrorAction SilentlyContinue).Data)".Trim()
+    } else { $null }
+
+    $inf = $null
+    foreach ($f in @(Get-ChildItem "$env:WINDIR\INF\oem*.inf" -ErrorAction SilentlyContinue)) {
+        $body = try { Get-Content -LiteralPath $f.FullName -Raw -ErrorAction Stop } catch { continue }
+        if ($body -match [regex]::Escape($HardwareId)) { $inf = $f.Name; break }
+    }
+
+    return [pscustomobject]@{
+        HardwareId = $HardwareId
+        Present    = [bool]$dev
+        Service    = $svc
+        Bound      = ($svc -match 'WinUSB|libusb')
+        Staged     = [bool]$inf
+        InfName    = $inf
+    }
+}
+
 function Get-MabuAndroidUsbNode {
     # Every present VID_2207 node that is an Android-mode config, annotated with
     # what is bound to it. Returns @() when the tablet is absent or in Loader.
