@@ -298,6 +298,68 @@ $script:MabuAndroidClassGuid = '{3f966bd9-fa04-4ec5-991c-d326973b5128}'
 # object failed"), and Zadig is what creates that binding.
 $script:MabuLoaderHardwareId = 'VID_2207&PID_320A'
 
+function Get-MabuRockusbInf {
+    # Rockchip's own rockusb.inf, from the bundled DriverAssistant. It claims
+    # USB\VID_2207&PID_320A directly, so once staged Windows binds the Loader the
+    # instant it enumerates.
+    param([Parameter(Mandatory)][string] $RepoRoot)
+    $base = Join-Path $RepoRoot 'tools\rockchip-stock\DriverAssitant_v5.0\DriverAssitant_v5.0\Driver'
+    if (-not (Test-Path $base)) { return $null }
+    $arch = if ([Environment]::Is64BitOperatingSystem) { 'x64' } else { 'x86' }
+    # win10 covers Windows 10 and 11; the older trees are kept for completeness.
+    $os = if ([Environment]::OSVersion.Version.Major -ge 10) { 'win10' } else { 'win7' }
+    foreach ($try in @("$arch\$os", "$arch\win10", "$arch\win7")) {
+        $inf = Join-Path $base "$try\rockusb.inf"
+        if (Test-Path $inf) { return $inf }
+    }
+    return $null
+}
+
+function Install-MabuRockusbDriver {
+    # Stage Rockchip's rockusb driver so the Loader binds the moment it appears.
+    #
+    # This is the step that makes the ~10 second Loader window a non-issue, and it
+    # was missing from the flasher entirely -- FLASH-A-NEW-MABU.md lists
+    # DriverAssistant as a prerequisite, but nothing ever installed it, so on a PC
+    # that had never run Rockchip's own tools the Loader enumerated with no driver
+    # (status=Error, service none). Nothing could then talk to it, and u-boot moved
+    # on to Android after ~12 seconds. Measured on hardware 2026-08-25.
+    #
+    # rockusb.cat is signed by the Microsoft Windows Hardware Compatibility
+    # Publisher -- WHQL. So unlike the patched android_winusb.inf, pnputil accepts
+    # it outright: no signature-enforcement wall, no 0xE0000247, no F7 boot. And
+    # /install stages it into the driver store, which does NOT require the device
+    # to be present. The tablet can be powered off.
+    #
+    # Note this binds the Loader to rockusb.sys, NOT WinUSB. rkdeveloptool can then
+    # LIST the Loader (`ld`) and that alone latches it into Loader mode
+    # indefinitely -- which is the whole point -- but WRITES still need WinUSB, so
+    # the Zadig swap remains a separate step. It is simply no longer racing a
+    # window that closes.
+    #
+    # Requires Administrator. Returns $true if rockusb is in the driver store
+    # afterwards.
+    param([Parameter(Mandatory)][string] $RepoRoot)
+
+    $inf = Get-MabuRockusbInf -RepoRoot $RepoRoot
+    if (-not $inf) {
+        Write-MabuToolsLog 'warn' 'Bundled Rockchip rockusb.inf not found; cannot stage the Loader driver.'
+        return $false
+    }
+
+    Write-MabuToolsLog 'info' "Staging Rockchip rockusb driver: $inf"
+    $out = & pnputil /add-driver "$inf" /install 2>&1
+    foreach ($l in @($out)) { if ("$l".Trim()) { Write-MabuToolsLog 'info' "  $l" } }
+
+    $now = (pnputil /enum-drivers) -join "`n"
+    if ($now -match 'rockusb') {
+        Write-MabuToolsLog 'ok' 'rockusb is in the driver store; the Loader will bind automatically.'
+        return $true
+    }
+    Write-MabuToolsLog 'warn' 'rockusb still not in the driver store after pnputil /add-driver.'
+    return $false
+}
+
 function Test-MabuLoaderDriverStaged {
     # Is WinUSB going to be on the Loader when it next appears?
     #

@@ -372,52 +372,26 @@ function Confirm-LoaderDriverStaged {
         return $true
     }
 
-    Warn 'WinUSB is NOT staged for the Loader (USB ID 2207 320A) on this PC.'
-    Warn 'Doing this now, with the tablet powered off, means the ADKEY boot later has'
-    Warn 'nothing to click and no window to beat. It is one-time per PC.'
+    Warn 'No driver is staged for the Loader (USB ID 2207 320A) on this PC.'
+    Info 'Without one the Loader enumerates with no driver at all, nothing can talk to it,'
+    Info 'and u-boot moves on to Android after about 12 seconds. Staging Rockchip''s own'
+    Info 'rockusb driver fixes that: it is WHQL-signed, so it installs silently and with'
+    Info 'the tablet powered off.'
 
-    $zadig = Install-MabuZadig -RepoRoot $script:Root
-    if (-not $zadig) {
-        Warn 'Zadig could not be found or downloaded.'
-        Warn 'Get it from https://zadig.akeo.ie/ and place zadig.exe at:'
-        Warn "  $(Join-Path $script:Root 'tools\zadig.exe')"
-        return $false
-    }
-
-    for ($attempt = 1; $attempt -le 3; $attempt++) {
-        try { Start-Process $zadig } catch { Warn "Could not launch Zadig: $_" }
-        $choice = & $script:Ui.Prompt 'Stage the Loader Driver (one-time)' `
-            ("Zadig is open. You do NOT need the tablet in Loader for this -- it is " +
-             "better if the tablet is powered off, so nothing is racing you.`r`n`r`n" +
-             "1. Options -> List All Devices`r`n" +
-             "2. Tick the 'Edit' box to the right of the device dropdown`r`n" +
-             "3. Type the USB ID by hand:  2207  320A`r`n" +
-             "4. Set the target driver to WinUSB`r`n" +
-             "5. Click Install Driver (it may read 'Replace Driver')`r`n`r`n" +
-             "Windows binds drivers by hardware ID, so this takes effect the next " +
-             "time the Loader appears -- automatically, with nothing to click.`r`n`r`n" +
-             "DO NOT pick 'ADB Interface', 'Android Composite ADB Interface' or MTP. " +
-             "Zadig is only ever for 2207 320A; pointing it at the tablet's Android " +
-             "interfaces leaves adb permanently blind.") `
-            @('Done - check it','Skip')
-
-        if ($choice -eq 'Skip') {
-            Warn 'Skipped. Zadig will be needed later, while the Loader is caught and the clock'
-            Warn 'is running. Re-run the flash to get this offer again.'
-            return $false
-        }
-
+    if (Install-MabuRockusbDriver -RepoRoot $script:Root) {
         $st = Test-MabuLoaderDriverStaged
         if ($st.Staged -or $st.Bound) {
-            Ok "Staged (via $($st.InfName)). The Loader will bind automatically from now on."
+            Ok 'Loader driver staged. It will bind the moment the Loader appears.'
+            Info 'From there `rkdeveloptool ld` latches the Loader open indefinitely, so the'
+            Info '~10 second window stops mattering and the WinUSB swap can be done unhurried.'
             return $true
         }
-        Warn "Still not staged (attempt $attempt of 3)."
-        Warn 'Check the USB ID reads exactly 2207 / 320A, and that Edit was ticked before typing.'
     }
 
-    Warn 'Giving up on staging; carrying on. The flash can still work -- it will fall back'
-    Warn 'to opening Zadig once the Loader is caught, which is the timing-sensitive route.'
+    Warn 'Could not stage the Rockchip driver automatically.'
+    Warn 'The flash can still work, but it falls back to catching the Loader inside its'
+    Warn '~10 second window, which is the route that keeps failing. To do it by hand:'
+    Warn "  pnputil /add-driver `"$(Join-Path $script:Root 'tools\rockchip-stock\DriverAssitant_v5.0\DriverAssitant_v5.0\Driver\x64\win10\rockusb.inf')`" /install"
     return $false
 }
 

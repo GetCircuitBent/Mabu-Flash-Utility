@@ -53,6 +53,11 @@ $IncludeDirs = @(
     'firmware\patches',
     'tools\rkdeveloptool',
     'tools\magiskpolicy',
+    # Rockchip's rockusb driver ONLY (0.75 MB) -- not the whole 16.5 MB
+    # rockchip-stock tree. Staging this is what makes the Loader bind on arrival
+    # instead of enumerating driverless and timing out after ~12 seconds, so it is
+    # runtime-required now, not archival. RKDevTool and the installer exes stay out.
+    'tools\rockchip-stock\DriverAssitant_v5.0\DriverAssitant_v5.0\Driver',
     'apks',
     'mabu-archive'
 )
@@ -91,6 +96,7 @@ $Required = @(
     'scripts\dump-system-cycled.ps1',
     'tools\rkdeveloptool\rkdeveloptool.exe',
     'tools\magiskpolicy\magiskpolicy-armeabi-v7a',
+    'tools\rockchip-stock\DriverAssitant_v5.0\DriverAssitant_v5.0\Driver\x64\win10\rockusb.inf',
     'firmware\patches\parameter-patched.img',
     'apks\F-Droid.apk',
     'apks\Lawnchair.apk'
