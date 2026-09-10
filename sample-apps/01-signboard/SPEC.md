@@ -197,7 +197,7 @@ as the motor tween one screen over. Rate slider range 0.25x to 2.0x.
 ### Sizing
 
 The panel is 1024x600. Bundled defaults come from the
-[GCB style guide](https://github.com/GetCircuitBent/GitHub-Style-Guide):
+[GCB style guide](https://github.com/Alex-GetCircuitBent/GitHub-Style-Guide):
 `boot-logo.png` (the still, wordmark and cat on Bluewood) and
 `boot-animation.gif` (700x438, the same composition with sparkles) as the GIF
 example. At 700x438 the animation pillarboxes slightly under Contain, which is

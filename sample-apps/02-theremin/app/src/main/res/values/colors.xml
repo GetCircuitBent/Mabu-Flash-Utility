@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Get Circuit Bent brand palette, dark theme.
-  Canonical source: github.com/GetCircuitBent/GitHub-Style-Guide
+  Canonical source: github.com/Alex-GetCircuitBent/GitHub-Style-Guide
 
   The UI is built in code (see MainActivity), so these are here for the theme
   and as the reference values if you restyle the app.
